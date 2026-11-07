@@ -26,7 +26,7 @@ package=$(jq -er '.version' package.json)
 [[ $package =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 version="$package+sha.${sha:0:12}"
 image="subboost-fork:$sha"
-docker build --platform linux/amd64 --file local/Dockerfile \
+docker build --platform linux/amd64 --provenance=false --file local/Dockerfile \
   --label "org.opencontainers.image.revision=$sha" \
   --label "org.opencontainers.image.source=https://github.com/$repo" \
   --build-arg "APP_BUILD_SHA=$sha" --build-arg "APP_RELEASE_VERSION=$package" \
@@ -41,14 +41,15 @@ image_id=$(docker image inspect "$image" | jq -er --arg sha "$sha" --arg repo "$
 migrations=$(cd local/prisma/migrations &&
   find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1)
 docker save "$image" | gzip -n -1 > "$out/image.tar.gz"
+graph=$(python3 -B ops/fork/image_identity.py "$out/image.tar.gz" "$sha" "$image_id")
 cd "$out"
 archive=$(sha256sum image.tar.gz | cut -d' ' -f1)
 jq -n --arg repo "$repo" --arg sha "$sha" --arg tag "$tag" --arg upstream "$upstream" \
   --arg image "$image" --arg imageId "$image_id" --arg archive "$archive" \
-  --arg migrations "$migrations" --arg run "https://github.com/$repo/actions/runs/$GITHUB_RUN_ID" \
-  '{schemaVersion:1,repository:$repo,sourceSha:$sha,upstreamTag:$tag,upstreamCommit:$upstream,
+  --argjson graph "$graph" --arg migrations "$migrations" --arg run "https://github.com/$repo/actions/runs/$GITHUB_RUN_ID" \
+  '{schemaVersion:2,repository:$repo,sourceSha:$sha,upstreamTag:$tag,upstreamCommit:$upstream,
     platform:"linux/amd64",imageReference:$image,imageId:$imageId,archiveSha256:$archive,
-    migrationTreeSha256:$migrations,workflowRunUrl:$run}' > release.json
+    migrationTreeSha256:$migrations,workflowRunUrl:$run} + $graph' > release.json
 sha256sum image.tar.gz release.json > SHA256SUMS
 sha256sum --strict -c SHA256SUMS
 {

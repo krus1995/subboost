@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from image_identity import receipt_image_id, require_image_id, verify_release_graph
 from smoke import PUBLIC, CheckError, business_session, check_site, private_json, require
 
 
@@ -276,27 +277,21 @@ class Site:
             disk[dev] = amount
 
     def image(self, m, archive):
-        import tarfile
-        with tarfile.open(archive, mode="r|gz") as stream:
-            manifest = None
-            for member in stream:
-                if member.name.lstrip("./") == "manifest.json":
-                    require(manifest is None and member.isfile() and member.size < 1024**2, "invalid Docker save manifest")
-                    manifest = json.load(stream.extractfile(member))
-            require(isinstance(manifest, list) and len(manifest) == 1 and
-                    manifest[0].get("RepoTags") == [m["imageReference"]], "archive contains unexpected image references")
+        graph = verify_release_graph(archive, m)
         with archive.open("rb") as src:
             load = subprocess.run(["docker", "load"], stdin=src, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         require(load.returncode == 0, "docker load failed")
         data = json.loads(run(["docker", "image", "inspect", m["imageReference"]]))[0]
-        require(data["Id"] == m["imageId"] and data["Architecture"] == "amd64" and data["Os"] == "linux" and
+        host_id = require_image_id(data["Id"], graph)
+        require(data["Architecture"] == "amd64" and data["Os"] == "linux" and
                 data["Config"]["Labels"].get("org.opencontainers.image.revision") == m["sourceSha"] and
                 data["Config"]["Labels"].get("org.opencontainers.image.source") == "https://github.com/krus1995/subboost" and
                 environment(data).get("APP_BUILD_SHA") == m["sourceSha"], "image labels or platform mismatch")
         migration_digest = run(["docker", "run", "--pull", "never", "--rm", "--network", "none", "--entrypoint", "sh",
-                                m["imageId"], "-ec", "cd /app/local/prisma/migrations && "
+                                host_id, "-ec", "cd /app/local/prisma/migrations && "
                                 "find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum | sha256sum"]).decode().split()[0]
         require(migration_digest == m["migrationTreeSha256"], "migration tree hash mismatch")
+        return host_id
 
     def gpg(self, decrypt=False):
         args = ["gpg", "--batch", "--no-tty", "--pinentry-mode", "loopback", "--passphrase-file", str(self.backup_key)]
@@ -566,7 +561,7 @@ class Site:
                 sha256(prior / "db.dump.gpg") == evidence["dbSha256"], "rehearsal backup missing or changed")
         # For the initial takeover, bind the rehearsal to the exact old deployment.
         if (self.base / "current.json").exists():
-            require(private_json(self.base / "current.json")["imageId"] == self.old_image,
+            require(receipt_image_id(private_json(self.base / "current.json")) == self.old_image,
                     "live image does not match the last active receipt")
         else:
             require(evidence["oldImageId"] == self.old_image and evidence["originalOid"] == self.prod_oid
@@ -580,11 +575,11 @@ class Site:
         self.verify_rehearsal()
         archive = path / "image.tar.gz"
         self.room(m, archive)
-        self.image(m, archive)
+        host_id = self.image(m, archive)
         run(["docker", "tag", self.old_image, "subboost-previous:" + self.old_image.removeprefix("sha256:")])
         self.snapshot = self.base / "backups" / (self.sha + "-" + secrets.token_hex(5))
         self.snapshot.mkdir(mode=0o700)
-        status("PREPARED", backup=str(self.snapshot), oldImageId=self.old_image)
+        status("PREPARED", backup=str(self.snapshot), oldImageId=self.old_image, productionImageId=host_id)
         if not current():
             status("SUPERSEDED")
             return
@@ -604,7 +599,7 @@ class Site:
             status("BACKED_UP", **info)
             status("CANDIDATE_RUNNING")
             candidate_may_have_migrated = True
-            self.start_candidate(m["imageId"], self.appenv["DATABASE_URL"])
+            self.start_candidate(host_id, self.appenv["DATABASE_URL"])
             self.remove_candidate()
             self.release_reservation()
             status("ACTIVATING", recoveryRequired=True, everActivated=True)
@@ -612,7 +607,7 @@ class Site:
             self.set_image(m["imageReference"])
             self.dc("up", "-d", "--no-deps", "--no-build", "--pull", "never", "app")
             active = container(self.cid("app"))
-            require(active["Image"] == m["imageId"], "active image drift")
+            require(active["Image"] == host_id, "active image drift")
             self.assert_networks(active)
             check_site(self.local, self.session, 300)
             self.origin_health(True)

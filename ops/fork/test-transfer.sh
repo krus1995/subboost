@@ -21,9 +21,9 @@ export BUSY_SHA=2222222222222222222222222222222222222222
 printf archive > artifact/image.tar.gz
 archive=$(sha256sum artifact/image.tar.gz | cut -d' ' -f1)
 image=sha256:$archive
-export IMAGE=$image ARCHIVE=$archive
+export IMAGE=$image ARCHIVE=$archive HOST_IMAGE=sha256:$(printf 'e%.0s' {1..64})
 jq -n --arg sha "$GITHUB_SHA" --arg image "$IMAGE" --arg digest "$ARCHIVE" '
-  {schemaVersion:1, repository:"krus1995/subboost", platform:"linux/amd64",sourceSha:$sha,
+  {schemaVersion:2, configDigest:$image, manifestDigest:env.HOST_IMAGE, repository:"krus1995/subboost", platform:"linux/amd64",sourceSha:$sha,
    imageReference:("subboost-fork:"+$sha),imageId:$image,archiveSha256:$digest,
    workflowRunUrl:"https://github.com/krus1995/subboost/actions/runs/90"}' > artifact/release.json
 (cd artifact && sha256sum image.tar.gz release.json > SHA256SUMS)
@@ -59,7 +59,7 @@ case "$1" in
     if [[ $(grep -c '^submit ' "$TEST_LOG") == 2 ]]; then echo 'interrupted'; exit 255; fi ;;
   status)
     jq -n --arg sha "$2" --arg image "$IMAGE" --arg archive "$ARCHIVE" \
-      '{phase:"ACTIVE",sourceSha:$sha,imageId:$image,archiveSha256:$archive}' ;;
+      '{phase:"ACTIVE",sourceSha:$sha,imageId:$image,productionImageId:(env.TEST_HOST_IMAGE // env.HOST_IMAGE),archiveSha256:$archive}' ;;
   *) exit 1 ;;
 esac
 EOF
@@ -82,5 +82,6 @@ bash "$scripts/transfer-release.sh" artifact
 [[ $(sort -u "$TEST_LOG" | grep -c '^submit ') == 1 ]]
 grep -qx "status $BUSY_SHA" "$TEST_LOG"
 grep -qx "status $GITHUB_SHA" "$TEST_LOG"
-grep -q "^ACTIVE $GITHUB_SHA" "$GITHUB_STEP_SUMMARY"
+grep -Fq "ACTIVE $GITHUB_SHA · build $IMAGE · production $HOST_IMAGE" "$GITHUB_STEP_SUMMARY"
+if TEST_HOST_IMAGE=sha256:$(printf 'f%.0s' {1..64}) bash "$scripts/transfer-release.sh" artifact; then exit 1; fi
 echo 'Artifact retry, wrong SHA, stale main, modified archive, busy host and reconnect checks passed.'
