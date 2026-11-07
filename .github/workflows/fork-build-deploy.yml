@@ -1,0 +1,110 @@
+name: Fork build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Original push run containing the verified archive for current main
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  checks:
+    if: github.repository == 'krus1995/subboost' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/fork-ci.yml
+
+  artifact:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    concurrency:
+      group: subboost-build-${{ github.sha }}
+      cancel-in-progress: false
+    outputs:
+      artifact_id: ${{ steps.select.outputs.artifact_id || steps.upload.outputs.artifact-id }}
+      run_id: ${{ steps.select.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test transfer and retry handling
+        run: bash ops/fork/test-transfer.sh
+      - name: Select verified archive
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        run: bash ops/fork/select-release.sh
+      - name: Build image archive
+        if: steps.select.outputs.artifact_id == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash ops/fork/build-release.sh "$RUNNER_TEMP/subboost-artifact"
+      - name: Retain verified archive
+        id: upload
+        if: steps.select.outputs.artifact_id == ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: subboost-fork-${{ github.sha }}
+          path: ${{ runner.temp }}/subboost-artifact/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+      - name: Report pending production takeover
+        if: vars.FORK_DEPLOY_ENABLED != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo 'Image archived. Production deployment awaits the verified host and restore rehearsal.' >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$EVENT" == workflow_dispatch ]]; then exit 1; fi
+
+  deploy:
+    if: vars.FORK_DEPLOY_ENABLED == 'true'
+    needs: artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment:
+      name: production
+      url: https://subboost.krus1987.kdns.fr
+    concurrency:
+      group: subboost-production
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.artifact.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.artifact.outputs.run_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/subboost-artifact/
+      - name: Install SSH client
+        run: |
+          if ! command -v sshpass || ! command -v scp; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends openssh-client sshpass
+          fi
+      - name: Submit release and verify host receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ needs.artifact.outputs.run_id }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        run: bash ops/fork/transfer-release.sh "$RUNNER_TEMP/subboost-artifact"

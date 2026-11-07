@@ -33,6 +33,7 @@ env:
 
 jobs:
   meta:
+    if: github.repository == 'SubBoost/subboost'
     runs-on: ubuntu-latest
     outputs:
       build_version: ${{ steps.meta.outputs.build_version }}
@@ -63,6 +64,7 @@ jobs:
           echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
   checks:
+    if: github.repository == 'SubBoost/subboost'
     runs-on: ubuntu-latest
     needs: meta
     steps:
@@ -78,6 +80,7 @@ jobs:
       - run: npm run check:local-app
 
   build-image:
+    if: github.repository == 'SubBoost/subboost'
     runs-on: ${{ matrix.runner }}
     needs: meta
     strategy:
@@ -136,6 +139,7 @@ jobs:
           retention-days: 1
 
   publish-dev-release:
+    if: github.repository == 'SubBoost/subboost'
     runs-on: ubuntu-latest
     needs:
       - meta
