@@ -51,3 +51,10 @@ jq -n --arg repo "$repo" --arg sha "$sha" --arg tag "$tag" --arg upstream "$upst
     migrationTreeSha256:$migrations,workflowRunUrl:$run}' > release.json
 sha256sum image.tar.gz release.json > SHA256SUMS
 sha256sum --strict -c SHA256SUMS
+{
+  echo '### Verified release archive'
+  echo
+  echo '```json'
+  cat release.json
+  echo '```'
+} >> "${GITHUB_STEP_SUMMARY:?}"

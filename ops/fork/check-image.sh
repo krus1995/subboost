@@ -44,8 +44,7 @@ for ((i=0; i<60; i++)); do
 done
 "$engine" exec "$db" createdb -U postgres upgraded
 
-export ENCRYPTION_KEY="isolated-test-$suffix"
-environment=(--network "$network" -e "ENCRYPTION_KEY=$ENCRYPTION_KEY" -e "JWT_SECRET=test-session-$suffix"
+environment=(--network "$network" -e ENCRYPTION_KEY=subboost-ci-readable-baseline-key-v2 -e "JWT_SECRET=test-session-$suffix"
   -e "CRON_SECRET=test-cron-$suffix" -e APP_URL=http://localhost:3000 -e HOSTNAME=0.0.0.0)
 db_url() { printf 'postgresql://postgres:%s@db:5432/%s' "$suffix" "$1"; }
 
@@ -55,7 +54,7 @@ db_url() { printf 'postgresql://postgres:%s@db:5432/%s' "$suffix" "$1"; }
     case "$dir" in */20260531000000_init/) ;; *) mv "$dir" /tmp/ ;; esac
   done
   exec ../node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma'
-node ops/fork/seed-upgrade.mjs | "$engine" exec -i "$db" psql -X -v ON_ERROR_STOP=1 -U postgres -d upgraded
+"$engine" exec -i "$db" psql -X -v ON_ERROR_STOP=1 -U postgres -d upgraded < ops/fork/seed-upgrade.sql
 
 expected_count=$(find local/prisma/migrations -mindepth 2 -maxdepth 2 -name migration.sql | wc -l)
 for database in empty upgraded; do

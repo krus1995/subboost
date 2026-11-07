@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { load } from "js-yaml";
 
@@ -82,5 +82,7 @@ for (const field of ["lines", "statements", "functions", "branches"]) {
 const scoped = [".github/workflows", ".agents/skills", "docs/fork", "ops/fork", "AGENTS.md"];
 const files = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...scoped], { encoding: "utf8" });
 const credential = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z\d]{30,}|github_pat_[A-Za-z\d_]{50,})\b/;
-for (const file of files.split("\0").filter(Boolean)) assert.doesNotMatch(read(file), credential, "credential in " + file);
+for (const file of files.split("\0").filter((name) => name && existsSync(name))) {
+  if (credential.test(read(file))) throw new Error("Credential pattern found in " + file);
+}
 console.log("Fork ownership, CI jobs, release config, toolchain, coverage and credential checks passed.");
