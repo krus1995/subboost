@@ -3,7 +3,7 @@ name: sync-subboost-upstream
 description: 用户要求同步 SubBoost 上游正式版本、指定 tag 或提交时，在本地固定目标、合并、验证并跟进 PR。
 ---
 
-读 AGENTS.md、STATE.md、FEATURES.md 和执行手册第 7 节。在干净的任务 worktree 运行 `bash ops/fork/sync-upstream.sh`；指定 tag 或完整 SHA 时将其作为唯一参数。脚本只获取上游对象及本 fork 的分支，不向远端推送。记录输出 B、U、分支名和目标。
+读 AGENTS.md、STATE.md、FEATURES.md 和执行手册第 7 节。新克隆的仓库先核对 origin 指向用户 fork。缺少 upstream 时运行 `git remote add upstream https://github.com/SubBoost/subboost.git`。在干净的任务 worktree 运行 `bash ops/fork/sync-upstream.sh`，指定 tag 或完整 SHA 时将其作为唯一参数。记录输出 B、U、分支名和目标。
 
 - no-op 表示 B 已包含 U，记录结果后结束。已有本地或远端任务分支时脚本会接续它，使用 `gh pr list --base main --head "$branch"` 找对应 PR。
 - 冲突时查看 `git status` 和三方版本，对照定制清单逐文件解决冲突并完成合并。将理由记入 STATE.md。检查 merge-base 到 U 的 workflow、项目规则、发布脚本和数据库迁移差异。

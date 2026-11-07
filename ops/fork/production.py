@@ -103,6 +103,7 @@ class Site:
         self.net = cfg["dbNetwork"]
         self.candidate = ""
         self.candidate_id = ""
+        self.reservation = ""
         self.temp_db = None
         self.temp_oid = None
 
@@ -226,6 +227,7 @@ class Site:
         self.other = self.other_containers()
         self.check_ingress()
         self.origin_health(True)
+        self.check_cron_history(self.cronid)
         check_site(self.local)
         check_site(PUBLIC)
         if not readonly:
@@ -322,6 +324,7 @@ class Site:
         require(self.schema(self.db) == self.schema(self.temp_db), "restored schema, owners or ACLs differ")
         require(self.counts(self.temp_db) == self.old_counts, "restored table counts or migrations differ")
         info = {"backup": str(snap), "dbSha256": self.dump_digest, "configSha256": sha256(snap / "config.tar.gpg"),
+                "schemaSha256": self.schema_digest(self.db),
                 "sourceDb": self.db, "originalOid": self.prod_oid, "restoreDb": self.temp_db,
                 "restoreOid": self.temp_oid, "dbOwner": self.user, "oldImageId": self.old_image,
                 "keyFile": str(self.backup_key), "counts": self.old_counts}
@@ -332,6 +335,22 @@ class Site:
         data = run(self.dbcmd("pg_dump", "--schema-only", "-U", self.user, "-d", db))
         # Each modern pg_dump generates a fresh psql restrict key.
         return [line for line in data.splitlines() if not line.startswith((b"\\restrict ", b"\\unrestrict "))]
+
+    def schema_digest(self, db):
+        return hashlib.sha256(b"\n".join(self.schema(db))).hexdigest()
+
+    def verify_old_recovery(self, receipt):
+        phase = receipt.get("interruptedAt") or receipt.get("failedAt")
+        require(phase != "ACTIVATING" and not receipt.get("everActivated"),
+                "old-image fallback after ACTIVATING requires separate compatibility or recovery evidence")
+        if phase != "CANDIDATE_RUNNING":
+            return
+        backup = Path(receipt["backup"])
+        info = private_json(backup / "backup.json")
+        require(backup.parent == self.base / "backups" and sha256(backup / "db.dump.gpg") == receipt["dbSha256"]
+                and info["dbSha256"] == receipt["dbSha256"] and self.db_meta(self.db)["oid"] == info["restoreOid"]
+                and self.schema_digest(self.db) == info["schemaSha256"] and self.counts(self.db) == info["counts"],
+                "restored DB identity, schema or migration/data counts differ from the pre-migration backup")
 
     def backup_input(self, target):
         dump = self.snapshot / "db.dump.gpg"
@@ -363,7 +382,15 @@ class Site:
         actual = container(self.candidate_id)["NetworkSettings"]["Networks"][self.net]
         original = self.old["NetworkSettings"]["Networks"][self.net]
         if self.cfg["tunnelContainer"] and self.net in network_aliases(container(self.cfg["tunnelContainer"])):
-            require(actual["IPAddress"] != original["IPAddress"], "candidate acquired the old Tunnel origin IP")
+            if actual["IPAddress"] == original["IPAddress"]:
+                # Keep the old origin IP away from the candidate while connector DNS caches expire.
+                require(not self.reservation, "could not isolate the old Tunnel origin IP")
+                self.remove_candidate()
+                self.reservation = run(["docker", "run", "-d", "--pull", "never", "--network", self.net,
+                                        "--name", self.candidate + "-reserve", "--restart", "no", "--entrypoint", "sleep",
+                                        "--label", "io.subboost.reservation=" + self.sha, self.old_image, "3600"]).decode().strip()
+                self.start_candidate(image, dburl)
+                return
         run(["docker", "exec", self.candidate_id, "touch", "/tmp/subboost-start"])
         check_site(self.candidate_url, self.session, 300)
 
@@ -389,6 +416,14 @@ class Site:
             run(["docker", "rm", "-f", self.candidate_id])
             self.candidate_id = ""
 
+    def release_reservation(self):
+        if self.reservation:
+            c = container(self.reservation)
+            require(c["Name"] == "/" + self.candidate + "-reserve" and labels(c).get("io.subboost.reservation") == self.sha,
+                    "reservation identity mismatch")
+            run(["docker", "rm", "-f", self.reservation])
+            self.reservation = ""
+
     def cleanup_clone(self):
         if self.temp_db and self.temp_oid:
             require(self.db_meta(self.temp_db)["oid"] == self.temp_oid and self.temp_db.startswith("sbverify_") and
@@ -413,13 +448,14 @@ class Site:
         self.temp_db = None
 
     def start_original(self):
+        self.release_reservation()
         require(container(self.appid)["Image"] == self.old_image, "old app no longer present")
         run(["docker", "start", self.appid])
         check_site(self.local, self.session, 300)
         self.origin_health(True)
         check_site(PUBLIC, self.session)
         run(["docker", "start", self.cronid])
-        require(container(self.cronid)["State"]["Running"], "original cron failed")
+        self.check_cron_history(self.cronid)
 
     def set_image(self, image):
         # Keep existing Compose paths and shell-management commands pointed at the same image.
@@ -437,23 +473,51 @@ class Site:
         model = json.loads(self.dc("config", "--format", "json"))
         require(model["services"]["app"]["image"] == image, "Compose did not select registered image")
 
-    def cron_check(self):
-        since = str(int(time.time()))
-        self.dc("up", "-d", "--no-deps", "--no-build", "--pull", "never", "cron")
-        cid = self.cid("cron")
-        deadline = time.monotonic() + 120
+    def check_cron_history(self, cid):
+        info = container(cid)
+        started = info["State"]["StartedAt"]
+        from datetime import datetime
+        since = str(max(int(time.time()) - 5400, int(datetime.fromisoformat(started.replace("Z", "+00:00")).timestamp())))
+        # Upstream curl does not append a newline. Docker can buffer its JSON until the next 360 s cycle.
+        deadline = time.monotonic() + 420
         while time.monotonic() < deadline:
             require(container(cid)["State"]["Running"], "cron stopped")
             logs = subprocess.run(["docker", "logs", "--since", since, cid], capture_output=True, check=True)
             # Existing curl jobs print their successful JSON responses. Do not log those responses.
-            data = logs.stdout
-            if b"one or more endpoints failed" in data + logs.stderr:
+            data = logs.stdout.decode(errors="replace")
+            if "one or more endpoints failed" in data or b"one or more endpoints failed" in logs.stderr:
                 raise CheckError("cron reported failure")
-            if b"/api/cron/update-rule-index" in data and b"/api/cron/update-subscriptions" in data and len(
-                    re.findall(rb'"success"\s*:\s*true', data)) >= 2:
+            passed = {}
+            pending = None
+            for event in re.finditer(r"\[local-cron\][^\n]* POST /api/cron/(update-rule-index|update-subscriptions)\n", data):
+                try:
+                    payload, _ = json.JSONDecoder().raw_decode(data[event.end():].lstrip())
+                    passed[event[1]] = payload.get("success") is True
+                    pending = None
+                except (ValueError, AttributeError):
+                    pending = event[1]
+            if passed == {"update-rule-index": True, "update-subscriptions": True} and pending is None:
                 return
+            # For the stock command, only success reaches sleep 360. Its failure branch sleeps 30 then exits.
+            cmd = (info["Config"].get("Cmd") or [""])[-1]
+            if (pending == "update-subscriptions" and passed.get("update-rule-index") and
+                    cmd.count('|| failed=1') == 2 and 'if [ $failed -ne 0 ]' in cmd and
+                    'sleep 30; exit 1; fi; sleep 360; done' in cmd):
+                # Process names only, retained in memory; never print expanded command arguments.
+                processes = run(["docker", "top", cid, "-eo", "pid,args"]).decode().splitlines()
+                if any(re.fullmatch(r"\d+\s+(?:/[^ ]*/)?sleep\s+360", row.strip()) for row in processes):
+                    return
+            if pending == "update-subscriptions" and passed == {"update-rule-index": True, "update-subscriptions": True}:
+                # A complete previous successful cycle is present. The fresh marker may still be buffered.
+                if "curl:" not in logs.stderr.decode(errors="replace"):
+                    return
             time.sleep(2)
         raise CheckError("no successful authenticated cron cycle observed")
+
+    def cron_check(self):
+        self.dc("up", "-d", "--no-deps", "--no-build", "--pull", "never", "cron")
+        self.cronid = self.cid("cron")
+        self.check_cron_history(self.cronid)
 
     def rehearsal(self):
         baseline = self.preflight()
@@ -533,7 +597,8 @@ class Site:
             candidate_may_have_migrated = True
             self.start_candidate(m["imageId"], self.appenv["DATABASE_URL"])
             self.remove_candidate()
-            status("ACTIVATING", recoveryRequired=True)
+            self.release_reservation()
+            status("ACTIVATING", recoveryRequired=True, everActivated=True)
             writes_may_have_started = True
             self.set_image(m["imageReference"])
             self.dc("up", "-d", "--no-deps", "--no-build", "--pull", "never", "app")

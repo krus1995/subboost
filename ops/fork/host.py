@@ -158,6 +158,7 @@ def job(sha):
         except BaseException as error:
             previous = record(sha)["phase"]
             if previous == "FAILED":
+                update(sha, "FAILED", error=str(error) if isinstance(error, CheckError) else type(error).__name__)
                 raise
             reason = str(error) if isinstance(error, CheckError) else type(error).__name__
             update(sha, "FAILED", failedAt=previous, error=reason,
@@ -213,6 +214,13 @@ def command(args):
         site = Site(CONFIG, BASE)
         print(json.dumps(site.preflight(readonly=True)))
         return
+    if op == "retry-current" and not args:
+        sha = main_sha()
+        receipt = record(sha)
+        require(receipt.get("imageId") and (INCOMING / sha).is_dir(),
+                "use the fork deployment workflow to deliver the verified current main artifact")
+        transfer = str(int(datetime.datetime.now().timestamp())) + "-1"
+        return command(["submit", sha, transfer, receipt["archiveSha256"], receipt["imageId"]])
     if op in ("rehearse", "backup", "logs") and not args:
         site = Site(CONFIG, BASE)
         if op == "logs":
@@ -234,6 +242,31 @@ def command(args):
         job(sha)
         return
     with gate("requests.lock"):
+        if op == "reconcile" and len(args) == 1:
+            # Recovery is an explicit host operation. It performs no database writes or image switches.
+            with gate("deploy.lock"):
+                r = record(sha)
+                require(r["phase"] == "FAILED" and (r.get("recoveryRequired") or r.get("interruptedAt")),
+                        "no interrupted release to reconcile")
+                site = Site(CONFIG, BASE)
+                site.preflight()
+                from smoke import check_site, PUBLIC
+                check_site(PUBLIC, site.session)
+                actual = site.old_image
+                require(actual in (r.get("oldImageId"), r.get("imageId")), "unexpected active image")
+                require(not any(n.startswith("subboost-candidate-") for n in
+                                subprocess.check_output(["docker", "ps", "--format", "{{.Names}}"]).decode().splitlines()),
+                        "a candidate or reservation is still running")
+                if actual == r.get("imageId"):
+                    require(r.get("everActivated") or r.get("interruptedAt") == "ACTIVATING",
+                            "candidate was never activated; inspect the deployment identity")
+                    result = update(sha, "ACTIVE", interruptedAt=None, recoveryRequired=False, reconciled=True)
+                    dump(BASE / "current.json", result)
+                else:
+                    site.verify_old_recovery(r)
+                    result = update(sha, "FAILED", interruptedAt=None, recoveryRequired=False, retrySafe=True, reconciled=True)
+                print(json.dumps(result))
+                return
         if op == "status" and len(args) == 1:
             print(json.dumps(check_stale(sha)))
             return
@@ -286,8 +319,13 @@ def command(args):
         require(r["phase"] != "FAILED" or r.get("retrySafe") is True, "inspect failed receipt before retry")
         unit = "subboost-fork-" + sha + "-" + transfer
         dump(inflight, {"sourceSha": sha})
-        update(sha, "QUEUED", unit=unit, imageId=image, archiveSha256=archive,
-               recoveryRequired=False, retrySafe=False)
+        if r["phase"] != "ABSENT":
+            # Preserve attempt history separately; the active receipt describes only this attempt.
+            dump(RECORDS / (sha + ".previous-" + transfer + ".json"), r)
+        queued = {"sourceSha": sha, "phase": "QUEUED", "unit": unit, "imageId": image, "archiveSha256": archive,
+                  "recoveryRequired": False, "retrySafe": False,
+                  "updated": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        dump(RECORDS / (sha + ".json"), queued)
         result = subprocess.run(["systemd-run", "--unit=" + unit, "--collect", "--quiet", SELF, "worker", sha])
         if result.returncode:
             update(sha, "FAILED", error="systemd-run failed", retrySafe=True)

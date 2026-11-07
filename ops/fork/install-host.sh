@@ -18,7 +18,7 @@ if [[ ! -e $etc/backup.key ]]; then
   (set -C; head -c 64 /dev/urandom | base64 -w0 > "$etc/backup.key")
 fi
 [[ -f $etc/backup.key && ! -L $etc/backup.key && $(stat -c '%u:%a' "$etc/backup.key") == 0:600 ]]
-for file in host.py production.py smoke.py; do
+for file in host.py production.py smoke.py fork-manager.sh; do
   install -m 644 "$src/$file" "$lib/$file.next"
   mv -T "$lib/$file.next" "$lib/$file"
 done
