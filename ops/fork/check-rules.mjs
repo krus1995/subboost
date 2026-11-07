@@ -47,6 +47,9 @@ assert.deepEqual(ci.on.pull_request.branches, [config.branch]);
 assert.ok("workflow_call" in ci.on);
 const release = workflows["fork-build-deploy.yml"];
 assert.deepEqual(release.on.push.branches, [config.branch]);
+assert.equal(release.jobs.deploy.if, "vars.FORK_DEPLOY_ENABLED == 'true'");
+assert.equal(release.jobs.deploy.environment.name, "production");
+assert.equal(release.jobs.deploy.environment.url, config.productionUrl);
 assert.deepEqual(release.jobs.deploy.concurrency, { group: "subboost-production", "cancel-in-progress": false, queue: "max" });
 for (const [name, workflow] of Object.entries(workflows)) {
   assert.equal(workflow.concurrency?.queue, undefined);

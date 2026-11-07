@@ -25,7 +25,7 @@ trap cleanup EXIT
 # actionlint 1.7.12 predates GitHub's queue property. check-rules.mjs checks
 # its exact value and location; all other workflow diagnostics remain fatal.
 repo_path=$(pwd -P)
-if [[ ${OSTYPE:-} == msys* ]]; then repo_path=$(pwd -W); fi
+if [[ -n ${MSYSTEM:-} ]]; then repo_path=$(pwd -W); fi
 "$engine" run --rm --platform linux/amd64 --network none --volume "$repo_path:/repo:ro" --workdir /repo \
   docker.io/rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7 \
   -ignore '^unexpected key "queue" for "concurrency" section' .github/workflows/fork-{ci,build-deploy}.yml

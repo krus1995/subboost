@@ -58,8 +58,16 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 90
+      - name: Report pending production takeover
+        if: vars.FORK_DEPLOY_ENABLED != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo 'Image archived. Production deployment awaits the verified host and restore rehearsal.' >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$EVENT" == workflow_dispatch ]]; then exit 1; fi
 
   deploy:
+    if: vars.FORK_DEPLOY_ENABLED == 'true'
     needs: artifact
     runs-on: ubuntu-24.04
     timeout-minutes: 120

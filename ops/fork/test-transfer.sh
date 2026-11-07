@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n ${MSYSTEM:-} ]]; then
+  # Match the Linux runner's LF output with the native Windows jq executable.
+  jq() { command jq --binary "$@"; }
+  export -f jq
+fi
 
 # Simulate GitHub and the host to exercise the runner without production credentials.
 scripts=$(cd "$(dirname "$0")" && pwd)

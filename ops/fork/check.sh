@@ -8,7 +8,7 @@ source_checks() {
   local coverage_args=()
   # Git for Windows starts a shell per lifecycle test. Bound concurrency to avoid
   # shell startup contention under the existing per-test timeout.
-  if [[ ${OSTYPE:-} == msys* ]]; then coverage_args=(-- --maxWorkers=2); fi
+  if [[ -n ${MSYSTEM:-} ]]; then coverage_args=(-- --maxWorkers=2); fi
   npm run test:coverage "${coverage_args[@]}"
   NEXT_TELEMETRY_DISABLED=1 npm run check:local-app
 }
@@ -29,9 +29,9 @@ rules() {
 }
 
 host_checks() {
-  if [[ ${OSTYPE:-} == msys* ]]; then
+  if [[ -n ${MSYSTEM:-} ]]; then
     MSYS_NO_PATHCONV=1 wsl.exe --distribution podman-machine-default --user root --cd "$(pwd -W)" \
-      -- env CONTAINER_ENGINE=podman python3 -B ops/fork/test-host.py
+      -- env CONTAINER_HOST=unix:///run/podman/podman.sock CONTAINER_ENGINE=podman python3 -B ops/fork/test-host.py
   else
     sudo -H env CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}" python3 -B ops/fork/test-host.py
   fi
