@@ -378,10 +378,10 @@ class Site:
         gate = 'while [ ! -f /tmp/subboost-start ]; do sleep 1; done; exec "$@"'
         self.candidate_id = run(cli + [image, "-ec", gate, "subboost-start", *start],
                                 env={**os.environ, **cfg}).decode().strip()
-        self.inspect_candidate()
+        self.inspect_candidate(image)
         self.origin_health(False)
         run(["docker", "start", self.candidate_id])
-        self.inspect_candidate()
+        self.inspect_candidate(image)
         self.origin_health(False)
         actual = container(self.candidate_id)["NetworkSettings"]["Networks"][self.net]
         original = self.old["NetworkSettings"]["Networks"][self.net]
@@ -398,8 +398,9 @@ class Site:
         run(["docker", "exec", self.candidate_id, "touch", "/tmp/subboost-start"])
         check_site(self.candidate_url, self.session, 300)
 
-    def inspect_candidate(self):
+    def inspect_candidate(self, image):
         c = container(self.candidate_id)
+        require(c["Image"] == image, "candidate image drift")
         networks = network_aliases(c)
         require(c["Name"] == "/" + self.candidate and not any(k.startswith("com.docker.compose.") for k in labels(c))
                 and labels(c).get("io.subboost.release") == self.sha and

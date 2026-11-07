@@ -17,7 +17,7 @@ from pathlib import Path
 
 # -I excludes the script's directory from sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from image_identity import receipt_image_id
+from image_identity import receipt_image_id, require_image_id
 from production import Site
 from smoke import CheckError, require
 
@@ -94,6 +94,10 @@ def verify(directory, sha, archive, image):
     require(m["repository"] == REPO and m["schemaVersion"] in (1, 2) and m["sourceSha"] == sha and
             m["platform"] == "linux/amd64" and m["imageReference"] == "subboost-fork:" + sha and
             m["imageId"] == image and m["archiveSha256"] == archive, "release identity mismatch")
+    if m["schemaVersion"] == 2:
+        for key in ("configDigest", "manifestDigest"):
+            valid("sha256:" + DIGEST, m[key])
+        require_image_id(image, m)
     valid(SHA, m["upstreamCommit"])
     valid(DIGEST, m["migrationTreeSha256"])
     valid(r"https://github\.com/krus1995/subboost/actions/runs/[0-9]+(?:/attempts/[0-9]+)?", m["workflowRunUrl"])
@@ -326,7 +330,10 @@ def command(args):
         if r["phase"] == "ACTIVE" and main_sha() == sha:
             local_id = receipt_image_id(r)
             Site(CONFIG, BASE).assert_active(local_id)
-            print(json.dumps({**r, "productionImageId": local_id}))
+            if "productionImageId" not in r:
+                r = update(sha, "ACTIVE", productionImageId=local_id)
+                dump(BASE / "current.json", r)
+            print(json.dumps(r))
             return
         if main_sha() != sha:
             update(sha, "SUPERSEDED", imageId=image, archiveSha256=archive)
