@@ -1,0 +1,50 @@
+name: Fork CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    if: github.repository == 'krus1995/subboost'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.1'
+      - run: bash ops/fork/check.sh source
+      - run: bash ops/fork/check.sh rules
+        env:
+          FORK_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+  image:
+    if: github.repository == 'krus1995/subboost'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.1'
+      - run: bash ops/fork/check.sh image
+      - run: bash ops/fork/check.sh host
+  fork-required:
+    if: always()
+    needs: [source, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require success from every job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const jobs = Object.values(JSON.parse(process.env.RESULTS));
+            process.exit(jobs.length === 2 && jobs.every(job => job.result === "success") ? 0 : 1)'

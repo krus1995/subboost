@@ -10,6 +10,7 @@ on:
 
 jobs:
   check:
+    if: github.repository == 'SubBoost/subboost'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
