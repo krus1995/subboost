@@ -96,6 +96,8 @@ cat /var/lib/subboost-fork/rehearsal.json
 
 演练会给旧镜像打本地恢复标签，加密保存实际 .env、Compose 文件、主机设置和数据库归档，检查归档全部数据段，恢复到唯一命名的新库，比对 schema、授权、计数和迁移历史，然后用旧镜像默认启动命令读取该库中的加密订阅。恢复后的旧 app、旧 cron、本机以及公网读取均须通过。基础设施 PR 可以先合并，保持仓库变量 `FORK_DEPLOY_ENABLED=false`，让 main 构建制品。收集演练回执、其他容器与 Tunnel 入口状态后，在仓库设置 `FORK_DEPLOY_ENABLED=true`，再发起首次部署。env、镜像或原数据库身份在首次接管前漂移时需要重做演练。首次候选失败后若已经还原到演练库，旧站虽恢复可用，但正式库的 OID 已换成恢复库的 OID。此时重新执行上面的 `rehearse`，再重试原制品。
 
+构建机和服务器的 Docker 可以使用不同的镜像存储方式。发布清单中的 `imageId` 来自构建机，`configDigest` 和 `manifestDigest` 分别是同一份 OCI 归档的镜像配置和清单摘要。服务器校验归档中的标签、数据块、平台和源码版本，加载后把 Docker 返回的本机 ID 记为 `productionImageId`。检查实际容器、重试、恢复和清理时使用这个本机值。Actions summary 会同时列出构建和生产 ID。
+
 部署由 runner 选择当前 main 的制品。受控 `prepare`、`submit`、`status` 使用工作流中的参数。管理员常用命令如下。
 
 ```bash

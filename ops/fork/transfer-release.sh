@@ -19,9 +19,11 @@ cmp -s <(printf '%s\n' "$checksums") SHA256SUMS || { echo 'Invalid artifact chec
 archive=${checksums%% *}
 image=$(jq -er --arg repo "$repo" --arg sha "$sha" --arg digest "$archive" \
   --arg run "https://github.com/$repo/actions/runs/$BUILD_RUN_ID" '
-  select(.schemaVersion == 1 and .repository == $repo and .sourceSha == $sha and
+  select(.schemaVersion == 2 and .repository == $repo and .sourceSha == $sha and
     .platform == "linux/amd64" and .imageReference == ("subboost-fork:" + $sha) and
-    .archiveSha256 == $digest and .workflowRunUrl == $run)
+    .archiveSha256 == $digest and .workflowRunUrl == $run and
+    (.configDigest | test("^sha256:[0-9a-f]{64}$")) and (.manifestDigest | test("^sha256:[0-9a-f]{64}$")) and
+    (.imageId == .configDigest or .imageId == .manifestDigest))
   | .imageId | select(test("^sha256:[0-9a-f]{64}$"))' release.json)
 bytes=$(stat -c %s image.tar.gz)
 
@@ -70,9 +72,12 @@ wait_for_release() {
     case "$phase" in
       ACTIVE)
         if [[ $target == "$sha" ]]; then
-          jq -e --arg sha "$sha" --arg image "$image" --arg digest "$archive" \
-            '.sourceSha == $sha and .imageId == $image and .archiveSha256 == $digest' <<< "$receipt" >/dev/null
-          echo "ACTIVE $sha · $image · archive $archive" | tee -a "$GITHUB_STEP_SUMMARY"
+          local host_image
+          host_image=$(jq -er --slurpfile release release.json --arg sha "$sha" --arg image "$image" --arg digest "$archive" '
+            select(.sourceSha == $sha and .imageId == $image and .archiveSha256 == $digest)
+            | .productionImageId | select(. == $release[0].configDigest or . == $release[0].manifestDigest)
+          ' <<< "$receipt")
+          echo "ACTIVE $sha · build $image · production $host_image · archive $archive" | tee -a "$GITHUB_STEP_SUMMARY"
         fi
         return 0 ;;
       SUPERSEDED)

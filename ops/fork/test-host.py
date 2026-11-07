@@ -2,6 +2,8 @@
 """Run on Linux as root, against a disposable PostgreSQL 16 container. No production configuration is read."""
 import contextlib
 import io
+import hashlib
+import tarfile
 import json
 import os
 import secrets
@@ -13,6 +15,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import host
+import image_identity
 from production import Site, run
 from smoke import CheckError
 
@@ -71,11 +74,63 @@ def receiver(root):
     assert invoke("status", sha)["phase"] == "SUPERSEDED"
     assert invoke(*args)["upload"] is False
     checked_error(lambda: invoke("prepare", sha, "1-2", "100", "f"*64, image))
-    host.update(sha, "ACTIVE")
+    host_image = "sha256:" + "c"*64
+    host.update(sha, "ACTIVE", productionImageId=host_image)
     with patch.object(host, "main_sha", return_value=sha), patch.object(Site, "assert_active") as health:
         invoke("submit", sha, transfer, archive, image)
-        health.assert_called_once_with(image)
+        health.assert_called_once_with(host_image)
     print("Receiver: real prepare, status, damaged archive, stale SHA, conflicting identity and idempotent submit passed.")
+
+
+def image_stores(root):
+    sha = "a"*40
+    tag = "subboost-fork:" + sha
+    files = {}
+    def blob(data, media):
+        data = json.dumps(data).encode() if isinstance(data, dict) else data
+        digest = hashlib.sha256(data).hexdigest()
+        files["blobs/sha256/" + digest] = data
+        return {"digest": "sha256:" + digest, "size": len(data), "mediaType": media}
+
+    labels = {"org.opencontainers.image.revision": sha, "org.opencontainers.image.source": "https://github.com/krus1995/subboost"}
+    env = ["APP_BUILD_SHA=" + sha]
+    layer = blob(b"synthesized image layer", image_identity.OCI + "layer.v1.tar")
+    cfg = blob({"architecture": "amd64", "os": "linux", "config": {"Labels": labels, "Env": env},
+                "rootfs": {"type": "layers", "diff_ids": [layer["digest"]]}}, image_identity.CONFIG_TYPES[0])
+    desc = blob({"schemaVersion": 2, "mediaType": image_identity.MANIFEST_TYPES[0], "config": cfg, "layers": [layer]},
+                image_identity.MANIFEST_TYPES[0])
+    desc["annotations"] = {"org.opencontainers.image.ref.name": sha, "io.containerd.image.name": "docker.io/library/" + tag}
+    files["oci-layout"] = b'{"imageLayoutVersion":"1.0.0"}'
+    files["index.json"] = json.dumps({"schemaVersion": 2, "manifests": [desc]}).encode()
+    files["manifest.json"] = json.dumps([{"Config": "blobs/sha256/" + cfg["digest"][7:], "RepoTags": [tag],
+                                          "Layers": ["blobs/sha256/" + layer["digest"][7:]]}]).encode()
+    path = root / "graph.tar.gz"
+    def save():
+        with tarfile.open(path, "w:gz") as tar:
+            for name, data in files.items():
+                item = tarfile.TarInfo(name)
+                item.size = len(data)
+                tar.addfile(item, io.BytesIO(data))
+    save()
+    release = {"sourceSha": sha, "imageReference": tag, "schemaVersion": 2, "imageId": cfg["digest"],
+               "configDigest": cfg["digest"], "manifestDigest": desc["digest"], "migrationTreeSha256": "0"*64}
+    foreign = "sha256:" + "f"*64
+    for build in (cfg["digest"], desc["digest"]):
+        for local_id in (cfg["digest"], desc["digest"]):
+            inspect = [{"Id": local_id, "Architecture": "amd64", "Os": "linux", "Config": {"Labels": labels, "Env": env}}]
+            with patch("production.subprocess.run", return_value=Mock(returncode=0)), patch("production.run",
+                       side_effect=[json.dumps(inspect).encode(), b"0"*64]) as docker:
+                assert Site.image(None, {**release, "imageId": build}, path) == local_id
+                assert local_id in docker.call_args.args[0]
+    for key in ("configDigest", "manifestDigest", "imageId"):
+        checked_error(lambda: image_identity.verify_release_graph(path, {**release, key: foreign}))
+    with patch("production.subprocess.run", return_value=Mock(returncode=0)), patch("production.run",
+               return_value=json.dumps([{"Id": foreign}]).encode()):
+        checked_error(lambda: Site.image(None, release, path))
+    files["blobs/sha256/" + cfg["digest"][7:]] += b" "
+    save()
+    checked_error(lambda: image_identity.verify_release_graph(path, release))
+    print("Image identity: both Docker stores, forged build/local/manifest/config IDs and modified blob checked.")
 
 
 def phase_boundaries():
@@ -83,6 +138,7 @@ def phase_boundaries():
     for fail_at in ("candidate", "activation"):
         site = Mock(spec=Site)
         site.old_image = "sha256:" + "0"*64
+        site.image.return_value = "verified-host-id"
         site.base = host.BASE
         (host.BASE / "backups").mkdir(exist_ok=True)
         site.appid, site.cronid = "old-app", "cron"
@@ -100,6 +156,7 @@ def phase_boundaries():
             checked_error(lambda: Site.deploy(site, {"sourceSha": "1"*40, "imageId": "new", "imageReference": "ref"},
                                               host.BASE, lambda phase, **kw: phases.append(phase), lambda: True))
         if fail_at == "candidate":
+            assert site.start_candidate.call_args.args[0] == "verified-host-id"
             site.rollback.assert_called_once()
             site.start_original.assert_called_once()
             assert phases[-1] == "FAILED"
@@ -152,5 +209,6 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="subboost-host-test-") as tmp:
         root = Path(tmp)
         receiver(root)
+        image_stores(root)
         phase_boundaries()
         postgres(root, os.environ.get("CONTAINER_ENGINE", "docker"))

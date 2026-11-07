@@ -17,6 +17,7 @@ from pathlib import Path
 
 # -I excludes the script's directory from sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from image_identity import receipt_image_id, require_image_id
 from production import Site
 from smoke import CheckError, require
 
@@ -90,9 +91,13 @@ def verify(directory, sha, archive, image):
     for name in FILES:
         owned(directory / name)
     m = json.loads((directory / "release.json").read_bytes())
-    require(m["repository"] == REPO and m["schemaVersion"] == 1 and m["sourceSha"] == sha and
+    require(m["repository"] == REPO and m["schemaVersion"] in (1, 2) and m["sourceSha"] == sha and
             m["platform"] == "linux/amd64" and m["imageReference"] == "subboost-fork:" + sha and
             m["imageId"] == image and m["archiveSha256"] == archive, "release identity mismatch")
+    if m["schemaVersion"] == 2:
+        for key in ("configDigest", "manifestDigest"):
+            valid("sha256:" + DIGEST, m[key])
+        require_image_id(image, m)
     valid(SHA, m["upstreamCommit"])
     valid(DIGEST, m["migrationTreeSha256"])
     valid(r"https://github\.com/krus1995/subboost/actions/runs/[0-9]+(?:/attempts/[0-9]+)?", m["workflowRunUrl"])
@@ -189,9 +194,10 @@ def prune_successes():
             verify(path, sha, r["archiveSha256"], r["imageId"])
             shutil.rmtree(path)
             # docker rmi without -f refuses a last tag of an image used by a container.
-            for tag in ("subboost-fork:" + sha, "subboost-previous:" + r["imageId"].removeprefix("sha256:")):
+            local_id = receipt_image_id(r)
+            for tag in ("subboost-fork:" + sha, "subboost-previous:" + local_id.removeprefix("sha256:")):
                 image = subprocess.run(["docker", "image", "inspect", "-f", "{{.Id}}", tag], capture_output=True)
-                if image.returncode == 0 and image.stdout.decode().strip() == r["imageId"]:
+                if image.returncode == 0 and image.stdout.decode().strip() == local_id:
                     subprocess.run(["docker", "image", "rm", tag], stdout=subprocess.DEVNULL, check=False)
         if position >= 10:
             path = Path(r["backup"])
@@ -264,14 +270,15 @@ def command(args):
                 from smoke import check_site, PUBLIC
                 check_site(PUBLIC, site.session)
                 actual = site.old_image
-                require(actual in (r.get("oldImageId"), r.get("imageId")), "unexpected active image")
+                target = receipt_image_id(r)
+                require(actual in (r.get("oldImageId"), target), "unexpected active image")
                 require(not any(n.startswith("subboost-candidate-") for n in
                                 subprocess.check_output(["docker", "ps", "--format", "{{.Names}}"]).decode().splitlines()),
                         "a candidate or reservation is still running")
-                if actual == r.get("imageId"):
+                if actual == target:
                     require(r.get("everActivated") or r.get("interruptedAt") == "ACTIVATING",
                             "candidate was never activated; inspect the deployment identity")
-                    result = update(sha, "ACTIVE", interruptedAt=None, recoveryRequired=False, reconciled=True)
+                    result = update(sha, "ACTIVE", productionImageId=actual, interruptedAt=None, recoveryRequired=False, reconciled=True)
                     dump(BASE / "current.json", result)
                 else:
                     site.verify_old_recovery(r)
@@ -321,7 +328,11 @@ def command(args):
         verify(final, sha, archive, image)
         r = record(sha)
         if r["phase"] == "ACTIVE" and main_sha() == sha:
-            Site(CONFIG, BASE).assert_active(image)
+            local_id = receipt_image_id(r)
+            Site(CONFIG, BASE).assert_active(local_id)
+            if "productionImageId" not in r:
+                r = update(sha, "ACTIVE", productionImageId=local_id)
+                dump(BASE / "current.json", r)
             print(json.dumps(r))
             return
         if main_sha() != sha:
