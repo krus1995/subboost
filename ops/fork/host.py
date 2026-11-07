@@ -70,6 +70,8 @@ def record(sha):
 def update(sha, phase, **data):
     r = record(sha)
     r.update(phase=phase, updated=datetime.datetime.now(datetime.timezone.utc).isoformat(), **data)
+    if phase == "ACTIVE":
+        r.setdefault("activated", r["updated"])
     dump(RECORDS / (sha + ".json"), r)
     return r
 
@@ -126,6 +128,8 @@ def running(sha):
 def check_stale(sha):
     r = record(sha)
     if r["phase"] not in TERMINAL and not running(sha):
+        if r["phase"] == "QUEUED":
+            return update(sha, "FAILED", retrySafe=True, error="worker stopped before maintenance")
         return update(sha, "FAILED", interruptedAt=r["phase"], error="worker stopped; inspect before retry")
     return r
 
@@ -169,8 +173,15 @@ def job(sha):
 def prune_successes():
     successes = sorted((json.loads(p.read_bytes()) for p in RECORDS.glob("*.json")
                         if re.fullmatch(SHA + r"\.json", p.name)),
-                       key=lambda r: r["updated"], reverse=True)
-    successes = [r for r in successes if r["phase"] == "ACTIVE"]
+                       key=lambda r: r.get("activated", r["updated"]), reverse=True)
+    for r in successes:
+        if r["phase"] == "SUPERSEDED" and not r.get("activated"):
+            sha = valid(SHA, r["sourceSha"])
+            archive = INCOMING / sha
+            if archive.is_dir():
+                verify(archive, sha, r["archiveSha256"], r["imageId"])
+                shutil.rmtree(archive)
+    successes = [r for r in successes if r["phase"] == "ACTIVE" or r.get("activated")]
     for position, r in enumerate(successes):
         sha = valid(SHA, r["sourceSha"])
         path = INCOMING / sha

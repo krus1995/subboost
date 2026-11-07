@@ -276,6 +276,15 @@ class Site:
             disk[dev] = amount
 
     def image(self, m, archive):
+        import tarfile
+        with tarfile.open(archive, mode="r|gz") as stream:
+            manifest = None
+            for member in stream:
+                if member.name.lstrip("./") == "manifest.json":
+                    require(manifest is None and member.isfile() and member.size < 1024**2, "invalid Docker save manifest")
+                    manifest = json.load(stream.extractfile(member))
+            require(isinstance(manifest, list) and len(manifest) == 1 and
+                    manifest[0].get("RepoTags") == [m["imageReference"]], "archive contains unexpected image references")
         with archive.open("rb") as src:
             load = subprocess.run(["docker", "load"], stdin=src, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         require(load.returncode == 0, "docker load failed")
