@@ -1,0 +1,10 @@
+{
+  "repository": "krus1995/subboost",
+  "branch": "main",
+  "upstreamRepository": "SubBoost/subboost",
+  "upstreamTag": "v2.11.0",
+  "upstreamCommit": "401534742802e2b1542783197ce66451bad82739",
+  "releaseChannel": "stable",
+  "productionUrl": "https://subboost.krus1987.kdns.fr",
+  "platform": "linux/amd64"
+}
