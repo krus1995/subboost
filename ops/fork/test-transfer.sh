@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ -n ${MSYSTEM:-} ]]; then
-  # Match the Linux runner's LF output with the native Windows jq executable.
-  jq() { command jq --binary "$@"; }
+  # Preserve the Linux host paths in JSON and use LF with native Windows jq.
+  jq() { MSYS2_ARG_CONV_EXCL='*' command jq --binary "$@"; }
   export -f jq
 fi
 
