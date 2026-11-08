@@ -43,20 +43,34 @@ function resolveConfig(options: GenerateOptions): UserConfig {
   return config;
 }
 
-function prepareNodes(input: ParsedNode[]): { nodes: ParsedNode[]; lines: string[] } {
-  const nodes = ensureUniqueProxyNames(input);
-  const lines = nodes.map((node, index) => {
+function renderNodes(nodes: ParsedNode[], displayNames: ReadonlyMap<string, string>): string[] {
+  return nodes.map((node, index) => {
     const type = /^[a-z0-9-]+$/i.test(node.type) ? node.type : '未知协议';
     const label = `第 ${index + 1} 个节点（${type}）`;
-    atom(node.name, `${label}的名称特殊字符`);
     if (node.name === 'DIRECT' || node.name === 'REJECT') fail(`${label}使用的保留名称`);
     if (node['dialer-proxy'] || node.type === 'relay') fail(`${label}的 dialer-proxy 链式代理`);
-    try { return renderLoonNode(node); } catch (error) {
+    try { return renderLoonNode({ ...node, name: displayNames.get(node.name) ?? node.name }); } catch (error) {
       const detail = error instanceof LoonConversionError ? `：${error.message}` : '';
       fail(`${label}的转换${detail}`);
     }
   });
-  return { nodes, lines };
+}
+
+function buildDisplayNames(nodes: ParsedNode[], groups: ProxyGroup[]): ReadonlyMap<string, string> {
+  const punctuation: Record<string, string> = { ',': '，', ';': '；', '#': '＃', '=': '＝', '[': '［', ']': '］', '"': '＂', '\\': '＼' };
+  const safe = (name: string) => !name.startsWith('//') && !Array.from(name).some((character) => Object.hasOwn(punctuation, character));
+  const used = new Set(['DIRECT', 'REJECT', ...groups.map((group) => group.name), ...nodes.map((node) => node.name).filter(safe)]);
+  const names = new Map<string, string>();
+  for (const node of nodes) {
+    if (safe(node.name)) continue;
+    const base = Array.from(node.name, (character) => Object.hasOwn(punctuation, character) ? punctuation[character] : character).join('').replace(/^\/\//, '／／');
+    let name = base;
+    let suffix = 2;
+    while (used.has(name)) name = `${base} (${suffix++})`;
+    used.add(name);
+    names.set(node.name, name);
+  }
+  return names;
 }
 
 function checkAdvanced(advanced: ProxyGroupAdvancedConfig | undefined, nodeNames: Set<string>, label: string): void {
@@ -91,7 +105,7 @@ function checkGroupCycles(groups: ProxyGroup[]): void {
   for (const group of groups) visit(group);
 }
 
-function renderGroups(groups: ProxyGroup[], nodeNames: Set<string>, config: UserConfig): string[] {
+function renderGroups(groups: ProxyGroup[], nodeNames: Set<string>, config: UserConfig, displayNames: ReadonlyMap<string, string>): string[] {
   checkGroupCycles(groups);
   return groups.map((group) => {
     const label = `代理组 ${loonLabel(group.name)}`;
@@ -99,7 +113,7 @@ function renderGroups(groups: ProxyGroup[], nodeNames: Set<string>, config: User
     const members = group.proxies ?? [];
     if (!members.length) fail(`${label}的空成员列表`);
     if (group.type === 'url-test' && members.some((name) => !nodeNames.has(name))) fail(`${label}的 url-test 非节点成员`);
-    const body = [group.type, ...members.map((name) => atom(name, `${label}的成员名称特殊字符`))];
+    const body = [group.type, ...members.map((name) => atom(displayNames.get(name) ?? name, `${label}的成员名称特殊字符`))];
     if (group.type === 'url-test') body.push(`url=${atom(group.url ?? config.testUrl, `${label}的 testUrl 字段`)}`, `interval=${group.interval ?? config.testInterval}`);
     return `${group.name} = ${body.join(', ')}`;
   });
@@ -149,27 +163,34 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
   const order = options.proxyGroupOrder ?? [];
   const rank = (name: string) => { const index = order.findIndex((key) => key === keys.get(name)); return index < 0 ? order.length : index; };
   groups.sort((a, b) => rank(a.name) - rank(b.name));
-  return { groups, literalTargetNames: targetOptions.literalTargetNames, lines: renderGroups(groups, nodeNames, config) };
+  return { groups, nodeNames, literalTargetNames: targetOptions.literalTargetNames };
 }
 
-async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, literalTargetNames: readonly string[], loadRuleList: (path: string) => Promise<string>): Promise<string[]> {
+async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, literalTargetNames: readonly string[], displayNames: ReadonlyMap<string, string>, loadRuleList: (path: string) => Promise<string>): Promise<string[]> {
   const entries = buildGeneratedRuleEntries({ enabledModules: config.enabledGroups, customRules: config.customRules, customProxyGroups: options.customProxyGroups, builtinRuleEdits: options.builtinRuleEdits, proxyGroupNameOverrides: options.proxyGroupNameOverrides, experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet, cnIpNoResolve: config.cnIpNoResolve, ruleOrder: config.ruleOrder, fallbackPolicyTarget, literalTargetNames });
   const lines: string[] = [];
   for (const entry of entries) {
     const [type, value] = entry.text.split(',');
-    if (type === 'MATCH') { lines.push(`FINAL,${entry.target}`); continue; }
-    if (type !== 'RULE-SET') { lines.push(inlineLoonRule(type, value, entry.target, entry.noResolve)); continue; }
+    const target = displayNames.get(entry.target) ?? entry.target;
+    if (type === 'MATCH') { lines.push(`FINAL,${target}`); continue; }
+    if (type !== 'RULE-SET') { lines.push(inlineLoonRule(type, value, target, entry.noResolve)); continue; }
     const definition = RULE_DEFINITIONS[value];
     const text = await loadRuleList(definition.path.replace(/\.mrs$/, '.list'));
-    for (const line of inlineLoonList(text, definition.behavior, entry.target, entry.noResolve)) lines.push(line);
+    for (const line of inlineLoonList(text, definition.behavior, target, entry.noResolve)) lines.push(line);
   }
   return lines;
 }
 
 export async function generateLoonConfig(options: GenerateOptions, loadRuleList: (path: string) => Promise<string>): Promise<string> {
   const config = resolveConfig(options);
-  const { nodes, lines: nodeLines } = prepareNodes(options.nodes);
-  const { groups, literalTargetNames, lines: groupLines } = prepareGroups(options, config, nodes);
-  const ruleLines = await renderRules(options, config, groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT', literalTargetNames, loadRuleList);
+  for (const [index, node] of options.nodes.entries()) {
+    if (typeof node.name === 'string' && /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(node.name)) fail(`第 ${index + 1} 个节点的名称控制字符`);
+  }
+  const nodes = ensureUniqueProxyNames(options.nodes);
+  const { groups, nodeNames, literalTargetNames } = prepareGroups(options, config, nodes);
+  const displayNames = buildDisplayNames(nodes, groups);
+  const nodeLines = renderNodes(nodes, displayNames);
+  const groupLines = renderGroups(groups, nodeNames, config, displayNames);
+  const ruleLines = await renderRules(options, config, groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT', literalTargetNames, displayNames, loadRuleList);
   return ['# SubBoost Loon', '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
 }
