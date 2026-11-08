@@ -13,9 +13,8 @@ last_verified_run_url: https://github.com/krus1995/subboost/actions/runs/4239701
 last_backup_receipt: null
 auto_deploy: disabled_until_host_rehearsal
 blocking_items:
-  - 待核对公网 SSH 地址、端口、主机公钥及 root 登录
-  - 待核对生产资源、已有订阅的解密及真实备份恢复
-next_action: verify_host_and_prepare_restore_drill
+  - 待完成生产包装器预检、已有订阅的解密及真实备份恢复
+next_action: verify_production_preflight_and_restore
 ```
 
 2026-11-08 首次接管，从 `origin/main` 创建 `codex/fork-delivery`。原工作区仅有用户提供的未跟踪手册，保留原件。实测首页、登录页 HTTP 200，公开 live 返回 ok，ready 返回 database ready。镜像、数据库卷、密钥配对及真实订阅的读取结果仍需在生产主机核对。
@@ -33,6 +32,10 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 `bash ops/fork/sync-upstream.sh v2.11.0` 返回 no-op，B 和 U 相同。上游 annotated tag 的对象为 `3d339f4214dea30b168202343d3168e539d5b9cc`。隔离测试 `bash ops/fork/test-upstream.sh` 已验证重复执行、接续远端任务分支、干净合并、冲突解决、B/U 祖先关系和拒绝移动过的 tag。
 
 ## 首次维护窗口
+
+已按控制台指纹核对 SSH 主机并登录。现场 app 的 Compose 标签指向正式文件，db 和 cron 的标签仍指向上游安装器启动容器时使用的临时文件。两项服务的配置哈希、镜像 ID 和网络均与正式 Compose 配置匹配。
+
+容器身份回归已通过 `bash ops/fork/check.sh host`。在隔离的 Docker 29.9.3 和 Compose 5.7.0 中，预检识别了安装器创建的 db 和 cron。用登记的 override 重建 app 后，三个服务的身份检查仍通过。随后修改 Compose 中的 db 环境变量，检查拒绝接管，三个容器仍在运行。
 
 第一次 main 构建在 `99c9ec5e4371c2132cf47d759501970c11dd5b68` 完成，生产开关关闭。下载其制品并核对压缩包摘要后，在隔离 Docker 29 导入时发现，构建端用配置摘要表示镜像 ID，目标端用 OCI 镜像清单摘要表示同一镜像。后续清单分别记录这两项，服务端同时核对它们的引用关系、容器镜像标签和实际运行 ID。首发使用修复后当前 main 的制品。[初次构建](https://github.com/krus1995/subboost/actions/runs/42398090368)
 
