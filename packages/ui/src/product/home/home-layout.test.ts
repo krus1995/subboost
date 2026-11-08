@@ -117,6 +117,8 @@ vi.mock("@subboost/ui/product/interactions", () => ({
   useProductInteractionAdapter: () => mocks.interactions,
 }));
 
+vi.mock("@subboost/ui/product/preview/loon-preview", () => ({ LoonPreview: () => React.createElement("div", null, "loon-preview") }));
+
 import { HomeLayout } from "./home-layout";
 
 function createSubscription(overrides: Record<string, unknown> = {}) {

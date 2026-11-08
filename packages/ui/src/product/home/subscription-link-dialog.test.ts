@@ -4,12 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@subboost/ui/store/user-store";
 
 const captures = vi.hoisted(() => ({
+  format: "clash",
   buttons: [] as any[],
   inputs: [] as any[],
   switches: [] as any[],
   dialogs: [] as any[],
 }));
 
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return { ...actual, useState: (initial: unknown) => initial === "clash" ? [captures.format, vi.fn()] : actual.useState(initial) };
+});
 vi.mock("lucide-react", () => ({
   Check: () => React.createElement("span", null, "check-icon"),
   Copy: () => React.createElement("span", null, "copy-icon"),
@@ -119,6 +124,7 @@ const baseProps = {
 describe("SubscriptionLinkDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    captures.format = "clash";
     captures.buttons = [];
     captures.inputs = [];
     captures.switches = [];
@@ -160,6 +166,17 @@ describe("SubscriptionLinkDialog", () => {
     expect(baseProps.handleCreateSubscription).toHaveBeenCalled();
   });
 
+  it("offers the native Loon URL and client import while keeping Clash as the default", () => {
+    captures.format = "loon";
+    const url = "https://example.test/subboost/api/subscriptions/secret/config.yaml?download=1";
+    const loonUrl = "https://example.test/subboost/api/subscriptions/secret/loon.conf?download=1";
+    const html = renderToStaticMarkup(React.createElement(SubscriptionLinkDialog, { ...baseProps, subscriptionUrl: url }));
+    expect(html).toContain("Loon 客户端导入使用");
+    expect(captures.inputs.some((input: { value?: string }) => input.value === loonUrl)).toBe(true);
+    expect(html).toContain(`loon://import?sub=${encodeURIComponent(loonUrl)}`);
+    expect(html).toContain("订阅链接二维码");
+    expect(baseProps.handleCopyUrl).not.toHaveBeenCalled();
+  });
   it("renders generated links and copy/finish actions", () => {
     const html = renderToStaticMarkup(
       React.createElement(SubscriptionLinkDialog, {

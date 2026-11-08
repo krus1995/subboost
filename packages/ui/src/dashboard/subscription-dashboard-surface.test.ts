@@ -108,6 +108,10 @@ vi.mock("@subboost/ui/dashboard/subscription-settings-dialog", () => ({
   },
 }));
 
+vi.mock("@subboost/ui/product/subscription/subscription-qr-code", () => ({
+  SubscriptionQrButton: (props: { url: string }) => { mocks.captures.qrUrl = props.url; return null; },
+}));
+
 import { SubscriptionDashboardSurface, type DashboardSurfaceAdapter } from "./subscription-dashboard-surface";
 import { buildAutoUpdateDisabledNotice } from "./dashboard-auto-update-warning";
 
@@ -444,6 +448,29 @@ describe("SubscriptionDashboardSurface", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:subboost-config");
   });
 
+  it("keeps Loon copy, QR, import, and download on the selected configuration URL", async () => {
+    const dom = stubDocumentActions();
+    const configUrl = "https://example.test/subboost/api/subscriptions/token-1/config.yaml?download=1";
+    const loonUrl = "https://example.test/subboost/api/subscriptions/token-1/loon.conf?download=1";
+    const blob = new Blob(["[General]\n[Proxy]\n"], { type: "text/plain" });
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, blob: async () => blob }));
+    vi.stubGlobal("fetch", fetchMock);
+    class TestURL extends URL {}
+    TestURL.createObjectURL = vi.fn(() => "blob:loon-config");
+    TestURL.revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", TestURL);
+    renderSurface(createAdapter(), { 0: [{ ...subscription, subscriptionUrl: configUrl }], 1: false, 12: "loon" });
+    expect(mocks.captures.buttons.find((props: { title?: string }) => props.title === "导入 Loon").children.props.href).toBe(`loon://import?sub=${encodeURIComponent(loonUrl)}`);
+    expect(mocks.captures.qrUrl).toBe(loonUrl);
+    await mocks.captures.buttons.find((props: { title?: string }) => props.title === "复制订阅链接").onClick();
+    await flushPromises();
+    expect(mocks.clipboardWriteText).toHaveBeenCalledWith(loonUrl);
+    await mocks.captures.buttons.find((props: { title?: string }) => props.title === "下载订阅配置").onClick();
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith(loonUrl);
+    expect(dom.anchor.download).toBe("Primary.conf");
+    expect(TestURL.createObjectURL).toHaveBeenCalledWith(blob);
+  });
   it("reports download failures without opening the subscription URL", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const dom = stubDocumentActions();

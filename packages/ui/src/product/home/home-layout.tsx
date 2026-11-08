@@ -1,5 +1,7 @@
 "use client";
 
+import { LoonPreview } from "@subboost/ui/product/preview/loon-preview";
+
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -112,6 +114,7 @@ export function HomeLayout({
   onTemplateUploadOpen,
 }: Props) {
   const [configTab, setConfigTab] = React.useState<"quick" | "advanced">(editSubscriptionId ? "advanced" : "quick");
+  const [previewTab, setPreviewTab] = React.useState("visual");
   const interactions = useProductInteractionAdapter();
 
   React.useEffect(() => {
@@ -250,7 +253,7 @@ export function HomeLayout({
             showAiColumn ? "lg:col-span-4 xl:col-span-4" : "lg:col-span-6 xl:col-span-6"
           } flex flex-col gap-3 min-h-0 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}
         >
-          <Tabs defaultValue="visual" className={`w-full flex flex-col lg:flex-1 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}>
+          <Tabs value={previewTab} onValueChange={setPreviewTab} className={`w-full flex flex-col lg:flex-1 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}>
             <Card className={`w-full flex flex-col lg:flex-1 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}>
               <CardHeader className="pb-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -259,6 +262,7 @@ export function HomeLayout({
                     预览
                   </CardTitle>
                   <TabsList className="h-8">
+                    <TabsTrigger value="loon" className="text-xs px-3 h-6">Loon</TabsTrigger>
                     <TabsTrigger value="yaml" className="text-xs px-3 h-6">
                       YAML
                     </TabsTrigger>
@@ -311,6 +315,9 @@ export function HomeLayout({
                     </div>
                   </div>
                 </TabsContent>
+                <TabsContent forceMount value="loon" className="mt-0 data-[state=inactive]:hidden lg:absolute lg:inset-0">
+                  <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl border border-ink/10 overflow-hidden"><LoonPreview /></div>
+                </TabsContent>
                 <TabsContent value="visual" className="mt-0 data-[state=inactive]:hidden lg:absolute lg:inset-0">
                   <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl bg-ink/5 border border-ink/10 overflow-hidden">
                     <VisualGraph />
@@ -318,14 +325,14 @@ export function HomeLayout({
                 </TabsContent>
               </CardContent>
               <CardFooter className="justify-center gap-2 flex-shrink-0 pt-3 flex-row flex-wrap">
-                <Button
+                {previewTab !== "loon" && <Button
                   className="h-10"
                   disabled={!generatedYaml || Boolean(generatedYamlError)}
                   onClick={() => handleDownload(configTab)}
                 >
                   <Download className="mr-2 h-4 w-4" />
                   下载配置
-                </Button>
+                </Button>}
                 <Button
                   className="h-10"
                   variant="outline"

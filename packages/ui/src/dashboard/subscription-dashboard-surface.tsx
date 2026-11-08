@@ -1,6 +1,8 @@
 "use client";
 import { SubscriptionQrButton } from "@subboost/ui/product/subscription/subscription-qr-code";
 
+import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
+import { subscriptionFormatUrl, loonImportUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -186,10 +188,10 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const downloadSubscription = async (subscription: Subscription) => {
-    const filename = buildYamlDownloadFilename(subscription.name);
+  const downloadSubscription = async (subscription: Subscription, format: ConfigFormat = "clash") => {
+    const filename = buildYamlDownloadFilename(subscription.name).replace(/\.yaml$/, format === "loon" ? ".conf" : ".yaml");
     try {
-      const response = await fetch(adapter.resolveDownloadUrl?.(subscription) ?? subscription.subscriptionUrl);
+      const response = await fetch(subscriptionFormatUrl(adapter.resolveDownloadUrl?.(subscription) ?? subscription.subscriptionUrl, format));
       if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
@@ -504,10 +506,13 @@ function SubscriptionRow({
   editHref: string;
   onCopy: (subscriptionUrl: string, id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onDownload: (sub: Subscription) => Promise<void>;
+  onDownload: (sub: Subscription, format?: ConfigFormat) => Promise<void>;
   onRefresh: (id: string) => Promise<void>;
   onSettings: (sub: Subscription) => void;
 }) {
+  const [format, setFormat] = React.useState<ConfigFormat>("clash");
+  const selectedUrl = subscriptionFormatUrl(sub.subscriptionUrl, format);
+  const copyId = format === "clash" ? sub.id : `${sub.id}:loon`;
   const quotaWarning = buildNodeQuotaWarning(sub.autoUpdateState);
   const quotaDisabled = isNodeQuotaAutoUpdateDisabled(sub.autoUpdateState);
   return (
@@ -552,6 +557,8 @@ function SubscriptionRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+        <ConfigFormatSelect value={format} onChange={setFormat} />
+        {format === "loon" && <Button asChild variant="ghost" size="sm" title="导入 Loon"><a href={loonImportUrl(selectedUrl)}>导入 Loon</a></Button>}
         <Button asChild variant="ghost" size="sm" className="gap-0 sm:gap-2" title="回到首页编辑该订阅（更新后链接不变）">
           <Link href={editHref}>
             <Pencil className="h-4 w-4" />
@@ -582,11 +589,11 @@ function SubscriptionRow({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => void onCopy(sub.subscriptionUrl, sub.id)}
+          onClick={() => void onCopy(selectedUrl, copyId)}
           className="gap-0 sm:gap-2"
           title="复制订阅链接"
         >
-          {copiedId === sub.id ? (
+          {copiedId === copyId ? (
             <>
               <Check className="h-4 w-4 text-green-500" />
               <span className="hidden sm:inline text-green-500">已复制</span>
@@ -598,11 +605,11 @@ function SubscriptionRow({
             </>
           )}
         </Button>
-        <SubscriptionQrButton url={sub.subscriptionUrl} />
+        <SubscriptionQrButton url={selectedUrl} />
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => void onDownload(sub)}
+          onClick={() => void onDownload(sub, format)}
           className="gap-0 sm:gap-2"
           title="下载订阅配置"
         >
