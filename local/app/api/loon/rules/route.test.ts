@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadLoonRuleList } from "@local/lib/loon-rule-list";
 import { GET } from "./route";
 
 afterEach(() => {
@@ -15,6 +16,7 @@ describe("Loon rule lists", () => {
     for (const path of ["", "?path=https://example.com", "?path=geosite/../geo/cn.list"]) {
       expect((await get(path)).status).toBe(404);
     }
+    await expect(loadLoonRuleList("custom/geosite.list")).rejects.toThrow("内置规则");
     expect(fetch).not.toHaveBeenCalled();
   });
 

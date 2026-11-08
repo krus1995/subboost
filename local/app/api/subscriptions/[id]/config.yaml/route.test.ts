@@ -74,6 +74,21 @@ describe("local subscription YAML route", () => {
     expect(mocks.generateSubscriptionProfile).not.toHaveBeenCalled();
   });
 
+  it("rejects an exhausted token bucket before rendering", async () => {
+    mocks.consumeLocalRateLimit.mockReturnValueOnce({ allowed: true })
+      .mockReturnValueOnce({ allowed: false, retryAfterSeconds: 12 });
+    const response = await GET(new Request("https://local.test/config.yaml"), { params: Promise.resolve({ id: "demo" }) });
+    expect(response.status).toBe(429);
+    expect(mocks.generateSubscriptionProfile).not.toHaveBeenCalled();
+  });
+
+  it("keeps the YAML not-found response for unavailable tokens", async () => {
+    mocks.generateSubscriptionProfile.mockResolvedValueOnce(null);
+    const response = await GET(new Request("https://local.test/config.yaml"), { params: Promise.resolve({ id: "demo" }) });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("skips the client bucket when no trustworthy client key is available", async () => {
     mocks.getTrustedClientRateLimitKey.mockReturnValueOnce(null);
 
