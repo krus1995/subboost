@@ -190,9 +190,10 @@ def compose_image_selection(root):
 
     def rejects_before_stop():
         before = site.env_file.read_bytes()
+        entries = set(site.root.iterdir())
         with patch.object(site, "cid", side_effect=AssertionError("release passed image preflight")):
             checked_error(lambda: site.deploy(release, root, None, None))
-        assert site.env_file.read_bytes() == before and set(site.root.iterdir()) == {compose, site.env_file}
+        assert site.env_file.read_bytes() == before and set(site.root.iterdir()) == entries
 
     setup()
     site.set_image(new, preview=True)
@@ -214,9 +215,15 @@ def compose_image_selection(root):
         rejects_before_stop()
     setup(new)
     rejects_before_stop()
-    setup(other={"image": "cron:original", "env_file": [".env"]})
+    (site.root / "linked.env").symlink_to(site.env_file)
+    for path in (".env", "linked.env"):
+        setup(other={"image": "cron:original", "env_file": [path]})
+        rejects_before_stop()
+    (site.root / "cron.env").write_text("CRON_SETTING=value\n")
+    setup(other={"image": "cron:original", "env_file": ["cron.env"]})
     site.set_image(new, preview=True)
-    checked_error(lambda: site.set_image(new))
+    site.set_image(new)
+    assert json.loads(site.dc("config", "--format", "json"))["services"]["cron"]["environment"] == {"CRON_SETTING": "value"}
     print("Compose image selection: staged and active models checked; invalid releases rejected before stopping writers.")
 
 

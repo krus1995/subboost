@@ -35,7 +35,9 @@ rg -l 'subboost|ghcr.io/subboost' /etc/cron.d /etc/crontab /var/spool/cron/cront
 
 首次接管还要核对最终生效的 `services.app.image`。正式 `.env` 只写一条 `SUBBOOST_IMAGE` 赋值，部署进程的环境中应清除同名变量。旧安装器可能让 app 优先读取 `SUBBOOST_CANDIDATE_IMAGE`。遇到这种配置，先保存原 Compose 文件，再让 app 的镜像字段读取 `${SUBBOOST_IMAGE:?set SUBBOOST_IMAGE}`。在 root 受限进程内比较修改前后的渲染结果，核对仍选中预期镜像，其他字段一致。然后重新运行预检和首次恢复演练。
 
-预检用临时的 0600 文件替代 Compose 插值所用的 `--env-file`，检查渲染结果是否只改变 app 的镜像。服务自己声明的 `env_file` 仍按原路径读取。激活时包装器原子替换正式 `.env`，再用正式路径渲染并核对完整模型，通过后才重建 app。如果这一步报告模型不一致，正式 `.env` 已写入目标引用。按下文 `ACTIVATING` 阶段的步骤核对现场并向前修复。
+预检用临时的 0600 文件替代 Compose 插值所用的 `--env-file`，检查渲染结果是否只改变 app 的镜像。服务自己声明的 `env_file` 仍按原路径读取。若有服务直接或通过符号链接读取正式插值文件，临时副本无法反映替换后传入该服务的变量。预检会在停写前报告服务名。请为该服务单独配置只包含所需变量的环境文件，再运行预检。
+
+激活时包装器原子替换正式 `.env`，再用正式路径渲染并核对完整模型，通过后才重建 app。如果这一步报告模型不一致，正式 `.env` 已写入目标引用。按下文 `ACTIVATING` 阶段的步骤核对现场并向前修复。
 
 ## 安装与配置
 

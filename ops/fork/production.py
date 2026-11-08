@@ -503,6 +503,12 @@ class Site:
             try:
                 handle.write(b"".join(lines))
                 handle.flush()
+                unresolved = json.loads(self.dc("config", "--no-env-resolution", "--format", "json", env_file=staged))
+                for name, service in unresolved["services"].items():
+                    for entry in service.get("env_file", []):
+                        path = entry["path"] if isinstance(entry, dict) else entry
+                        require((self.root / path).resolve() != self.env_file,
+                                "service " + name + " must use an env_file separate from the project env file")
                 model = json.loads(self.dc("config", "--format", "json", env_file=staged))
                 require(model["services"]["app"]["image"] == image, "SUBBOOST_IMAGE did not select the target app image")
                 require(model == expected, "changing SUBBOOST_IMAGE affected other Compose settings")
