@@ -158,3 +158,76 @@ describe('Loon stored configuration compatibility', () => {
     expect(text).not.toContain('old-node');
   });
 });
+
+describe('Loon policy and saved settings', () => {
+  it('routes FINAL to a real node after an informational first node when groups are disabled', async () => {
+    const text = await generateLoonConfig({ nodes: [{ ...nodes[0], name: '剩余流量：100GB' }, nodes[1]], userConfig: { enabledGroups: [] } }, load);
+    expect(text).toContain('剩余流量：100GB =');
+    expect(text).toContain('FINAL,日本 B');
+  });
+
+  it('matches the default DIRECT fallback when all groups are disabled and there are only information nodes', async () => {
+    const text = await generateLoonConfig({ nodes: [{ ...nodes[0], name: '剩余流量：100GB' }], userConfig: { enabledGroups: [] } }, load);
+    expect(text).toContain('FINAL,DIRECT');
+  });
+
+  it('does not turn an enabled auto group containing only information nodes into DIRECT', async () => {
+    await expect(generateLoonConfig({ ...base, nodes: [{ ...nodes[0], name: '剩余流量：100GB' }] }, load)).rejects.toThrow('空成员列表');
+  });
+
+  it('preserves reject-first when it is the first policy and the FINAL fallback', async () => {
+    const text = await generateLoonConfig({ nodes, userConfig: { enabledGroups: ['ad'] } }, load);
+    expect(text).toContain('🛑 广告拦截 = select, REJECT, DIRECT');
+    expect(text).toContain('FINAL,🛑 广告拦截');
+  });
+
+  it('allows disabled listeners but blocks an enabled listener and chain', async () => {
+    const binding = { id: 'bind', target: { kind: 'module' as const, id: 'select' }, port: 1234, enabled: false };
+    expect(await generateLoonConfig({ ...base, groupListeners: [binding] }, load)).toContain('FINAL,');
+    await expect(generateLoonConfig({ ...base, groupListeners: [{ ...binding, enabled: true }] }, load)).rejects.toThrow('监听端口');
+    await expect(generateLoonConfig({ ...base, dialerProxyGroups: [{ id: 'chain', name: '链', relayNodes: ['香港 A'], targetNodes: ['日本 B'], type: 'select' }] }, load)).rejects.toThrow('链式代理组');
+  });
+
+  it('keeps custom auto-group test URL, interval and a reordered default policy', async () => {
+    const text = await generateLoonConfig({ ...base, proxyGroupAdvanced: { auto: { testUrl: 'https://example.com/check' } }, userConfig: { ...base.userConfig, testInterval: 900 }, proxyGroupOrder: ['module:final', 'module:auto'] }, load);
+    expect(text).toContain('url=https://example.com/check, interval=900');
+    expect(text.indexOf('🐟 漏网之鱼 =')).toBeLessThan(text.indexOf('⚡ 自动选择 ='));
+  });
+
+  it('rejects an invalid custom test URL without returning its value', async () => {
+    await expect(generateLoonConfig({ ...base, proxyGroupAdvanced: { auto: { testUrl: 'https://secret.example/?a=b' } } }, load)).rejects.toThrow('testUrl');
+  });
+
+  it('applies active built-in target edits and ignores disabled or empty edits', async () => {
+    const text = await generateLoonConfig({ nodes, userConfig: { enabledGroups: ['select', 'cn'], experimentalCnUseCnRuleSet: false }, builtinRuleEdits: {
+      'module:cn:geolocation-cn': { target: '日本 B' },
+      'module:cn:cn-ip': { enabled: false, target: 'missing' },
+      'module:select:missing': { target: 'missing' },
+      'module:cn:missing': {},
+    } }, load);
+    expect(text).toContain('DOMAIN,exact.example,日本 B');
+    expect(text).not.toContain('IP-CIDR,');
+    await expect(generateLoonConfig({ nodes, userConfig: { enabledGroups: ['cn'] }, builtinRuleEdits: { 'module:cn:cn-ip': { target: { kind: 'module', id: 'select' } } } }, load)).rejects.toThrow('缺失内置代理组');
+  });
+
+  it('rejects REJECT as a node name and NaN as testInterval', async () => {
+    await expect(generateLoonConfig({ ...base, nodes: [{ ...nodes[0], name: 'REJECT' }] }, load)).rejects.toThrow('保留名称');
+    await expect(generateLoonConfig({ ...base, userConfig: { testInterval: NaN } }, load)).rejects.toThrow('testInterval');
+  });
+});
+
+it('identifies an unsupported second node and keeps its safe node diagnostic', async () => {
+  await expect(generateLoonConfig({ ...base, nodes: [nodes[0], { ...nodes[1], type: 'ssh' }] }, load)).rejects.toThrow('第 2 个节点（ssh）');
+  await expect(generateLoonConfig({ ...base, nodes: [nodes[0], { ...nodes[1], type: 'ssh' }] }, load)).rejects.toThrow('协议不受支持');
+});
+
+it('applies an unchanged active built-in edit with no target', async () => {
+  const text = await generateLoonConfig({ nodes, userConfig: { enabledGroups: ['cn'], experimentalCnUseCnRuleSet: false }, builtinRuleEdits: { 'module:cn:cn-ip': {} } }, load);
+  expect(text).toContain('IP-CIDR,192.0.2.0/24,🔒 国内服务,no-resolve');
+});
+
+it('hides unsafe unknown protocol labels in the node conversion error', async () => {
+  const node = { ...nodes[0], type: 'unsupported/private-secret' } as ParsedNode;
+  await expect(generateLoonConfig({ ...base, nodes: [node] }, load)).rejects.toThrow('未知协议');
+  await expect(generateLoonConfig({ ...base, nodes: [node] }, load)).rejects.not.toThrow('private-secret');
+});

@@ -47,3 +47,10 @@ describe('Loon rule boundaries', () => {
     expect(() => [...inlineLoonList('# only comment', 'domain', 'DIRECT', false)]).toThrow('空');
   });
 });
+
+it('keeps labels useful while hiding URLs and multiline content', async () => {
+  const { loonLabel } = await import('./loon-error');
+  expect(loonLabel('普通代理组')).toBe('普通代理组');
+  expect(loonLabel('https://private-secret.example')).toBe('未命名项目');
+  expect(loonLabel('private\nsecret')).toBe('未命名项目');
+});
