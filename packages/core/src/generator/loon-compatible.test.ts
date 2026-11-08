@@ -37,17 +37,16 @@ describe('Loon compatible node export', () => {
   it.each([
     ['safari', true, 'safari-ios-26'], ['ios', false, 'safari-ios18'], ['chrome', true, 'chrome147'],
     [undefined, true, 'chrome147'], ['chrome147', true, 'chrome147'], ['safari-ios-26', true, 'safari-ios-26'],
-    [undefined, false, undefined],
+    [undefined, false, 'safari-ios18'], ['safari-ios18', true, 'safari-ios18'], ['safari-ios18', false, 'safari-ios18'], ['chrome', false, 'chrome'],
   ] as const)('maps Reality %s with hybrid key exchange %s to %s', async (fingerprint, hybrid, expected) => {
     const node = { ...supported, sni: 'example.invalid', 'client-fingerprint': fingerprint, 'reality-opts': { 'public-key': 'A'.repeat(43), 'support-x25519mlkem768': hybrid } };
     const result = await generateLoonConfig({ ...options, nodes: [node] }, load, compatible);
     expect(result).toContain('public-key="' + 'A'.repeat(43) + '"');
-    if (expected) expect(result).toMatch(new RegExp('^Synthetic TCP = VLESS,.*tls-profile=' + expected, 'm'));
-    else expect(result).not.toContain('tls-profile=');
+    expect(result).toMatch(new RegExp('^Synthetic TCP = VLESS,.*tls-profile=' + expected, 'm'));
     expect(node['reality-opts']['support-x25519mlkem768']).toBe(hybrid);
   });
 
-  it.each([['safari', 'true'], ['firefox', true], ['safari-ios18', true]] as const)('skips an unrepresentable Reality request %s %s', async (fingerprint, hybrid) => {
+  it.each([['safari', 'true'], ['firefox', true], ['safari-ios-26', false], ['chrome147', false], ['global', false], ['default', false]] as const)('skips an unrepresentable Reality request %s %s', async (fingerprint, hybrid) => {
     const node: ParsedNode = { ...supported, name: 'Hybrid', sni: 'example.invalid', 'client-fingerprint': fingerprint, 'reality-opts': { 'public-key': 'A'.repeat(43), 'support-x25519mlkem768': hybrid } } as ParsedNode;
     const result = await generateLoonConfig({ ...options, nodes: [node, supported] }, load, compatible);
     expect(result).toContain('included=1 skipped=1');

@@ -262,9 +262,11 @@ function compatibleTlsNode(node: ParsedNode): ParsedNode {
     if (typeof hybrid !== 'boolean') return node;
     let profile = fingerprint;
     if (safari) profile = hybrid ? 'safari-ios-26' : 'safari-ios18';
-    else if (hybrid) {
-      if (fingerprint === undefined || fingerprint === 'chrome') profile = 'chrome147';
-      else if (fingerprint !== 'chrome147' && fingerprint !== 'safari-ios-26') return node;
+    else if (hybrid && (fingerprint === undefined || fingerprint === 'chrome')) profile = 'chrome147';
+    else if (!hybrid) {
+      // Mihomo removes MLKEM from ClientHello. Loon exposes only complete presets.
+      if (fingerprint === undefined) profile = 'safari-ios18';
+      else if (fingerprint !== 'safari-ios18' && fingerprint !== 'chrome') return node;
     }
     return { ...node, 'client-fingerprint': profile, 'reality-opts': settings } as ParsedNode;
   }
