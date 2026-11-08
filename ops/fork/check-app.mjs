@@ -90,6 +90,16 @@ if (process.argv[2] === "upgraded") {
     assert.deepEqual(clashNodeOnly["proxy-groups"] ?? [], [], "explicitly disabled groups stay disabled in Clash");
     assert.deepEqual(clashNodeOnly.proxies.map((node) => node.name), ["Asia", "Europe"]);
     assert.equal(clashNodeOnly.rules.at(-1), "MATCH,Asia", "both formats use the first node as the final target");
+    const taggedName = "[Airport] Tokyo, 01";
+    const taggedNode = { name: taggedName, type: "vless", server: "node.example", port: 443, uuid: "52396e06-041a-4cc2-be5c-8525eb457809", tls: true };
+    await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({ nodes: [taggedNode] }) });
+    const tagged = await fetch(url + profilePath + "/loon.conf");
+    assert.equal(tagged.status, 200, "check Loon configuration with a tagged VLESS node");
+    const taggedText = await tagged.text();
+    const displayName = /^(.+) = VLESS,/m.exec(taggedText)?.[1];
+    assert.ok(displayName && displayName !== taggedName, "Loon node has an export-safe name");
+    assert.ok(taggedText.split("\n").includes("FINAL," + displayName));
+    assert.equal((await readClashProfile()).proxies[0].name, taggedName);
     await json(itemPath + "/reset-link", { method: "POST", headers: { cookie, "if-match": `"${sample.token}"` } });
     for (const file of ["loon.conf", "config.yaml"]) {
       assert.equal((await fetch(url + profilePath + "/" + file)).status, 404, "revoked " + file);

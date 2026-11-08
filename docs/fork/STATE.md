@@ -90,3 +90,7 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 使用 8 个合成节点（Shadowsocks、VMess、VLESS、Trojan、Hysteria2、HTTP、HTTPS 和 SOCKS5）导出同一份标准配置，逐项核对 14 个策略组的名称、顺序与成员。按 Clash 文件引用的规则集展开后，共 166,308 行规则，包括兜底，逐行匹配 Loon 输出。规则数据固定在 [MetaCubeX 提交 26cf4440](https://github.com/MetaCubeX/meta-rules-dat/tree/26cf4440307754d2c2f65cf2f0457c0ae814900f/geo)。[Mihomo v1.19.33](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33) 将 22 份原始文本和对应 MRS 文件分别转换为内核识别的规则后，两边内容逐项相同。标准和空组两份 Clash 导出均通过该内核的 `-t` 检查。
 
 对照复现并修复了已保存订阅关闭全部组后 Clash 恢复默认组、字面节点名与策略组引用冲突、缺省 VMess alterId 导致 Mihomo 拒收配置的问题。Loon 导出也会写明支持协议的 UDP 默认值，遇到直接指向订阅信息节点的规则会提示调整。升级库的 HTTP 验收会读取两条真实订阅地址，核对节点及策略、组改名、空组兜底和 token 撤销。独立审查者 parity_review 从 `f350ffe32a964a68ae73cc4b459af7aaa890e91e` 复核代码候选 `f4998f3f1ae7a4b3201675821b5def2aaedb9c81` 和 HTTP 验收增量 `01d26d663269532b4902f181ad17aa6e79982513`，无阻断发现。完整检查归档于 [PR #8](https://github.com/krus1995/subboost/pull/8)。
+
+### Loon 节点名称兼容性
+
+验收条件：带方括号、逗号等标点的 VLESS 节点从已保存订阅的 Loon 地址可读取；节点声明、组成员、规则和兜底引用同一名称。导出后的名称不会与其他节点或组混淆。原订阅和 Clash 导出的节点名称保留原样。
