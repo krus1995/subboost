@@ -94,3 +94,5 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 ### Loon 节点名称兼容性
 
 验收条件：带方括号、逗号等标点的 VLESS 节点从已保存订阅的 Loon 地址可读取；节点声明、组成员、规则和兜底引用同一名称。导出后的名称不会与其他节点或组混淆。原订阅和 Clash 导出的节点名称保留原样。
+
+旧版运行 `npm run test:unit -- loon-names.test.ts` 时，8 项中有 4 项失败，复现了首个 VLESS 节点的名称报错。修复后 5 个相关测试文件共 170 项通过，两处改动的 TypeScript 文件通过 ESLint，`bash ops/fork/check.sh rules` 通过。独立审查者 name_review_plan 核对基线 `96ec3f4c0fe90dca0dc380d8e700bb2add1bc29a` 与代码候选 `2139371308ac3a3c70a66073f02bf53bad4b1635`，未发现阻断问题。PR 的镜像检查会保存含标点的 VLESS 测试订阅，读取与「检查 Loon 配置」相同的地址，核对状态码、兜底规则及 Clash 原名。Loon 真机导入待验。
