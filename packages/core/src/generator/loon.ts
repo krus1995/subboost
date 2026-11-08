@@ -76,7 +76,7 @@ function buildDisplayNames(nodes: ParsedNode[], groups: ProxyGroup[]): ReadonlyM
 function checkAdvanced(advanced: ProxyGroupAdvancedConfig | undefined, nodeNames: Set<string>, label: string): void {
   if (!advanced) return;
   const prefix = `代理组 ${loonLabel(label)} 的`;
-  if (advanced.strategy) fail(`${prefix} strategy 负载均衡策略`);
+  if (advanced.strategy && advanced.strategy !== 'round-robin') fail(`${prefix} strategy 负载均衡策略`);
   for (const field of ['includeRegex', 'excludeRegex'] as const) {
     if (!advanced[field]) continue;
     try { new RegExp(advanced[field], 'i'); } catch { fail(`${prefix} ${field} 筛选正则`); }
@@ -107,14 +107,18 @@ function checkGroupCycles(groups: ProxyGroup[]): void {
 
 function renderGroups(groups: ProxyGroup[], nodeNames: Set<string>, config: UserConfig, displayNames: ReadonlyMap<string, string>): string[] {
   checkGroupCycles(groups);
+  const available = new Set(['DIRECT', 'REJECT', ...nodeNames, ...groups.map((group) => group.name)]);
   return groups.map((group) => {
     const label = `代理组 ${loonLabel(group.name)}`;
-    if (group.type !== 'select' && group.type !== 'url-test') fail(`${label}的类型 ${loonLabel(group.type)}`);
+    if (!['select', 'url-test', 'fallback', 'load-balance'].includes(group.type)) fail(`${label}的类型 ${loonLabel(group.type)}`);
+    if (group.type === 'load-balance' && group.strategy !== 'round-robin') fail(`${label}的 strategy 负载均衡策略`);
     const members = group.proxies ?? [];
     if (!members.length) fail(`${label}的空成员列表`);
-    if (group.type === 'url-test' && members.some((name) => !nodeNames.has(name))) fail(`${label}的 url-test 非节点成员`);
+    if (members.some((name) => !available.has(name))) fail(`${label}引用的缺失节点或代理组`);
+    if (group.type !== 'select' && members.some((name) => name === 'DIRECT' || name === 'REJECT')) fail(`${label}的测速组直接内置策略成员`);
     const body = [group.type, ...members.map((name) => atom(displayNames.get(name) ?? name, `${label}的成员名称特殊字符`))];
-    if (group.type === 'url-test') body.push(`url=${atom(group.url ?? config.testUrl, `${label}的 testUrl 字段`)}`, `interval=${group.interval ?? config.testInterval}`);
+    if (group.type !== 'select') body.push(`url=${atom(group.url ?? config.testUrl, `${label}的 testUrl 字段`)}`, `interval=${group.interval ?? config.testInterval}`);
+    if (group.type === 'load-balance') body.push('algorithm=Round-Robin');
     return `${group.name} = ${body.join(', ')}`;
   });
 }
@@ -168,8 +172,10 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
 
 async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, literalTargetNames: readonly string[], displayNames: ReadonlyMap<string, string>, loadRuleList: (path: string) => Promise<string>): Promise<string[]> {
   const entries = buildGeneratedRuleEntries({ enabledModules: config.enabledGroups, customRules: config.customRules, customProxyGroups: options.customProxyGroups, builtinRuleEdits: options.builtinRuleEdits, proxyGroupNameOverrides: options.proxyGroupNameOverrides, experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet, cnIpNoResolve: config.cnIpNoResolve, ruleOrder: config.ruleOrder, fallbackPolicyTarget, literalTargetNames });
+  const available = new Set(['DIRECT', 'REJECT', ...literalTargetNames]);
   const lines: string[] = [];
   for (const entry of entries) {
+    if (!available.has(entry.target)) fail('规则引用的缺失节点或代理组');
     const [type, value] = entry.text.split(',');
     const target = displayNames.get(entry.target) ?? entry.target;
     if (type === 'MATCH') { lines.push(`FINAL,${target}`); continue; }
@@ -181,16 +187,157 @@ async function renderRules(options: GenerateOptions, config: UserConfig, fallbac
   return lines;
 }
 
-export async function generateLoonConfig(options: GenerateOptions, loadRuleList: (path: string) => Promise<string>): Promise<string> {
+function proxyDefaultResolver(groups: ProxyGroup[], nodeNames: Set<string>): (name: string) => boolean {
+  const byName = new Map(groups.map((group) => [group.name, group]));
+  const memo = new Map<string, boolean>();
+  const resolve = (name: string): boolean => {
+    if (nodeNames.has(name)) return !isSubscriptionInfoNodeName(name);
+    const cached = memo.get(name);
+    if (cached !== undefined) return cached;
+    const first = byName.get(name)?.proxies?.[0];
+    const result = first !== undefined && resolve(first);
+    memo.set(name, result);
+    return result;
+  };
+  return resolve;
+}
+
+function pruneCompatibleGroups(groups: ProxyGroup[], originalNodeNames: Set<string>, nodeNames: Set<string>, report: string[]): ProxyGroup[] {
+  checkGroupCycles(groups);
+  const byName = new Map(groups.map((group) => [group.name, group]));
+  const originalDefault = proxyDefaultResolver(groups, originalNodeNames);
+  const originalProxy = new Map<string, boolean>();
+  const hadProxy = (name: string): boolean => {
+    if (originalNodeNames.has(name)) return !isSubscriptionInfoNodeName(name);
+    const cached = originalProxy.get(name);
+    if (cached !== undefined) return cached;
+    const result = byName.get(name)?.proxies?.some(hadProxy) ?? false;
+    originalProxy.set(name, result);
+    return result;
+  };
+  const memo = new Map<string, { group: ProxyGroup; hasProxy: boolean; defaultProxy: boolean } | null>();
+  const memberDefault = (name: string): boolean => nodeNames.has(name) ? !isSubscriptionInfoNodeName(name) : prune(name)?.defaultProxy ?? false;
+  const prune = (name: string): { group: ProxyGroup; hasProxy: boolean; defaultProxy: boolean } | null => {
+    if (memo.has(name)) return memo.get(name) ?? null;
+    const group = byName.get(name);
+    if (!group) return null;
+    let hasProxy = false;
+    const members = (group.proxies ?? []).filter((member) => {
+      if (nodeNames.has(member)) {
+        hasProxy ||= !isSubscriptionInfoNodeName(member);
+        return true;
+      }
+      if (originalNodeNames.has(member)) return false;
+      if (member === 'DIRECT' || member === 'REJECT') return true;
+      const child = prune(member);
+      hasProxy ||= child?.hasProxy ?? false;
+      return child !== null;
+    });
+    if (members.length && hasProxy && originalDefault(name) && !memberDefault(members[0])) {
+      const preferred = members.findIndex(memberDefault);
+      if (preferred < 0) fail('兼容导出无法保留代理组的默认代理路径');
+      members.unshift(...members.splice(preferred, 1));
+    }
+    const result = !members.length || (hadProxy(name) && !hasProxy) ? null : { group: { ...group, proxies: members }, hasProxy, defaultProxy: memberDefault(members[0]) };
+    memo.set(name, result);
+    return result;
+  };
+  const retained = groups.flatMap((group, index) => {
+    const result = prune(group.name);
+    if (result) return [result.group];
+    report.push(`# SUBBOOST-LOON-GROUP-SKIP v1 index=${index + 1} reason=no-compatible-outbound`);
+    return [];
+  });
+  report.push(`# SUBBOOST-LOON-GROUPS v1 skipped=${groups.length - retained.length}`);
+  return retained;
+}
+
+/** Adapt generic ClientHello profiles to the presets offered by Loon. */
+function compatibleTlsNode(node: ParsedNode): ParsedNode {
+  const fingerprint = node['client-fingerprint'];
+  const safari = fingerprint === 'safari' || fingerprint === 'ios';
+  const reality = node['reality-opts'];
+  if (reality && typeof reality === 'object' && !Array.isArray(reality) && 'support-x25519mlkem768' in reality) {
+    const { 'support-x25519mlkem768': hybrid, ...settings } = reality;
+    if (typeof hybrid !== 'boolean') return node;
+    let profile = fingerprint;
+    if (safari) profile = hybrid ? 'safari-ios-26' : 'safari-ios18';
+    else if (hybrid && (fingerprint === undefined || fingerprint === 'chrome')) profile = 'chrome147';
+    else if (!hybrid) {
+      // Mihomo removes MLKEM from ClientHello. Loon exposes only complete presets.
+      if (fingerprint === undefined) profile = 'safari-ios18';
+      else if (fingerprint !== 'safari-ios18' && fingerprint !== 'chrome') return node;
+    }
+    return { ...node, 'client-fingerprint': profile, 'reality-opts': settings } as ParsedNode;
+  }
+  return safari ? { ...node, 'client-fingerprint': 'safari-ios18' } : node;
+}
+
+export async function generateLoonConfig(options: GenerateOptions, loadRuleList: (path: string) => Promise<string>, conversion: { mode: 'strict' | 'compatible' } = { mode: 'strict' }): Promise<string> {
   const config = resolveConfig(options);
   for (const [index, node] of options.nodes.entries()) {
     if (typeof node.name === 'string' && /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(node.name)) fail(`第 ${index + 1} 个节点的名称控制字符`);
   }
-  const nodes = ensureUniqueProxyNames(options.nodes);
-  const { groups, nodeNames, literalTargetNames } = prepareGroups(options, config, nodes);
-  const displayNames = buildDisplayNames(nodes, groups);
-  const nodeLines = renderNodes(nodes, displayNames);
-  const groupLines = renderGroups(groups, nodeNames, config, displayNames);
-  const ruleLines = await renderRules(options, config, groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT', literalTargetNames, displayNames, loadRuleList);
-  return ['# SubBoost Loon', '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
+  const originalNodes = ensureUniqueProxyNames(options.nodes);
+  const skipped: string[] = [];
+  const adapted: string[] = [];
+  const nodes = conversion.mode === 'strict' ? originalNodes : originalNodes.flatMap((node, index) => {
+    try {
+      if (node.name === 'DIRECT' || node.name === 'REJECT' || node['dialer-proxy'] || node.type === 'relay') fail('节点的保留名称或链式代理');
+      const candidate = compatibleTlsNode(node);
+      renderLoonNode({ ...candidate, name: 'Compatibility check' });
+      if (candidate['client-fingerprint'] !== node['client-fingerprint']) {
+        adapted.push(`# SUBBOOST-LOON-TLS v1 index=${index + 1} tls-profile=${candidate['client-fingerprint']}`);
+      }
+      return [candidate];
+    } catch (error) {
+      if (!(error instanceof LoonConversionError)) throw error;
+      const protocols = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'http', 'https', 'socks5', 'ssr', 'anytls', 'hysteria', 'tuic', 'wireguard', 'snell', 'socks4', 'ssh', 'direct', 'reject', 'dns', 'mieru', 'masque', 'sudoku', 'trusttunnel', 'relay'];
+      const transports = ['tcp', 'raw', 'ws', 'http', 'h2', 'grpc', 'xhttp', 'httpupgrade', 'quic', 'kcp'];
+      const network = 'network' in node ? node.network : undefined;
+      const transport = network === undefined ? 'none' : typeof network === 'string' && transports.includes(network) ? network : 'unknown';
+      const ws = 'ws-opts' in node ? node['ws-opts'] : undefined;
+      const httpUpgrade = ws && typeof ws === 'object' && 'v2ray-http-upgrade' in ws && ws['v2ray-http-upgrade'] === true;
+      const reason = error.message.includes('协议不受支持') ? 'unsupported-protocol'
+        : error.message.includes('传输 network') ? 'unsupported-transport'
+        : httpUpgrade ? 'unsupported-http-upgrade'
+        : error.message.includes('client-fingerprint') ? 'unsupported-client-fingerprint'
+        : 'unsupported-settings';
+      skipped.push(`# SUBBOOST-LOON-SKIP v1 index=${index + 1} protocol=${protocols.includes(node.type) ? node.type : 'unknown'} transport=${transport} reason=${reason}`);
+      return [];
+    }
+  });
+  const report = conversion.mode === 'compatible' ? [`# SUBBOOST-LOON-COMPAT v1 included=${nodes.length} skipped=${skipped.length}`, ...adapted, ...skipped] : [];
+  if (conversion.mode === 'compatible' && !nodes.some((node) => !isSubscriptionInfoNodeName(node.name))) throw new LoonConversionError(`Loon 兼容导出中没有可用代理节点。\n${report.join('\n')}`);
+  try {
+    const original = prepareGroups(options, config, originalNodes);
+    const nodeNames = new Set(nodes.map((node) => node.name));
+    const groups = conversion.mode === 'compatible' && skipped.length ? pruneCompatibleGroups(original.groups, original.nodeNames, nodeNames, report) : original.groups;
+    const literalTargetNames = [...nodeNames, ...groups.map((group) => group.name)];
+    if (conversion.mode === 'compatible' && skipped.length) {
+      const targetOptions = { moduleNames: buildModuleNameMap(options.proxyGroupNameOverrides), customProxyGroups: options.customProxyGroups, literalTargetNames: original.literalTargetNames };
+      const available = new Set(['DIRECT', 'REJECT', ...literalTargetNames]);
+      const checkRetainedTarget = (target: ProxyGroupRuleTarget) => {
+        if (!available.has(resolveProxyGroupTargetName(target, targetOptions))) fail('规则引用的节点或代理组在兼容导出后不可用');
+      };
+      for (const rule of config.customRules) if (!isDisabledCustomProxyGroupTarget(rule.target, targetOptions)) checkRetainedTarget(rule.target);
+      for (const [key, edit] of Object.entries(options.builtinRuleEdits ?? {})) {
+        const [, moduleId, ruleId] = key.split(':');
+        if (edit.enabled !== false && edit.target && config.enabledGroups.includes(moduleId) && PROXY_GROUP_MODULES.some((module) => module.id === moduleId && module.rules.some((rule) => rule.id === ruleId))) checkRetainedTarget(edit.target);
+      }
+    }
+    const displayNames = buildDisplayNames(nodes, groups);
+    const nodeLines = renderNodes(nodes, displayNames);
+    const groupLines = renderGroups(groups, nodeNames, config, displayNames);
+    let fallbackTarget = groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT';
+    if (conversion.mode === 'compatible' && skipped.length && original.groups[0] && proxyDefaultResolver(original.groups, original.nodeNames)(original.groups[0].name)) {
+      const defaultsToProxy = proxyDefaultResolver(groups, nodeNames);
+      if (!defaultsToProxy(fallbackTarget)) fallbackTarget = groups.find((group) => defaultsToProxy(group.name))?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? fail('兼容导出无法保留 FINAL 的默认代理路径');
+    }
+    const ruleLines = await renderRules(options, config, fallbackTarget, literalTargetNames, displayNames, loadRuleList);
+    return ['# SubBoost Loon', ...report, '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
+  } catch (error) {
+    if (error instanceof LoonConversionError && skipped.length) throw new LoonConversionError(`${error.message}\n${report.join('\n')}`);
+    throw error;
+  }
 }

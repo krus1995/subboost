@@ -64,6 +64,7 @@ describe("LoonPreview", () => {
     click?.();
     click?.();
     expect(mocks.generate).toHaveBeenCalledTimes(1);
+    expect(mocks.generate).toHaveBeenCalledWith(mocks.options, expect.any(Function), { mode: "compatible" });
     await settle();
     expect(render()).toContain("[General]");
     expect(mocks.buttons[0].disabled).toBe(true);
@@ -76,6 +77,17 @@ describe("LoonPreview", () => {
     expect(anchor.click).toHaveBeenCalledOnce();
     const blob: Blob = createObjectURL.mock.calls[0][0];
     expect(await blob.text()).toContain("[General]");
+  });
+
+  it("shows mixed node counts and safe skipped reasons", async () => {
+    mocks.generate.mockResolvedValue("# SUBBOOST-LOON-COMPAT v1 included=1 skipped=1\n# SUBBOOST-LOON-SKIP v1 index=2 protocol=ssr transport=none reason=unsupported-settings\n[General]\n[Rule]");
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    const html = render();
+    expect(html).toContain("可导出 1 个节点，跳过 1 个不兼容节点");
+    expect(html).toContain("第 2 个节点：当前参数无法转换（ssr / none）");
+    expect(mocks.buttons[1].disabled).toBe(false);
   });
 
   it("limits a large preview to 200 lines while downloading the complete configuration", async () => {
@@ -108,6 +120,36 @@ describe("LoonPreview", () => {
     expect(render()).not.toContain("obsolete config");
     expect(mocks.buttons[1].disabled).toBe(true);
     expect(mocks.buttons[0].disabled).toBe(false);
+  });
+
+  it("ignores a stale failure after edits while a newer generation succeeds", async () => {
+    let rejectOld: (reason: Error) => void = () => undefined;
+    mocks.generate.mockReturnValueOnce(new Promise<string>((_resolve, reject) => { rejectOld = reject; }));
+    render();
+    mocks.buttons[0].onClick?.();
+    mocks.options = { nodes: [{ name: "edited" }] };
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("[General]");
+    rejectOld(new Error("obsolete failure"));
+    await settle();
+    const html = render();
+    expect(html).not.toContain("obsolete failure");
+    expect(html).toContain("[General]");
+    expect(mocks.buttons[1].disabled).toBe(false);
+  });
+
+  it("shows a generic failure for a rejected non-Error and permits retry", async () => {
+    mocks.generate.mockRejectedValueOnce("untrusted failure detail");
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("生成 Loon 配置失败");
+    expect(render()).not.toContain("untrusted failure detail");
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("[General]");
   });
 
   it("clears a previous result on edits and displays generation failures", async () => {

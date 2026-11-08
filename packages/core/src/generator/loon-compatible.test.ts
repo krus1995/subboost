@@ -1,0 +1,238 @@
+import { describe, expect, it } from 'vitest';
+import { generateLoonConfig } from './loon';
+import { parseSubscription } from '../parser';
+import type { GenerateOptions } from './index';
+import type { ParsedNode } from '../types/node';
+
+const supported: ParsedNode = { name: 'Synthetic TCP', type: 'vless', server: 'example.invalid', port: 443, uuid: '00000000-0000-4000-8000-000000000000', network: 'tcp', tls: true };
+const unsupported: ParsedNode = { ...supported, name: 'Synthetic XHTTP', network: 'xhttp', 'xhttp-opts': { path: '/secret' } };
+const options: GenerateOptions = { nodes: [unsupported, supported], userConfig: { enabledGroups: ['select', 'auto', 'final'], experimentalCnUseCnRuleSet: false } };
+const compatible = { mode: 'compatible' } as const;
+const load = async () => 'example.invalid';
+
+describe('Loon compatible node export', () => {
+  it('exports parsed mixed subscriptions and records every skipped node once', async () => {
+    const parsed = parseSubscription(['xhttp', 'tcp', 'grpc'].map((network) => `vless://00000000-0000-4000-8000-000000000000@example.invalid:443?security=tls&type=${network}#Synthetic-${network}`).join('\n'));
+    expect(parsed.errors).toEqual([]);
+    const result = await generateLoonConfig({ ...options, nodes: parsed.nodes }, load, compatible);
+    expect(result).toContain('# SUBBOOST-LOON-COMPAT v1 included=1 skipped=2');
+    expect(result).toContain('# SUBBOOST-LOON-SKIP v1 index=1 protocol=vless transport=xhttp reason=unsupported-transport');
+    expect(result).toContain('# SUBBOOST-LOON-SKIP v1 index=3 protocol=vless transport=grpc reason=unsupported-transport');
+    expect(result).toContain('Synthetic-tcp = VLESS');
+    expect(result).not.toContain('Synthetic-xhttp');
+    expect(result).not.toContain('Synthetic-grpc');
+    expect(result).toContain('FINAL,');
+    await expect(generateLoonConfig(options, load)).rejects.toThrow('Loon');
+  });
+
+  it.each(['safari', 'ios'])('maps the %s family only for compatible Loon exports', async fingerprint => {
+    const node = { ...supported, 'client-fingerprint': fingerprint };
+    const result = await generateLoonConfig({ ...options, nodes: [unsupported, node] }, load, compatible);
+    expect(result).toContain('# SUBBOOST-LOON-TLS v1 index=2 tls-profile=safari-ios18');
+    expect(result).toMatch(/^Synthetic TCP = VLESS,.*tls-profile=safari-ios18/m);
+    expect(node['client-fingerprint']).toBe(fingerprint);
+    await expect(generateLoonConfig({ ...options, nodes: [node] }, load)).rejects.toThrow('TLS 指纹');
+  });
+
+  it.each([
+    ['safari', true, 'safari-ios-26'], ['ios', false, 'safari-ios18'], ['chrome', true, 'chrome147'],
+    [undefined, true, 'chrome147'], ['chrome147', true, 'chrome147'], ['safari-ios-26', true, 'safari-ios-26'],
+    [undefined, false, 'safari-ios18'], ['safari-ios18', true, 'safari-ios18'], ['safari-ios18', false, 'safari-ios18'], ['chrome', false, 'chrome'],
+  ] as const)('maps Reality %s with hybrid key exchange %s to %s', async (fingerprint, hybrid, expected) => {
+    const node = { ...supported, sni: 'example.invalid', 'client-fingerprint': fingerprint, 'reality-opts': { 'public-key': 'A'.repeat(43), 'support-x25519mlkem768': hybrid } };
+    const result = await generateLoonConfig({ ...options, nodes: [node] }, load, compatible);
+    expect(result).toContain('public-key="' + 'A'.repeat(43) + '"');
+    expect(result).toMatch(new RegExp('^Synthetic TCP = VLESS,.*tls-profile=' + expected, 'm'));
+    expect(node['reality-opts']['support-x25519mlkem768']).toBe(hybrid);
+  });
+
+  it.each([['safari', 'true'], ['firefox', true], ['safari-ios-26', false], ['chrome147', false], ['global', false], ['default', false]] as const)('skips an unrepresentable Reality request %s %s', async (fingerprint, hybrid) => {
+    const node: ParsedNode = { ...supported, name: 'Hybrid', sni: 'example.invalid', 'client-fingerprint': fingerprint, 'reality-opts': { 'public-key': 'A'.repeat(43), 'support-x25519mlkem768': hybrid } } as ParsedNode;
+    const result = await generateLoonConfig({ ...options, nodes: [node, supported] }, load, compatible);
+    expect(result).toContain('included=1 skipped=1');
+    expect(result).not.toContain('SUBBOOST-LOON-TLS');
+  });
+
+  it('does not expose rejected node fields or arbitrary transport values in comments', async () => {
+    const unknown = { ...unsupported, name: 'https://private.invalid/token', server: 'private.invalid', network: 'secret-transport' };
+    const text = await generateLoonConfig({ ...options, nodes: [unknown, supported] }, load, compatible);
+    expect(text).toContain('protocol=vless transport=unknown reason=unsupported-transport');
+    expect(text).not.toContain('private.invalid');
+    expect(text).not.toContain('secret-transport');
+    expect(text).not.toContain('/secret');
+  });
+
+  it('rejects all skipped nodes even if informational nodes remain', async () => {
+    for (const nodes of [[unsupported], [unsupported, { ...supported, name: '剩余流量：100GB' }]]) {
+      await expect(generateLoonConfig({ nodes, userConfig: { enabledGroups: [] } }, load, compatible)).rejects.toThrow('没有可用代理节点');
+    }
+  });
+
+  it('classifies protocol, transport, HTTPUpgrade and fingerprint failures without raw values', async () => {
+    const skipped: ParsedNode[] = [
+      { name: 'Synthetic SOCKS4', type: 'socks4', server: 'example.invalid', port: 443 },
+      unsupported,
+      { ...supported, network: 'ws', 'ws-opts': { path: '/', 'v2ray-http-upgrade': true } },
+      { ...supported, 'client-fingerprint': 'private-secret' },
+    ];
+    const text = await generateLoonConfig({ ...options, nodes: [...skipped, supported] }, load, compatible);
+    for (const reason of ['unsupported-protocol', 'unsupported-transport', 'unsupported-http-upgrade', 'unsupported-client-fingerprint']) expect(text).toContain(`reason=${reason}`);
+    expect(text).not.toContain('private-secret');
+    const failure = await generateLoonConfig({ ...options, nodes: skipped }, load, compatible).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    if (!(failure instanceof Error)) throw new Error('Expected conversion error');
+    expect(failure.message).toContain('included=0 skipped=4');
+    expect(failure.message.match(/# SUBBOOST-LOON-SKIP/g)).toHaveLength(4);
+    expect(failure.message).not.toContain('private-secret');
+  });
+
+  it('keeps duplicate names assigned before filtering', async () => {
+    const result = await generateLoonConfig({ ...options, nodes: [{ ...unsupported, name: 'Duplicate' }, { ...supported, name: 'Duplicate' }] }, load, compatible);
+    expect(result).toContain('Duplicate (2) = VLESS');
+    expect(result).not.toContain('\nDuplicate =');
+  });
+
+  it('rejects a custom rule pointing at a skipped node instead of rewriting it', async () => {
+    await expect(generateLoonConfig({ ...options, userConfig: { ...options.userConfig, customRules: [{ id: 'r', type: 'DOMAIN', value: 'example.invalid', target: unsupported.name }] } }, load, compatible)).rejects.toThrow('兼容导出后不可用');
+  });
+
+  it('removes explicitly selected skipped members while preserving usable members', async () => {
+    const text = await generateLoonConfig({ ...options, proxyGroupAdvanced: { select: { extraMembers: [{ kind: 'node', name: unsupported.name }] } } }, load, compatible);
+    expect(text).not.toContain('Synthetic XHTTP');
+    expect(text).toContain('Synthetic TCP = VLESS');
+  });
+
+  it('removes a filtered select group that loses all proxy nodes without leaving a DIRECT group', async () => {
+    const text = await generateLoonConfig({ ...options, customProxyGroups: [{ id: 'xhttp', name: 'XHTTP group', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', advanced: { includeRegex: 'XHTTP' } }] }, load, compatible);
+    expect(text).not.toContain('XHTTP group');
+    expect(text).toContain('# SUBBOOST-LOON-GROUPS v1 skipped=1');
+  });
+
+  it('prunes three empty test groups in a 43-group graph while preserving 93 rule targets', async () => {
+    const good = Array.from({ length: 34 }, (_, i) => ({ ...supported, name: `Good ${i}` }));
+    const bad = Array.from({ length: 43 }, (_, i) => ({ ...unsupported, name: `Bad ${i}` }));
+    const customProxyGroups: NonNullable<GenerateOptions['customProxyGroups']> = Array.from({ length: 43 }, (_, i) => ({
+      id: `g${i}`, name: `Group ${i}`, emoji: '', groupType: i < 10 ? 'url-test' : 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false,
+      advanced: { includeRegex: '^never-match$', extraMembers: i < 3
+        ? bad.slice(0, [2, 3, 1][i]).map((node) => ({ kind: 'node', name: node.name }))
+        : i < 10 ? [{ kind: 'node', name: good[i].name }]
+        : i === 42 ? [] : [{ kind: 'custom', id: 'g0' }, { kind: 'custom', id: 'g3' }] },
+    }));
+    const input: GenerateOptions = { nodes: [...good, ...bad], customProxyGroups, userConfig: { enabledGroups: [], customRules: Array.from({ length: 93 }, (_, i) => ({ id: `r${i}`, type: 'DOMAIN', value: `rule-${i}.invalid`, target: { kind: 'custom', id: 'g10' } })) } };
+    const text = await generateLoonConfig(input, load, compatible);
+    expect(text).toContain('included=34 skipped=43');
+    expect(text).toContain('# SUBBOOST-LOON-GROUPS v1 skipped=3');
+    expect(text.match(/# SUBBOOST-LOON-GROUP-SKIP v1/g)).toHaveLength(3);
+    expect(text).not.toContain('Group 0 =');
+    expect(text).not.toContain('Group 1 =');
+    expect(text).not.toContain('Group 2 =');
+    expect(text).toContain('Group 10 = select, DIRECT, REJECT, Group 3');
+    expect(text).toContain('Group 42 = select, DIRECT, REJECT');
+    expect(text.match(/^DOMAIN,rule-/gm)).toHaveLength(93);
+    expect(text).toContain('FINAL,Group 3');
+    await expect(generateLoonConfig({ ...input, userConfig: { ...input.userConfig, customRules: [{ id: 'bad', type: 'DOMAIN', value: 'example.invalid', target: { kind: 'custom', id: 'g0' } }] } }, load, compatible)).rejects.toThrow('兼容导出后不可用');
+  });
+
+  it('preserves rule loader failure rather than calling it a node skip', async () => {
+    const failure = new Error('synthetic rules unavailable');
+    await expect(generateLoonConfig({ nodes: [unsupported, supported] }, async () => { throw failure; }, compatible)).rejects.toBe(failure);
+  });
+
+  it('preserves a test group with 77 nodes and four nested groups after pruning', async () => {
+    const allNodes = Array.from({ length: 77 }, (_, i) => ({ ...(i < 34 ? supported : unsupported), name: `Synthetic ${i}` }));
+    const customProxyGroups: NonNullable<GenerateOptions['customProxyGroups']> = Array.from({ length: 43 }, (_, i) => ({
+      id: `g${i}`, name: `Group ${i}`, emoji: '', groupType: i < 10 ? 'url-test' : 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false,
+      advanced: { includeRegex: '^never-match$', extraMembers: i === 1
+        ? [...allNodes.map((node) => ({ kind: 'node' as const, name: node.name })), ...[10, 11, 12, 13].map((id) => ({ kind: 'custom' as const, id: `g${id}` }))]
+        : [{ kind: 'node', name: allNodes[[0, 2, 3].includes(i) ? 40 : 0].name }] },
+    }));
+    const text = await generateLoonConfig({ nodes: allNodes, customProxyGroups, userConfig: { enabledGroups: [] } }, load, compatible);
+    const nested = text.split('\n').find((line) => line.startsWith('Group 1 = url-test,'));
+    expect(nested).toBeDefined();
+    expect(nested).toContain('Synthetic 33');
+    expect(nested).not.toContain('Synthetic 34');
+    expect(nested).toContain('Group 10, Group 11, Group 12, Group 13');
+    expect(text).toContain('# SUBBOOST-LOON-GROUPS v1 skipped=3');
+  });
+
+  it('maps fallback and round-robin groups while rejecting unproven algorithms', async () => {
+    for (const groupType of ['fallback', 'load-balance'] as const) {
+      const text = await generateLoonConfig({ ...options, nodes: [supported], proxyGroupAdvanced: { auto: { groupType, ...(groupType === 'load-balance' ? { strategy: 'round-robin' } : {}) } } }, load);
+      expect(text).toContain(`= ${groupType}, Synthetic TCP, url=`);
+      if (groupType === 'load-balance') expect(text).toContain('algorithm=Round-Robin');
+    }
+    for (const strategy of ['consistent-hashing', 'sticky-sessions'] as const) {
+      await expect(generateLoonConfig({ ...options, nodes: [supported], proxyGroupAdvanced: { auto: { groupType: 'load-balance', strategy } } }, load)).rejects.toThrow('strategy');
+    }
+    await expect(generateLoonConfig({ ...options, nodes: [supported], customProxyGroups: [{ id: 'default-balance', name: 'Default balance', emoji: '', groupType: 'load-balance' }] }, load)).rejects.toThrow('strategy');
+  });
+
+  it('keeps the default proxy path after removing the preferred automatic group', async () => {
+    const text = await generateLoonConfig({ ...options, proxyGroupAdvanced: { auto: { includeRegex: 'XHTTP' } } }, load, compatible);
+    expect(text).toContain('🚀 节点选择 = select, Synthetic TCP, DIRECT, REJECT');
+    expect(text).toContain('FINAL,🐟 漏网之鱼');
+    expect(text).toContain('🐟 漏网之鱼 = select, 🚀 节点选择, DIRECT, REJECT');
+  });
+
+  it('repairs nested proxy defaults but preserves originally explicit DIRECT defaults', async () => {
+    const customProxyGroups: NonNullable<GenerateOptions['customProxyGroups']> = [
+      { id: 'gone', name: 'Gone', emoji: '', groupType: 'url-test', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: 'XHTTP' } },
+      { id: 'child', name: 'Child', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'custom', id: 'gone' }, { kind: 'node', name: supported.name }], memberOrder: [{ kind: 'custom', id: 'gone' }, { kind: 'direct' }, { kind: 'reject' }, { kind: 'node', name: supported.name }] } },
+      { id: 'parent', name: 'Parent', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'custom', id: 'child' }], memberOrder: [{ kind: 'custom', id: 'child' }, { kind: 'direct' }, { kind: 'reject' }] } },
+      { id: 'direct', name: 'Explicit direct', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'node', name: supported.name }] } },
+    ];
+    const input: GenerateOptions = { ...options, customProxyGroups, userConfig: { enabledGroups: [] } };
+    const text = await generateLoonConfig(input, load, compatible);
+    expect(text).toContain('Child = select, Synthetic TCP, DIRECT, REJECT');
+    expect(text).toContain('Parent = select, Child, DIRECT, REJECT');
+    expect(text).toContain('Explicit direct = select, DIRECT, REJECT, Synthetic TCP');
+    expect(text).toContain('FINAL,Child');
+    const reordered = await generateLoonConfig({ ...input, proxyGroupOrder: ['custom:gone', 'custom:direct', 'custom:parent', 'custom:child'] }, load, compatible);
+    expect(reordered).toContain('FINAL,Parent');
+    const explicitDirect = await generateLoonConfig({ ...input, proxyGroupOrder: ['custom:direct', 'custom:gone', 'custom:parent', 'custom:child'] }, load, compatible);
+    expect(explicitDirect).toContain('FINAL,Explicit direct');
+  });
+
+  it('rejects a proxy default that can only be replaced by explicitly direct-first children', async () => {
+    await expect(generateLoonConfig({ ...options, userConfig: { enabledGroups: [] }, customProxyGroups: [
+      { id: 'parent', name: 'Parent', emoji: '', groupType: 'select', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'node', name: unsupported.name }, { kind: 'custom', id: 'direct' }], memberOrder: [{ kind: 'node', name: unsupported.name }, { kind: 'direct' }, { kind: 'custom', id: 'direct' }] } },
+      { id: 'direct', name: 'Direct child', emoji: '', groupType: 'direct-first', includeInGroupMembers: false },
+    ] }, load, compatible)).rejects.toThrow('无法保留代理组的默认代理路径');
+  });
+
+  it('uses the surviving node for implicit FINAL when only originally direct groups remain', async () => {
+    const text = await generateLoonConfig({ ...options, userConfig: { enabledGroups: [] }, customProxyGroups: [
+      { id: 'gone', name: 'Gone', emoji: '', groupType: 'url-test', includeInGroupMembers: false, advanced: { includeRegex: 'XHTTP' } },
+      { id: 'direct', name: 'Direct child', emoji: '', groupType: 'direct-first', includeInGroupMembers: false },
+    ] }, load, compatible);
+    expect(text).toContain('FINAL,Synthetic TCP');
+    expect(text).toContain('Direct child = select, DIRECT, REJECT, Synthetic TCP');
+  });
+
+  it('validates active built-in rule targets while retaining disabled and stale edits', async () => {
+    const input: GenerateOptions = { ...options, userConfig: { enabledGroups: ['select', 'auto', 'cn'], experimentalCnUseCnRuleSet: false } };
+    const builtinRuleEdits: NonNullable<GenerateOptions['builtinRuleEdits']> = {
+      'module:cn:cn-ip': { target: supported.name },
+      'module:cn:geolocation-cn': { enabled: false, target: unsupported.name },
+      'module:cn:unknown-rule': { target: unsupported.name },
+      'module:disabled:cn-ip': { target: unsupported.name },
+      'module:cn:geoip-cn': {},
+    };
+    expect(await generateLoonConfig({ ...input, builtinRuleEdits }, async () => '192.0.2.0/24', compatible)).toContain('IP-CIDR,192.0.2.0/24,Synthetic TCP');
+    await expect(generateLoonConfig({ ...input, builtinRuleEdits: { 'module:cn:cn-ip': { target: unsupported.name } } }, load, compatible)).rejects.toThrow('兼容导出后不可用');
+    const disabled = await generateLoonConfig({ ...options, customProxyGroups: [{ id: 'off', name: 'Disabled', emoji: '', groupType: 'select', enabled: false }], userConfig: { ...options.userConfig, customRules: [{ id: 'off', type: 'DOMAIN', value: 'disabled.invalid', target: { kind: 'custom', id: 'off' } }] } }, load, compatible);
+    expect(disabled).not.toContain('disabled.invalid');
+  });
+
+  it('reports reserved or chained nodes and invalid option values without leaking fields', async () => {
+    for (const invalid of [{ ...supported, name: 'DIRECT' }, { ...supported, name: 'REJECT' }, { ...supported, 'dialer-proxy': 'private-secret' }, { ...supported, 'packet-encoding': 'private-secret' }]) {
+      const text = await generateLoonConfig({ ...options, nodes: [invalid, supported] }, load, compatible);
+      expect(text).toContain('reason=unsupported-settings');
+      expect(text).not.toContain('private-secret');
+    }
+    const external = parseSubscription('proxies:\n  - {name: Unknown, type: private-secret, server: example.invalid, port: 443}');
+    const text = await generateLoonConfig({ ...options, nodes: [...external.nodes, supported] }, load, compatible);
+    expect(text).toContain('protocol=unknown transport=none');
+    expect(text).not.toContain('private-secret');
+  });
+});

@@ -641,6 +641,29 @@ describe("local subscription service", () => {
     await expect(refreshSubscription("owner-1", "missing")).resolves.toBeNull();
   });
 
+  it("serves mixed saved snapshots through the unchanged Loon endpoint", async () => {
+    mocks.buildGenerateOptionsFromConfig.mockReturnValue({
+      nodes: [
+        { name: "Demo", type: "ss", server: "example.com", port: 443, password: "demo", cipher: "aes-128-gcm" },
+        { name: "private-name", type: "vmess", server: "private-server", port: 443, uuid: "private-credential", network: "grpc" },
+      ],
+      userConfig: { enabledGroups: ["select", "final"] },
+    });
+    const profile = await generateSubscriptionProfile("token-1", "loon");
+    expect(profile?.content).toContain("# SUBBOOST-LOON-COMPAT v1 included=1 skipped=1");
+    expect(profile?.content).toContain("index=2 protocol=vmess transport=grpc reason=unsupported-settings");
+    expect(profile?.content).not.toMatch(/private-name|private-server|private-credential/);
+    expect(mocks.importSourceUrlDirect).not.toHaveBeenCalled();
+  });
+
+  it("keeps incompatible configuration errors when using compatible node export", async () => {
+    mocks.buildGenerateOptionsFromConfig.mockReturnValue({
+      nodes: [{ name: "Demo", type: "ss", server: "example.com", port: 443, password: "demo", cipher: "aes-128-gcm" }],
+      userConfig: { enabledGroups: ["select", "final"], dnsYaml: "dns:\n  enable: false" },
+    });
+    await expect(generateSubscriptionProfile("token-1", "loon")).rejects.toThrow("自定义基础和 DNS 配置");
+  });
+
   it("serves both formats from the saved snapshot and rechecks the token before delivery", async () => {
     mocks.buildGenerateOptionsFromConfig.mockReturnValue({
       nodes: [{ name: "Demo", type: "ss", server: "example.com", port: 443, password: "demo", cipher: "aes-128-gcm" }],

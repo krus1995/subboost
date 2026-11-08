@@ -5,6 +5,7 @@ import { downloadLoonConfig } from "@subboost/ui/product/subscription/download-l
 import { Button } from "@subboost/ui/components/ui/button";
 import { loonImportUrl } from "./config-format";
 import { localLoonConfigUrl, readLoonConfig } from "./loon-response";
+import { LoonCompatibilityNotice } from "./loon-compatibility-notice";
 
 type Check = { kind: "idle" } | { kind: "loading"; url: string } | { kind: "error"; url: string; message: string } | { kind: "ready"; url: string; config: string };
 
@@ -41,7 +42,11 @@ export function LoonSubscriptionActions({ url }: { url: string }) {
         <Button asChild variant="outline" size="sm" title="打开 Loon"><a href={loonImportUrl(url)}>打开 Loon</a></Button>
         <Button variant="outline" size="sm" onClick={download}>下载 .conf</Button>
       </>}
-      {current.kind === "error" && <p role="alert" className="w-full text-sm text-red-400">{current.message}</p>}
+      {current.kind === "error" && <>
+        <p role="alert" className="w-full text-sm text-red-400">{current.message.split("\n# SUBBOOST-LOON-COMPAT v1 ")[0]}</p>
+        <LoonCompatibilityNotice config={current.message} />
+      </>}
+      {current.kind === "ready" && <LoonCompatibilityNotice config={current.config} />}
     </div>
   );
 }
