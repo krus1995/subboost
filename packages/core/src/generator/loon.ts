@@ -46,6 +46,7 @@ function uniqueNodes(nodes: ParsedNode[]): ParsedNode[] {
     while (used.has(name)) name = `${base} (${suffix++})`;
     used.add(name);
     atom(name);
+    if (name === 'DIRECT' || name === 'REJECT') fail('节点使用的保留名称');
     if (node['dialer-proxy'] || node.type === 'relay') fail('节点链式代理');
     return { ...node, name };
   });
@@ -115,6 +116,7 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
   if (config.ruleProviderBaseUrl !== buildDefaultUserConfig(template).ruleProviderBaseUrl) fail('自定义规则来源');
   const nodes = uniqueNodes(options.nodes);
   const nodeNames = new Set(nodes.map((node) => node.name));
+  const nodeLines = nodes.map(renderLoonNode);
   for (const advanced of Object.values(options.proxyGroupAdvanced ?? {})) checkAdvanced(advanced, nodeNames);
   const customGroups = (options.customProxyGroups ?? []).filter((group) => group.enabled !== false);
   for (const group of customGroups) checkAdvanced(group.advanced, nodeNames);
@@ -136,7 +138,10 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
     const name = resolveProxyGroupTargetName(target, targetOptions);
     if (!available.has(name)) fail('规则引用的缺失节点或代理组');
   };
-  for (const rule of config.customRules) checkTarget(rule.target);
+  for (const rule of config.customRules) {
+    checkTarget(rule.target);
+    if (rule.noResolve && rule.type !== 'IP-CIDR' && rule.type !== 'IP-CIDR6') fail('非 IP 规则的 no-resolve');
+  }
   for (const edit of Object.values(options.builtinRuleEdits ?? {})) if (edit.enabled !== false && edit.target) checkTarget(edit.target);
   for (const advanced of [...Object.values(options.proxyGroupAdvanced ?? {}), ...customGroups.map((group) => group.advanced)]) {
     for (const ref of [...advanced?.extraMembers ?? [], ...advanced?.memberOrder ?? [], ...advanced?.excludedMembers ?? []]) {
@@ -170,7 +175,8 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
     const text = await loadRuleList(path);
     ruleLines.push(...inlineList(text, definition.behavior, entry.target, entry.noResolve));
   }
-  return ['# SubBoost Loon', '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodes.map(renderLoonNode), '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
+  return ['# SubBoost Loon', '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
 }
+
 
 
