@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
 import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
-import { subscriptionFormatUrl, loonImportUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
+import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
 import { copyTextToClipboard } from "@subboost/ui/lib/clipboard";
 import { toast } from "@subboost/ui/components/ui/toaster";
 import { Check, Copy, Link as LinkIcon, Loader2 } from "lucide-react";
@@ -170,7 +171,7 @@ export function SubscriptionLinkDialog({
           <div className="space-y-4 py-4">
             <ConfigFormatSelect value={format} onChange={setFormat} />
             <SubscriptionQrCode url={selectedUrl} />
-            {format === "loon" && <Button asChild variant="outline"><a href={loonImportUrl(selectedUrl)}>导入 Loon</a></Button>}
+            {format === "loon" && <LoonSubscriptionActions key={selectedUrl} url={selectedUrl} />}
             <div className="space-y-2">
               <p className="text-sm font-medium">订阅链接</p>
               <div className="flex gap-2">

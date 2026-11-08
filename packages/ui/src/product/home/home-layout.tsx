@@ -115,6 +115,11 @@ export function HomeLayout({
 }: Props) {
   const [configTab, setConfigTab] = React.useState<"quick" | "advanced">(editSubscriptionId ? "advanced" : "quick");
   const [previewTab, setPreviewTab] = React.useState("visual");
+  const [loonVisited, setLoonVisited] = React.useState(false);
+  const selectPreview = (value: string) => {
+    setPreviewTab(value);
+    if (value === "loon") setLoonVisited(true);
+  };
   const interactions = useProductInteractionAdapter();
 
   React.useEffect(() => {
@@ -147,6 +152,8 @@ export function HomeLayout({
           Clash 订阅转换、生成与管理服务，支持链式代理、智能分流、多协议和多订阅聚合
         </p>
       </div>
+
+      <a href="#preview" className="mb-3 text-center text-sm text-primary-500 lg:hidden" onClick={() => selectPreview("loon")}>Loon 配置预览与下载</a>
 
       {noticeSlot}
 
@@ -253,7 +260,7 @@ export function HomeLayout({
             showAiColumn ? "lg:col-span-4 xl:col-span-4" : "lg:col-span-6 xl:col-span-6"
           } flex flex-col gap-3 min-h-0 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}
         >
-          <Tabs value={previewTab} onValueChange={setPreviewTab} className={`w-full flex flex-col lg:flex-1 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}>
+          <Tabs value={previewTab} onValueChange={selectPreview} className={`w-full flex flex-col lg:flex-1 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}>
             <Card className={`w-full flex flex-col lg:flex-1 ${DESKTOP_PANEL_MIN_HEIGHT_CLASS}`}>
               <CardHeader className="pb-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -316,7 +323,7 @@ export function HomeLayout({
                   </div>
                 </TabsContent>
                 <TabsContent forceMount value="loon" className="mt-0 data-[state=inactive]:hidden lg:absolute lg:inset-0">
-                  <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl border border-ink/10 overflow-hidden"><LoonPreview /></div>
+                  <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl border border-ink/10 overflow-hidden">{loonVisited && <LoonPreview />}</div>
                 </TabsContent>
                 <TabsContent value="visual" className="mt-0 data-[state=inactive]:hidden lg:absolute lg:inset-0">
                   <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl bg-ink/5 border border-ink/10 overflow-hidden">

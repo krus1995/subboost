@@ -1,8 +1,10 @@
 "use client";
 import { SubscriptionQrButton } from "@subboost/ui/product/subscription/subscription-qr-code";
 
+import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
+import { readLoonConfig } from "@subboost/ui/product/subscription/loon-response";
 import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
-import { subscriptionFormatUrl, loonImportUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
+import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -192,7 +194,7 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
     const filename = buildYamlDownloadFilename(subscription.name).replace(/\.yaml$/, format === "loon" ? ".conf" : ".yaml");
     try {
       const response = await fetch(subscriptionFormatUrl(adapter.resolveDownloadUrl?.(subscription) ?? subscription.subscriptionUrl, format));
-      if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
+      if (!response.ok) await readLoonConfig(response);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       triggerBrowserDownload(objectUrl, filename);
@@ -201,7 +203,7 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
       console.error("Failed to fetch subscription YAML for download:", error);
       toast({
         title: "下载失败",
-        description: "请刷新页面后重试，或先复制订阅链接到代理软件。",
+        description: error instanceof Error ? error.message : "请刷新页面后重试",
         variant: "destructive",
       });
     }
@@ -558,7 +560,7 @@ function SubscriptionRow({
 
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
         <ConfigFormatSelect value={format} onChange={setFormat} />
-        {format === "loon" && <Button asChild variant="ghost" size="sm" title="导入 Loon"><a href={loonImportUrl(selectedUrl)}>导入 Loon</a></Button>}
+        {format === "loon" && <LoonSubscriptionActions key={`${selectedUrl}:${sub.lastUpdatedAt}`} url={selectedUrl} />}
         <Button asChild variant="ghost" size="sm" className="gap-0 sm:gap-2" title="回到首页编辑该订阅（更新后链接不变）">
           <Link href={editHref}>
             <Pencil className="h-4 w-4" />
@@ -606,7 +608,7 @@ function SubscriptionRow({
           )}
         </Button>
         <SubscriptionQrButton url={selectedUrl} />
-        <Button
+        {format === "clash" && <Button
           variant="ghost"
           size="sm"
           onClick={() => void onDownload(sub, format)}
@@ -615,7 +617,7 @@ function SubscriptionRow({
         >
           <Download className="h-4 w-4" />
           <span className="hidden sm:inline">下载</span>
-        </Button>
+        </Button>}
         <Button
           variant="ghost"
           size="sm"

@@ -6,11 +6,12 @@ import { buildGenerateOptions } from "@subboost/ui/store/config-store/generated-
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { Button } from "@subboost/ui/components/ui/button";
 
+type Source = ReturnType<typeof useConfigStore.getState>;
 type Generation =
   | { kind: "idle" }
-  | { kind: "loading"; key: string }
-  | { kind: "ready"; key: string; config: string }
-  | { kind: "error"; key: string; message: string };
+  | { kind: "loading"; source: Source }
+  | { kind: "ready"; source: Source; config: string; preview: string }
+  | { kind: "error"; source: Source; message: string };
 
 export async function loadLoonRuleList(path: string): Promise<string> {
   const response = await fetch(`/api/loon/rules?path=${encodeURIComponent(path)}`);
@@ -18,47 +19,47 @@ export async function loadLoonRuleList(path: string): Promise<string> {
   return response.text();
 }
 
+export function summarizeLoonConfig(config: string): string {
+  let end = -1;
+  for (let line = 0; line < 200; line += 1) {
+    end = config.indexOf("\n", end + 1);
+    if (end < 0) return config;
+  }
+  return end < config.length - 1
+    ? `${config.slice(0, end)}\n\n# 仅预览前 200 行，下载包含完整配置。`
+    : config;
+}
 export function LoonPreview() {
-  const state = useConfigStore();
-  const prepared = (() => {
-    try { return { kind: "ready", options: buildGenerateOptions(state) } as const; }
-    catch (error) { return { kind: "error", message: error instanceof Error ? error.message : "配置有错误" } as const; }
-  })();
-  const key = JSON.stringify(prepared);
+  const source = useConfigStore();
   const [generation, setGeneration] = React.useState<Generation>({ kind: "idle" });
   const requestId = React.useRef(0);
-  const pendingKey = React.useRef<string | null>(null);
+  const pendingSource = React.useRef<Source | null>(null);
   const ruleLists = React.useRef(new Map<string, Promise<string>>());
-  const currentKey = React.useRef(key);
-  currentKey.current = key;
   React.useEffect(() => () => { requestId.current += 1; }, []);
-  const current = generation.kind !== "idle" && generation.key === key ? generation : { kind: "idle" } as const;
+  const current = generation.kind !== "idle" && generation.source === source ? generation : { kind: "idle" } as const;
 
   const loadRuleList = (path: string): Promise<string> => {
     const existing = ruleLists.current.get(path);
     if (existing) return existing;
-    const request = loadLoonRuleList(path).catch((error: unknown) => {
-      ruleLists.current.delete(path);
-      throw error;
-    });
+    const request = loadLoonRuleList(path).finally(() => { ruleLists.current.delete(path); });
     ruleLists.current.set(path, request);
     return request;
   };
 
   const generate = async () => {
-    if (prepared.kind !== "ready" || pendingKey.current === key || current.kind === "ready") return;
-    pendingKey.current = key;
+    if (pendingSource.current === source || current.kind === "ready") return;
+    pendingSource.current = source;
     const id = ++requestId.current;
-    setGeneration({ kind: "loading", key });
+    setGeneration({ kind: "loading", source });
     try {
-      const config = await generateLoonConfig(prepared.options, loadRuleList);
-      if (id === requestId.current && key === currentKey.current) setGeneration({ kind: "ready", key, config });
+      const config = await generateLoonConfig(buildGenerateOptions(source), loadRuleList);
+      if (id === requestId.current && source === useConfigStore.getState()) setGeneration({ kind: "ready", source, config, preview: summarizeLoonConfig(config) });
     } catch (error) {
-      if (id === requestId.current && key === currentKey.current) {
-        setGeneration({ kind: "error", key, message: error instanceof Error ? error.message : "生成 Loon 配置失败" });
+      if (id === requestId.current && source === useConfigStore.getState()) {
+        setGeneration({ kind: "error", source, message: error instanceof Error ? error.message : "生成 Loon 配置失败" });
       }
     } finally {
-      if (id === requestId.current) pendingKey.current = null;
+      if (id === requestId.current) pendingSource.current = null;
     }
   };
 
@@ -77,14 +78,13 @@ export function LoonPreview() {
   return (
     <div className="flex h-full flex-col gap-3 p-3">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void generate()} disabled={prepared.kind === "error" || current.kind === "loading" || current.kind === "ready"}>
+        <Button size="sm" onClick={() => void generate()} disabled={current.kind === "loading" || current.kind === "ready"}>
           {current.kind === "loading" ? "正在生成 Loon 配置" : "生成 Loon 配置"}
         </Button>
         <Button size="sm" variant="outline" disabled={current.kind !== "ready"} onClick={download}>下载 .conf</Button>
       </div>
-      {prepared.kind === "error" ? <p role="alert" className="text-sm text-red-400">{prepared.message}</p> : null}
       {current.kind === "error" ? <p role="alert" className="text-sm text-red-400">{current.message}</p> : null}
-      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre text-xs">{current.kind === "ready" ? current.config : "点击生成以预览 Loon 完整配置。配置在浏览器内生成。"}</pre>
+      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre text-xs">{current.kind === "ready" ? current.preview : "点击生成以预览 Loon 完整配置。"}</pre>
     </div>
   );
 }

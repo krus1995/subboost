@@ -166,14 +166,15 @@ describe("SubscriptionLinkDialog", () => {
     expect(baseProps.handleCreateSubscription).toHaveBeenCalled();
   });
 
-  it("offers the native Loon URL and client import while keeping Clash as the default", () => {
+  it("offers the native Loon URL and an explicit compatibility check", () => {
     captures.format = "loon";
     const url = "https://example.test/subboost/api/subscriptions/secret/config.yaml?download=1";
     const loonUrl = "https://example.test/subboost/api/subscriptions/secret/loon.conf?download=1";
     const html = renderToStaticMarkup(React.createElement(SubscriptionLinkDialog, { ...baseProps, subscriptionUrl: url }));
     expect(html).toContain("Loon 客户端导入使用");
     expect(captures.inputs.some((input: { value?: string }) => input.value === loonUrl)).toBe(true);
-    expect(html).toContain(`loon://import?sub=${encodeURIComponent(loonUrl)}`);
+    expect(html).toContain("检查 Loon 配置");
+    expect(html).not.toContain("loon://import");
     expect(html).toContain("订阅链接二维码");
     expect(baseProps.handleCopyUrl).not.toHaveBeenCalled();
   });

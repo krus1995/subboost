@@ -24,14 +24,14 @@ vi.mock("react", async (importOriginal) => ({
   useEffect: () => undefined,
 }));
 vi.mock("@subboost/core/generator/loon", () => ({ generateLoonConfig: mocks.generate }));
-vi.mock("@subboost/ui/store/config-store", () => ({ useConfigStore: () => ({}) }));
+vi.mock("@subboost/ui/store/config-store", () => ({ useConfigStore: Object.assign(() => mocks.options, { getState: () => mocks.options }) }));
 vi.mock("@subboost/ui/store/config-store/generated-yaml", () => ({ buildGenerateOptions: mocks.prepare }));
 vi.mock("@subboost/ui/components/ui/button", () => ({ Button: (props: CapturedButton) => {
   mocks.buttons.push(props);
   return React.createElement("button", { disabled: props.disabled }, props.children);
 } }));
 
-import { LoonPreview, loadLoonRuleList } from "./loon-preview";
+import { LoonPreview, loadLoonRuleList, summarizeLoonConfig } from "./loon-preview";
 
 function render() {
   mocks.buttons = [];
@@ -58,6 +58,7 @@ describe("LoonPreview", () => {
   it("generates only on demand, suppresses duplicate clicks, and downloads the native text", async () => {
     render();
     expect(mocks.generate).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
     expect(mocks.buttons[1].disabled).toBe(true);
     const click = mocks.buttons[0].onClick;
     click?.();
@@ -77,6 +78,24 @@ describe("LoonPreview", () => {
     expect(await blob.text()).toContain("[General]");
   });
 
+  it("limits a large preview to 200 lines while downloading the complete configuration", async () => {
+    const config = Array.from({ length: 1000 }, (_, index) => `DOMAIN,example-${index}.test,DIRECT`).join("\n") + "\nFINAL,DIRECT\n";
+    mocks.generate.mockResolvedValue(config);
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    const html = render();
+    expect(html).toContain("example-199.test");
+    expect(html).not.toContain("example-200.test");
+    expect(html).toContain("仅预览前 200 行，下载包含完整配置");
+    const anchor = { click: vi.fn(), remove: vi.fn() };
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:large-loon");
+    vi.stubGlobal("document", { createElement: () => anchor, body: { appendChild: vi.fn() } });
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL: vi.fn() });
+    mocks.buttons[1].onClick?.();
+    expect(await createObjectURL.mock.calls[0][0].text()).toBe(config);
+    expect(summarizeLoonConfig("[General]\n[Rule]\n")).toBe("[General]\n[Rule]\n");
+  });
   it("discards an in-flight result after configuration changes", async () => {
     let resolve: (value: string) => void = () => undefined;
     mocks.generate.mockReturnValue(new Promise<string>((done) => { resolve = done; }));
@@ -105,14 +124,18 @@ describe("LoonPreview", () => {
     expect(mocks.buttons[1].disabled).toBe(true);
   });
 
-  it("shows preparation errors without offering a download", () => {
+  it("shows preparation errors without offering a download", async () => {
     mocks.prepare.mockImplementation(() => { throw new Error("节点过滤表达式无效"); });
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
     expect(render()).toContain("节点过滤表达式无效");
-    expect(mocks.buttons.every((button) => button.disabled)).toBe(true);
+    expect(mocks.buttons[1].disabled).toBe(true);
   });
 
-  it("reuses rule text across generations and retries a failed rule request", async () => {
+  it("shares only in-flight rule requests and lets HTTP caching revalidate later generations", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+      .mockResolvedValueOnce(new Response("DOMAIN,example.test"))
       .mockResolvedValueOnce(new Response("DOMAIN,example.test"));
     vi.stubGlobal("fetch", fetch);
     mocks.generate.mockImplementation(async (_options: unknown, load: (path: string) => Promise<string>) => {
@@ -131,7 +154,7 @@ describe("LoonPreview", () => {
     mocks.buttons[0].onClick?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(render()).toContain("[General]");
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
   it("fetches only the named public rule list and reports failed requests", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(new Response("DOMAIN,example.test"));
