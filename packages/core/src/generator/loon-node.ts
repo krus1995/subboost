@@ -1,7 +1,9 @@
 import type { ParsedNode } from "../types/node";
+import { LoonConversionError } from "./loon-error";
+import { normalizeCertificateFingerprint } from "../mihomo/certificate-fingerprint";
 
-function fail(): never {
-  throw new Error("Loon 无法可靠表示此节点的协议、字段或参数，请检查节点配置");
+function fail(reason = "值格式不安全或无效"): never {
+  throw new LoonConversionError(`Loon 节点转换失败（${reason}）`);
 }
 
 function text(value: unknown, empty = false): string {
@@ -11,7 +13,7 @@ function text(value: unknown, empty = false): string {
 
 export function validateLoonName(value: string): string {
   const name = text(value);
-  if (name.trim() !== name || /[,=\[\]#;]/u.test(name)) fail();
+  if (name.trim() !== name || /[,=\[\]#;]/u.test(name)) fail("节点或策略名称");
   return name;
 }
 
@@ -31,10 +33,22 @@ const vmessCiphers = new Set(["none", "auto", "aes-128-cfb", "aes-128-gcm", "cha
 /** Serialize only options whose semantics are documented by Loon. */
 export function renderLoonNode(node: ParsedNode): string {
   const data: Record<string, unknown> = node;
+  const supportedTypes = ["ss", "vmess", "vless", "trojan", "hysteria2", "http", "https", "socks5"];
+  const knownTypes = [...supportedTypes, "ssr", "anytls", "hysteria", "tuic", "wireguard", "snell", "socks4", "ssh", "direct", "reject", "dns", "mieru", "masque", "sudoku", "trusttunnel", "relay"];
+  const typeLabel = knownTypes.includes(node.type) ? node.type : "扩展协议";
+  let field = "节点地址或端口";
+  const fail = (reason = field): never => { throw new LoonConversionError(`Loon ${typeLabel} 节点转换失败（${reason}）`); };
   const consumed = new Set(["name", "type", "server", "port", "_originName", "_sourceIds", "_meta"]);
-  const take = (key: string): unknown => { consumed.add(key); return data[key]; };
+  const take = (key: string): unknown => { consumed.add(key); field = key; return data[key]; };
   const name = validateLoonName(node.name);
-  const server = token(node.server);
+  let server = text(node.server);
+  if (server.startsWith("[") && server.endsWith("]")) {
+    server = server.slice(1, -1);
+    if (!server.includes(":")) fail("IPv6 地址");
+  }
+  if (server.includes(":")) {
+    try { new URL(`http://[${server}]/`); } catch { fail("IPv6 地址"); }
+  } else server = token(server);
   if (!Number.isInteger(node.port) || Number(node.port) < 1 || Number(node.port) > 65535) fail();
   const parts = [server, String(node.port)];
   const option = (key: string, value: string) => parts.push(`${key}=${value}`);
@@ -72,10 +86,10 @@ export function renderLoonNode(node: ParsedNode): string {
         parts.push(quoted(uuid));
       }
       const network = take("network") ?? "tcp";
-      if (network !== "tcp" && network !== "ws") fail();
+      if (network !== "tcp" && network !== "ws") fail("传输 network，仅支持 tcp/ws");
       option("transport", network);
       if (node.type === "vmess") {
-        const alterId = take("alterId");
+        const alterId = take("alterId") ?? 0;
         if (typeof alterId !== "number" || !Number.isInteger(alterId) || alterId < 0 || alterId > 65535) fail();
         option("alterId", String(alterId));
       }
@@ -93,9 +107,9 @@ export function renderLoonNode(node: ParsedNode): string {
             else if (key === "headers") {
               if (!value || typeof value !== "object" || Array.isArray(value)) fail();
               const headers = Object.entries(value);
-              if (headers.length > 1) fail();
+              if (headers.length > 1) fail("WS headers，仅支持 Host");
               for (const [header, host] of headers) {
-                if (header.toLowerCase() !== "host") fail();
+                if (header.toLowerCase() !== "host") fail("WS headers，仅支持 Host");
                 option("host", quoted(host));
               }
             } else fail();
@@ -150,12 +164,23 @@ export function renderLoonNode(node: ParsedNode): string {
       if (node.type === "socks5") option("over-tls", String(tls));
       break;
     }
-    default: fail();
+    default: fail("协议不受支持");
   }
-  boolean("udp");
+  if (node.type === "http" || node.type === "https") {
+    const udp = take("udp");
+    if (udp !== undefined && udp !== false) fail("HTTP 不支持 UDP 转发");
+  } else boolean("udp");
   boolean("tfo", "fast-open");
   if (tls) {
     boolean("skip-cert-verify");
+    for (const [input, output] of [["tls-fingerprint", "tls-cert-sha256"], ["tls-pubkey-sha256", "tls-pubkey-sha256"]]) {
+      const value = take(input);
+      if (value !== undefined) {
+        const fingerprint = normalizeCertificateFingerprint(value);
+        if (!fingerprint) fail("TLS 证书指纹格式");
+        option(output, fingerprint);
+      }
+    }
     const fingerprint = take("client-fingerprint");
     if (fingerprint !== undefined) {
       if (node.type === "hysteria2" || !["chrome", "chrome147", "safari-ios18", "safari-ios-26"].includes(text(fingerprint))) fail();
@@ -172,9 +197,10 @@ export function renderLoonNode(node: ParsedNode): string {
     }
   }
   for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined && !consumed.has(key)) fail();
+        if (value !== undefined && !consumed.has(key)) {
+      const knownOptions = ["plugin", "plugin-opts", "dialer-proxy", "dialer_proxy", "udp-over-tcp-version", "tls", "skip-cert-verify", "servername", "sni", "alpn", "client-fingerprint", "tls-fingerprint", "tls-pubkey-sha256", "ws-opts", "http-opts", "grpc-opts", "h2-opts", "xhttp-opts", "packet-encoding", "authenticated-length", "global-padding", "obfs", "obfs-password", "ports", "hop-interval", "up", "down", "fingerprint", "ech-opts", "headers"];
+      fail(knownOptions.includes(key) ? `不支持的选项 ${key}` : "不支持的扩展字段");
+    }
   }
   return `${name} = ${protocol},${parts.join(",")}`;
 }
-
-
