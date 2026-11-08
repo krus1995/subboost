@@ -611,7 +611,7 @@ function SubscriptionRow({
         {format === "clash" && <Button
           variant="ghost"
           size="sm"
-          onClick={() => void onDownload(sub)}
+          onClick={() => onDownload(sub)}
           className="gap-0 sm:gap-2"
           title="下载订阅配置"
         >

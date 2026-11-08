@@ -199,7 +199,7 @@ export function renderLoonNode(node: ParsedNode): string {
     }
   }
   for (const [key, value] of Object.entries(data)) {
-        if (value !== undefined && !consumed.has(key)) {
+    if (value !== undefined && !consumed.has(key)) {
       const knownOptions = ["plugin", "plugin-opts", "dialer-proxy", "dialer_proxy", "udp-over-tcp-version", "tls", "skip-cert-verify", "servername", "sni", "alpn", "client-fingerprint", "tls-fingerprint", "tls-pubkey-sha256", "ws-opts", "http-opts", "grpc-opts", "h2-opts", "xhttp-opts", "packet-encoding", "authenticated-length", "global-padding", "obfs", "obfs-password", "ports", "hop-interval", "up", "down", "fingerprint", "ech-opts", "headers"];
       fail(knownOptions.includes(key) ? `不支持的选项 ${key}` : "不支持的扩展字段");
     }
