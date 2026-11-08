@@ -38,7 +38,6 @@ peer="root@$DEPLOY_HOST"
 scp_peer=$peer
 if [[ $DEPLOY_HOST == *:* ]]; then scp_peer="root@[$DEPLOY_HOST]"; fi
 wrapper=/usr/local/sbin/subboost-fork-deploy
-deadline=$((SECONDS + 5400))
 
 # A dropped connection may mean the request reached systemd. Retrying a wrapper
 # call uses the same release and transfer identities.
@@ -100,6 +99,7 @@ if [[ $(jq -r .upload <<< "$prepared") == true ]]; then
   sshpass -e scp "${opts[@]}" -P "$DEPLOY_PORT" image.tar.gz release.json SHA256SUMS "$scp_peer:$dest"
 fi
 
+deadline=$((SECONDS + 5400))
 while ((SECONDS < deadline)); do
   current_main
   if reply=$(remote "$wrapper" submit "$sha" "$transfer_id" "$archive" "$image"); then

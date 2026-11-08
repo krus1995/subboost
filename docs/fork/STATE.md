@@ -22,7 +22,7 @@ next_action: deploy_current_main_and_verify_active_receipt
 
 GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许 main 分支，DEPLOY_USER、PRODUCTION_URL 已设置。仓库变量 FORK_DEPLOY_ENABLED 初始为 false。main 的镜像构建与留存可先运行；核对主机、凭据和恢复演练后再开启生产部署。
 
-固定版本 Pstack、Bun 与 GitHub CLI 见 `ops/fork/toolchain.lock.json`。新会话与子代理各自从技能目录发现 Pstack 的两个技能、三个项目技能，读到了同一份 AGENTS.md。Codex 的 hooks/list 返回 Pstack SessionStart 的信任状态为 untrusted。显式调用技能可用；如需自动加载，用户在 `/hooks` 核对并信任这一项。
+固定版本 Pstack、Bun 与 GitHub CLI 见 `ops/fork/toolchain.lock.json`。新会话与子代理各自从技能目录发现 Pstack 的两个技能、三个项目技能，读到了同一份 AGENTS.md。本机针对此项目运行 `hooks/list`，Pstack SessionStart 返回 `enabled=true`、`trustStatus=trusted`、`errors=0`。
 
 已回读 main 分支保护。合并需要 PR 达到最新 base，并通过 GitHub Actions 提供的 `fork-required`，管理员也受约束。首轮测试入口缺少 test-host.py，required job 返回失败。补交脚本后 source、image 与汇总检查通过。[失败记录](https://github.com/krus1995/subboost/actions/runs/42396677192) · [修复后通过](https://github.com/krus1995/subboost/actions/runs/42397014996)
 
@@ -42,7 +42,11 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 
 生产预检和恢复演练均已通过。演练将停写后的生产备份恢复到隔离库，旧镜像成功解密已有订阅。原 app 和 cron 恢复运行后，本机和公网均能读回订阅，原数据库卷和原库 OID 保持一致。复查覆盖另外 2 个健康入口和 4 个运行中的容器。systemd 任务退出码为 0，主机回执 `/var/lib/subboost-fork/rehearsal.json` 记录 `smokePassed=true`。
 
-演练通过后已启用 `FORK_DEPLOY_ENABLED` 并回读确认。下一步用当前 main 的制品首次部署，核对 Actions runner 的 SSH 连接、生产容器的镜像 ID 和 OCI revision，再验收订阅读取、cron 和 Tunnel 入口。此页记录首发前的状态。后续运行以 Actions summary、主机 `/var/lib/subboost-fork/current.json` 和对应 SHA 的部署回执为准。查询与故障恢复命令见[主机接管说明](SERVER.md)。
+演练通过后已启用 `FORK_DEPLOY_ENABLED` 并回读确认。首次部署仍需核对生产容器的镜像 ID 和 OCI revision，并验收订阅读取、cron 和 Tunnel 入口。后续运行以 Actions summary、主机 `/var/lib/subboost-fork/current.json` 和对应 SHA 的部署回执为准。查询与故障恢复命令见[主机接管说明](SERVER.md)。
+
+合并提交 `84c45a9` 触发首次发布。两台 GitHub runner 均已通过固定主机公钥的 SSH 登录，但 SCP 上传缓慢，其中一次在 155 秒内传了约 3.1 MB，全包约 319 MB。观察期间尚未提交制品，原站继续运行。[首次发布尝试](https://github.com/krus1995/subboost/actions/runs/42447035721)
+
+部署作业的总时限现为 360 分钟。上传前，临时 runner 尝试启用 TCP BBR 拥塞控制并输出实际算法。上传完成后才开始计算提交和等待回执的 90 分钟，整项作业仍受总时限约束。BBR 对这条公网线路的实际传输速度有待后续发布验证。
 
 ## 验收记录
 
@@ -51,10 +55,10 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 | 阶段 | 已验证 | 剩余现场验收 |
 | --- | --- | --- |
 | P0 | GitHub 管理权限、上游版本、SSH 主机与数据库卷身份、订阅解密、Tunnel origin 及其他服务基线 | 已完成 |
-| P1 | 固定插件版本、19 项角色设置、项目规则及 3 个技能通过格式与加载探针 | 自动 SessionStart 仍待用户信任 |
+| P1 | 固定插件版本、19 项角色设置、项目规则及 3 个技能通过加载验证，项目的 SessionStart 已启用并受信任 | 已完成 |
 | P2 | 2,657 个单测通过，分支覆盖率 97.05%。空库与旧库六个迁移通过，破坏密文能使回归失败 | 新候选的审查和检查随 PR 更新 |
 | P3 | 真实 v2.11.0 返回 no-op；隔离分支的冲突与接续演练通过 | 日常在用户发起同步时运行 |
-| P4 | production 环境只允许 main，部署凭据已配置，本机按固定主机指纹登录成功 | 在首发工作流验证 runner 使用同一主机公钥登录 |
+| P4 | production 环境只允许 main，部署凭据已配置，本机与首发 runner 均用固定主机公钥登录成功 | 已完成 |
 | P5 | 制品、摘要、重复请求、乱序 SHA、SSH 中断后查询都已在隔离环境检查 | main 的构建记录见 Actions；首次真实传输后核对容器 image ID |
 | P6 | 生产备份已在隔离库恢复，旧镜像成功解密原订阅，演练回执已保存。隔离测试另覆盖失败迁移和损坏密文 | 首发停写后重新备份并核对本次部署回执 |
 | P7 | 生产预检通过，演练后原 app、cron 和 Tunnel 入口正常 | fork 接流量后复查订阅、cron、网络与其他入口 |

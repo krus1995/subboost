@@ -77,7 +77,14 @@ echo altered >> artifact/image.tar.gz
 if bash "$scripts/transfer-release.sh" artifact; then exit 1; fi
 [[ ! -e $TEST_LOG ]]
 printf archive > artifact/image.tar.gz
+# Advance the runner's clock past 90 minutes when SCP finishes.
+sshpass() {
+  command sshpass "$@" || return $?
+  if [[ $2 == scp ]]; then SECONDS=$((SECONDS + 5500)); fi
+}
+export -f sshpass
 bash "$scripts/transfer-release.sh" artifact
+unset -f sshpass
 [[ $(grep -cx upload "$TEST_LOG") == 1 && $(grep -c '^submit ' "$TEST_LOG") == 3 ]]
 [[ $(sort -u "$TEST_LOG" | grep -c '^submit ') == 1 ]]
 grep -qx "status $BUSY_SHA" "$TEST_LOG"

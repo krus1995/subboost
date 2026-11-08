@@ -70,7 +70,7 @@ jobs:
     if: vars.FORK_DEPLOY_ENABLED == 'true'
     needs: artifact
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 360
     environment:
       name: production
       url: https://subboost.krus1987.kdns.fr
@@ -96,6 +96,13 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends openssh-client sshpass
           fi
+      - name: Select TCP congestion control on the upload runner
+        run: |
+          sudo -n modprobe tcp_bbr 2>/dev/null || true
+          if sysctl -n net.ipv4.tcp_available_congestion_control | grep -qw bbr; then
+            sudo -n sysctl -qw net.ipv4.tcp_congestion_control=bbr || echo 'Could not enable TCP BBR.'
+          fi
+          sysctl net.ipv4.tcp_congestion_control || echo 'Could not read the runner TCP setting.'
       - name: Submit release and verify host receipt
         env:
           GH_TOKEN: ${{ github.token }}
