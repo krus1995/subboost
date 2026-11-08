@@ -13,7 +13,7 @@ function fail(item: string): never {
 }
 
 function atom(value: string): string {
-  if (!value.trim() || /[,=\r\n\[\]"\\]/.test(value)) fail('名称或参数中的特殊字符');
+  if (!value.trim() || value.startsWith('//') || /[,;#=\r\n\[\]"\\]/.test(value)) fail('名称或参数中的特殊字符');
   return value;
 }
 
@@ -177,6 +177,7 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
   }
   return ['# SubBoost Loon', '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
 }
+
 
 
 
