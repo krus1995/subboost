@@ -69,7 +69,7 @@ function checkAdvanced(advanced: ProxyGroupAdvancedConfig | undefined, nodeNames
     if (!advanced[field]) continue;
     try { new RegExp(advanced[field], 'i'); } catch { fail(`${prefix} ${field} 筛选正则`); }
   }
-  for (const ref of [...advanced.extraMembers ?? [], ...advanced.excludedMembers ?? [], ...advanced.memberOrder ?? []]) {
+  for (const ref of advanced.extraMembers ?? []) {
     if (ref.kind === 'node' && !nodeNames.has(ref.name)) fail(`${prefix}成员引用中的缺失节点`);
   }
 }
@@ -129,11 +129,16 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
   for (const [index, rule] of config.customRules.entries()) {
     if (isDisabledCustomProxyGroupTarget(rule.target, targetOptions)) continue;
     checkTarget(rule.target, `第 ${index + 1} 条自定义规则`);
+    inlineLoonRule(rule.type, rule.value, 'DIRECT', Boolean(rule.noResolve));
     if (rule.noResolve && rule.type !== 'IP-CIDR' && rule.type !== 'IP-CIDR6') fail(`第 ${index + 1} 条自定义规则的 noResolve`);
   }
-  for (const [key, edit] of Object.entries(options.builtinRuleEdits ?? {})) if (edit.enabled !== false && edit.target) checkTarget(edit.target, `内置规则 ${loonLabel(key)}`);
+  for (const [key, edit] of Object.entries(options.builtinRuleEdits ?? {})) {
+    const [, moduleId, ruleId] = key.split(':');
+    const active = config.enabledGroups.includes(moduleId) && PROXY_GROUP_MODULES.some((module) => module.id === moduleId && module.rules.some((rule) => rule.id === ruleId));
+    if (active && edit.enabled !== false && edit.target) checkTarget(edit.target, `内置规则 ${loonLabel(key)}`);
+  }
   for (const advanced of [...Object.entries(options.proxyGroupAdvanced ?? {}).filter(([id]) => config.enabledGroups.includes(id)).map(([, advanced]) => advanced), ...customGroups.map((group) => group.advanced)]) {
-    for (const ref of [...advanced?.extraMembers ?? [], ...advanced?.memberOrder ?? [], ...advanced?.excludedMembers ?? []]) {
+    for (const ref of advanced?.extraMembers ?? []) {
       if (ref.kind === 'module' || ref.kind === 'custom') checkTarget(ref, '代理组高级成员');
     }
   }

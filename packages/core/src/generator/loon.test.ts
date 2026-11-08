@@ -116,7 +116,7 @@ describe('Loon renderer edge cases', () => {
     { userConfig: { ruleProviderBaseUrl: 'https://secret.example' } },
     { userConfig: { listenerPorts: { '香港 A': 1234 } } },
     { nodes: [{ ...nodes[0], name: 'DIRECT' }] },
-    { proxyGroupNameOverrides: { auto: '香港 A' } },
+    { customProxyGroups: [{ id: 'conflict', name: '香港 A', emoji: '', groupType: 'select' as const }] },
     { proxyGroupAdvanced: { auto: { includeRegex: '[' } } },
     { proxyGroupAdvanced: { auto: { excludeRegex: '[' } } },
     { proxyGroupAdvanced: { auto: { extraMembers: [{ kind: 'module' as const, id: 'missing' }] } } },
@@ -136,5 +136,25 @@ describe('Loon renderer edge cases', () => {
   it('allows disabled chain groups and empty provider options', async () => {
     const text = await generateLoonConfig({ ...base, proxyProviders: {}, dialerProxyGroups: [{ id: 'off', name: '链', enabled: false, relayNodes: [], targetNodes: [], type: 'select' }] }, load);
     expect(text).toContain('FINAL,');
+  });
+});
+
+describe('Loon stored configuration compatibility', () => {
+  it('rejects a comma in the original custom payload before text splitting', async () => {
+    await expect(generateLoonConfig({ ...base, userConfig: { ...base.userConfig, customRules: [{ id: 'comma', type: 'DOMAIN', value: 'exact.example,extra', target: 'DIRECT' }] } }, load)).rejects.toThrow('特殊字符');
+  });
+
+  it('rejects a filter that empties a url-test group without injecting DIRECT', async () => {
+    await expect(generateLoonConfig({ ...base, proxyGroupAdvanced: { auto: { includeRegex: 'does-not-match-any-node' } } }, load)).rejects.toThrow('空成员列表');
+    await expect(generateLoonConfig({ ...base, customProxyGroups: [{ id: 'empty', name: '空测速', emoji: '', groupType: 'url-test', memberSource: 'filtered-nodes', advanced: { includeRegex: 'does-not-match-any-node' } }] }, load)).rejects.toThrow('空成员列表');
+  });
+
+  it('keeps harmless stale exclusion/order metadata and disabled module edits', async () => {
+    const text = await generateLoonConfig({ ...base,
+      proxyGroupAdvanced: { auto: { excludedMembers: [{ kind: 'node', name: 'old-node' }, { kind: 'custom', id: 'old-group' }], memberOrder: [{ kind: 'node', name: 'old-node' }, { kind: 'module', id: 'old-module' }] }, cn: { extraMembers: [{ kind: 'node', name: 'old-node' }] } },
+      builtinRuleEdits: { 'module:cn:cn-ip': { target: 'old-node' } },
+    }, load);
+    expect(text).toContain('url-test, 香港 A, 日本 B,');
+    expect(text).not.toContain('old-node');
   });
 });
