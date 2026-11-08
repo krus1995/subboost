@@ -24,11 +24,14 @@ describe("Loon node option validation", () => {
     expect(renderLoonNode({ ...ss, plugin: "obfs", "plugin-opts": { host: "cdn.example.invalid", mode: "tls", unused: undefined } })).toContain('obfs-name=tls,obfs-host="cdn.example.invalid"');
   });
   it.each<Record<string, unknown>>([
-    { cipher: "2022-blake3-aes-128-gcm" }, { cipher: "unknown" }, { protocol: "unknown" }, { obfs: "unknown" }, { "protocol-param": 123 }, { "obfs-param": false },
+    { cipher: "2022-blake3-aes-128-gcm" }, { cipher: "aes-128-gcm" }, { obfs: "tls1.2_ticket_fastauth" }, { cipher: "unknown" }, { protocol: "unknown" }, { obfs: "unknown" }, { "protocol-param": 123 }, { "obfs-param": false },
   ])("rejects unsupported SSR options %j", patch => {
     expect(() => renderLoonNode({ ...ssr, ...patch })).toThrow("Loon");
   });
-  it.each(["origin", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a", "auth_chain_b"])("preserves the SSR protocol %s", protocol => {
+  it.each(["none", "rc4-md5-6"])("preserves the SSR encryption method %s", cipher => {
+    expect(renderLoonNode({ ...ssr, cipher })).toContain(`,${cipher},"synthetic",protocol=origin`);
+  });
+  it.each(["origin", "auth_sha1", "auth_sha1_v2", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a", "auth_chain_b"])("preserves the SSR protocol %s", protocol => {
     expect(renderLoonNode({ ...ssr, protocol, "protocol-param": "" })).toContain(`protocol=${protocol},obfs=plain,protocol-param=""`);
   });
   it.each([undefined, {}, { method: undefined, path: undefined, headers: undefined }, { headers: {} }])("exports default HTTP options %j", opts => {

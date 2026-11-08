@@ -30,6 +30,7 @@ function token(value: unknown): string {
 }
 
 const ssCiphers = new Set("2022-blake3-aes-128-gcm 2022-blake3-aes-256-gcm aes-128-gcm aes-192-gcm aes-256-gcm chacha20-ietf-poly1305 xchacha20-ietf-poly1305 rc4 rc4-md5 aes-128-cfb aes-192-cfb aes-256-cfb aes-128-ctr aes-192-ctr aes-256-ctr bf-cfb camellia-128-cfb camellia-192-cfb camellia-256-cfb cast5-cfb des-cfb idea-cfb rc2-cfb seed-cfb salsa20 chacha20 chacha20-ietf".split(" "));
+const ssrCiphers = new Set("none rc4 rc4-md5-6 rc4-md5 aes-128-cfb aes-192-cfb aes-256-cfb aes-128-ctr aes-192-ctr aes-256-ctr bf-cfb camellia-128-cfb camellia-192-cfb camellia-256-cfb salsa20 chacha20 chacha20-ietf".split(" "));
 const vmessCiphers = new Set(["none", "auto", "aes-128-cfb", "aes-128-gcm", "chacha20-ietf-poly1305"]);
 
 /** Serialize only options whose semantics are documented by Loon. */
@@ -115,13 +116,13 @@ export function renderLoonNode(node: ParsedNode): string {
     case "ssr": {
       protocol = "ShadowsocksR";
       const cipher = token(take("cipher"));
-      if (!ssCiphers.has(cipher) || cipher.startsWith("2022-")) fail();
+      if (!ssrCiphers.has(cipher)) fail();
       parts.push(cipher, quoted(take("password")));
       const ssrProtocol = token(take("protocol"));
-      if (!["origin", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a", "auth_chain_b"].includes(ssrProtocol)) fail();
+      if (!["origin", "auth_sha1", "auth_sha1_v2", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a", "auth_chain_b"].includes(ssrProtocol)) fail();
       option("protocol", ssrProtocol);
       const obfs = token(take("obfs"));
-      if (!["plain", "http_simple", "http_post", "tls1.2_ticket_auth", "tls1.2_ticket_fastauth"].includes(obfs)) fail();
+      if (!["plain", "http_simple", "http_post", "tls1.2_ticket_auth"].includes(obfs)) fail();
       option("obfs", obfs);
       for (const key of ["protocol-param", "obfs-param"]) {
         const value = take(key);

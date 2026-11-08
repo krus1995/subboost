@@ -25,6 +25,35 @@ describe('Loon compatible node export', () => {
     await expect(generateLoonConfig(options, load)).rejects.toThrow('Loon');
   });
 
+  it.each(['safari', 'ios'])('maps the %s family only for compatible Loon exports', async fingerprint => {
+    const node = { ...supported, 'client-fingerprint': fingerprint };
+    const result = await generateLoonConfig({ ...options, nodes: [unsupported, node] }, load, compatible);
+    expect(result).toContain('# SUBBOOST-LOON-TLS v1 index=2 tls-profile=safari-ios18');
+    expect(result).toMatch(/^Synthetic TCP = VLESS,.*tls-profile=safari-ios18/m);
+    expect(node['client-fingerprint']).toBe(fingerprint);
+    await expect(generateLoonConfig({ ...options, nodes: [node] }, load)).rejects.toThrow('TLS 指纹');
+  });
+
+  it.each([
+    ['safari', true, 'safari-ios-26'], ['ios', false, 'safari-ios18'], ['chrome', true, 'chrome147'],
+    [undefined, true, 'chrome147'], ['chrome147', true, 'chrome147'], ['safari-ios-26', true, 'safari-ios-26'],
+    [undefined, false, undefined],
+  ] as const)('maps Reality %s with hybrid key exchange %s to %s', async (fingerprint, hybrid, expected) => {
+    const node = { ...supported, sni: 'example.invalid', 'client-fingerprint': fingerprint, 'reality-opts': { 'public-key': 'A'.repeat(43), 'support-x25519mlkem768': hybrid } };
+    const result = await generateLoonConfig({ ...options, nodes: [node] }, load, compatible);
+    expect(result).toContain('public-key="' + 'A'.repeat(43) + '"');
+    if (expected) expect(result).toMatch(new RegExp('^Synthetic TCP = VLESS,.*tls-profile=' + expected, 'm'));
+    else expect(result).not.toContain('tls-profile=');
+    expect(node['reality-opts']['support-x25519mlkem768']).toBe(hybrid);
+  });
+
+  it.each([['safari', 'true'], ['firefox', true], ['safari-ios18', true]] as const)('skips an unrepresentable Reality request %s %s', async (fingerprint, hybrid) => {
+    const node: ParsedNode = { ...supported, name: 'Hybrid', sni: 'example.invalid', 'client-fingerprint': fingerprint, 'reality-opts': { 'public-key': 'A'.repeat(43), 'support-x25519mlkem768': hybrid } } as ParsedNode;
+    const result = await generateLoonConfig({ ...options, nodes: [node, supported] }, load, compatible);
+    expect(result).toContain('included=1 skipped=1');
+    expect(result).not.toContain('SUBBOOST-LOON-TLS');
+  });
+
   it('does not expose rejected node fields or arbitrary transport values in comments', async () => {
     const unknown = { ...unsupported, name: 'https://private.invalid/token', server: 'private.invalid', network: 'secret-transport' };
     const text = await generateLoonConfig({ ...options, nodes: [unknown, supported] }, load, compatible);

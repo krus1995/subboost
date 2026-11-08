@@ -252,6 +252,25 @@ function pruneCompatibleGroups(groups: ProxyGroup[], originalNodeNames: Set<stri
   return retained;
 }
 
+/** Adapt generic ClientHello profiles to the presets offered by Loon. */
+function compatibleTlsNode(node: ParsedNode): ParsedNode {
+  const fingerprint = node['client-fingerprint'];
+  const safari = fingerprint === 'safari' || fingerprint === 'ios';
+  const reality = node['reality-opts'];
+  if (reality && typeof reality === 'object' && !Array.isArray(reality) && 'support-x25519mlkem768' in reality) {
+    const { 'support-x25519mlkem768': hybrid, ...settings } = reality;
+    if (typeof hybrid !== 'boolean') return node;
+    let profile = fingerprint;
+    if (safari) profile = hybrid ? 'safari-ios-26' : 'safari-ios18';
+    else if (hybrid) {
+      if (fingerprint === undefined || fingerprint === 'chrome') profile = 'chrome147';
+      else if (fingerprint !== 'chrome147' && fingerprint !== 'safari-ios-26') return node;
+    }
+    return { ...node, 'client-fingerprint': profile, 'reality-opts': settings } as ParsedNode;
+  }
+  return safari ? { ...node, 'client-fingerprint': 'safari-ios18' } : node;
+}
+
 export async function generateLoonConfig(options: GenerateOptions, loadRuleList: (path: string) => Promise<string>, conversion: { mode: 'strict' | 'compatible' } = { mode: 'strict' }): Promise<string> {
   const config = resolveConfig(options);
   for (const [index, node] of options.nodes.entries()) {
@@ -259,11 +278,16 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
   }
   const originalNodes = ensureUniqueProxyNames(options.nodes);
   const skipped: string[] = [];
-  const nodes = conversion.mode === 'strict' ? originalNodes : originalNodes.filter((node, index) => {
+  const adapted: string[] = [];
+  const nodes = conversion.mode === 'strict' ? originalNodes : originalNodes.flatMap((node, index) => {
     try {
       if (node.name === 'DIRECT' || node.name === 'REJECT' || node['dialer-proxy'] || node.type === 'relay') fail('节点的保留名称或链式代理');
-      renderLoonNode({ ...node, name: 'Compatibility check' });
-      return true;
+      const candidate = compatibleTlsNode(node);
+      renderLoonNode({ ...candidate, name: 'Compatibility check' });
+      if (candidate['client-fingerprint'] !== node['client-fingerprint']) {
+        adapted.push(`# SUBBOOST-LOON-TLS v1 index=${index + 1} tls-profile=${candidate['client-fingerprint']}`);
+      }
+      return [candidate];
     } catch (error) {
       if (!(error instanceof LoonConversionError)) throw error;
       const protocols = ['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'http', 'https', 'socks5', 'ssr', 'anytls', 'hysteria', 'tuic', 'wireguard', 'snell', 'socks4', 'ssh', 'direct', 'reject', 'dns', 'mieru', 'masque', 'sudoku', 'trusttunnel', 'relay'];
@@ -278,10 +302,10 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
         : error.message.includes('client-fingerprint') ? 'unsupported-client-fingerprint'
         : 'unsupported-settings';
       skipped.push(`# SUBBOOST-LOON-SKIP v1 index=${index + 1} protocol=${protocols.includes(node.type) ? node.type : 'unknown'} transport=${transport} reason=${reason}`);
-      return false;
+      return [];
     }
   });
-  const report = conversion.mode === 'compatible' ? [`# SUBBOOST-LOON-COMPAT v1 included=${nodes.length} skipped=${skipped.length}`, ...skipped] : [];
+  const report = conversion.mode === 'compatible' ? [`# SUBBOOST-LOON-COMPAT v1 included=${nodes.length} skipped=${skipped.length}`, ...adapted, ...skipped] : [];
   if (conversion.mode === 'compatible' && !nodes.some((node) => !isSubscriptionInfoNodeName(node.name))) throw new LoonConversionError(`Loon 兼容导出中没有可用代理节点。\n${report.join('\n')}`);
   try {
     const original = prepareGroups(options, config, originalNodes);
