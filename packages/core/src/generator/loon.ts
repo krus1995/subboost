@@ -130,7 +130,6 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
     if (isDisabledCustomProxyGroupTarget(rule.target, targetOptions)) continue;
     checkTarget(rule.target, `第 ${index + 1} 条自定义规则`);
     inlineLoonRule(rule.type, rule.value, 'DIRECT', Boolean(rule.noResolve));
-    if (rule.noResolve && rule.type !== 'IP-CIDR' && rule.type !== 'IP-CIDR6') fail(`第 ${index + 1} 条自定义规则的 noResolve`);
   }
   for (const [key, edit] of Object.entries(options.builtinRuleEdits ?? {})) {
     const [, moduleId, ruleId] = key.split(':');

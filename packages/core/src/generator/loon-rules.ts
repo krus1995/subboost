@@ -9,7 +9,7 @@ export function loonAtom(value: string, errorItem = '名称或参数中的特殊
 
 function validIpAddress(address: string): boolean {
   if (!address.includes(':')) {
-    return address.split('.').length === 4 && address.split('.').every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+    return address.split('.').length === 4 && address.split('.').every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
   }
   try {
     return new URL(`http://[${address}]/`).hostname.startsWith('[');
@@ -19,7 +19,7 @@ function validIpAddress(address: string): boolean {
 }
 
 export function inlineLoonRule(type: string, value: string, target: string, noResolve: boolean): string {
-  loonAtom(value);
+  loonAtom(value, `规则 ${/^[A-Z0-9-]+$/.test(type) ? type : '未知类型'} 的值含空值或特殊字符`);
   if (!SUPPORTED_RULE_TYPES.has(type)) fail(`规则类型 ${/^[A-Z0-9-]+$/.test(type) ? type : '未知类型'}`);
   const ip = type === 'IP-CIDR' || type === 'IP-CIDR6';
   if (noResolve && !ip) fail(`规则 ${type} 的 no-resolve`);
