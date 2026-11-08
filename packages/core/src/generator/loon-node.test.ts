@@ -40,7 +40,7 @@ describe("Loon native nodes", () => {
     expect(line).toContain('flow=xtls-rprx-vision,public-key="LgJ9bNTyUqBLFkDA12-QgEL7c1yQ1ztk-V1Q-3OLXSk",short-id="164168844958a16d"');
     expect(line).toContain("tls-profile=chrome,sni=www.example.com");
     expect(() => renderLoonNode({ ...reality, tls: false })).toThrow("Loon");
-    expect(() => renderLoonNode({ ...reality, "reality-opts": { ...reality["reality-opts"], "support-x25519mlkem768": true } })).toThrow("Loon");
+    expect(() => renderLoonNode({ ...reality, "reality-opts": { "public-key": "LgJ9bNTyUqBLFkDA12-QgEL7c1yQ1ztk-V1Q-3OLXSk", "support-x25519mlkem768": true } })).toThrow("Loon");
   });
   it("renders basic Hysteria2 and rejects bandwidth and obfuscation options", () => {
     const node: ParsedNode = { ...base, type: "hysteria2", password: "secret", sni: "hy.example.com", "skip-cert-verify": false, alpn: ["h3"] };
@@ -54,4 +54,5 @@ describe("Loon native nodes", () => {
     expect(() => renderLoonNode({ ...node, network: "grpc" })).toThrow("Loon");
   });
 });
+
 
