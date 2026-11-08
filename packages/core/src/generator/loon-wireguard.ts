@@ -1,5 +1,6 @@
 import type { ParsedNode } from "../types/node";
 import { LoonConversionError } from "./loon-error";
+import { isLoonIpv6Literal } from "./loon-ip";
 
 function fail(): never {
   throw new LoonConversionError("Loon wireguard 节点转换失败（WireGuard 参数无效或不受支持）");
@@ -24,7 +25,7 @@ function integer(value: unknown, minimum: number, maximum: number): string {
 function ip(value: unknown, ipv6: boolean): string {
   const result = string(value);
   if (ipv6) {
-    try { new URL(`http://[${result}]/`); } catch { fail(); }
+    if (!isLoonIpv6Literal(result)) fail();
   } else if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(result) || result.split(".").some(part => Number(part) > 255 || (part.length > 1 && part.startsWith("0")))) fail();
   return result;
 }

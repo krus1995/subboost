@@ -2,6 +2,7 @@ import type { ParsedNode } from "../types/node";
 import { LoonConversionError } from "./loon-error";
 import { normalizeCertificateFingerprint } from "../mihomo/certificate-fingerprint";
 import { renderLoonWireGuard } from "./loon-wireguard";
+import { isLoonIpv6Literal } from "./loon-ip";
 
 function fail(reason = "值格式不安全或无效"): never {
   throw new LoonConversionError(`Loon 节点转换失败（${reason}）`);
@@ -51,7 +52,7 @@ export function renderLoonNode(node: ParsedNode): string {
     if (!server.includes(":")) fail("IPv6 地址");
   }
   if (server.includes(":")) {
-    try { new URL(`http://[${server}]/`); } catch { fail("IPv6 地址"); }
+    if (!isLoonIpv6Literal(server)) fail("IPv6 地址");
   } else server = token(server);
   if (!Number.isInteger(node.port) || Number(node.port) < 1 || Number(node.port) > 65535) fail();
   const parts = [server, String(node.port)];

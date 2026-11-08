@@ -187,9 +187,25 @@ async function renderRules(options: GenerateOptions, config: UserConfig, fallbac
   return lines;
 }
 
+function proxyDefaultResolver(groups: ProxyGroup[], nodeNames: Set<string>): (name: string) => boolean {
+  const byName = new Map(groups.map((group) => [group.name, group]));
+  const memo = new Map<string, boolean>();
+  const resolve = (name: string): boolean => {
+    if (nodeNames.has(name)) return !isSubscriptionInfoNodeName(name);
+    const cached = memo.get(name);
+    if (cached !== undefined) return cached;
+    const first = byName.get(name)?.proxies?.[0];
+    const result = first !== undefined && resolve(first);
+    memo.set(name, result);
+    return result;
+  };
+  return resolve;
+}
+
 function pruneCompatibleGroups(groups: ProxyGroup[], originalNodeNames: Set<string>, nodeNames: Set<string>, report: string[]): ProxyGroup[] {
   checkGroupCycles(groups);
   const byName = new Map(groups.map((group) => [group.name, group]));
+  const originalDefault = proxyDefaultResolver(groups, originalNodeNames);
   const originalProxy = new Map<string, boolean>();
   const hadProxy = (name: string): boolean => {
     if (originalNodeNames.has(name)) return !isSubscriptionInfoNodeName(name);
@@ -199,8 +215,9 @@ function pruneCompatibleGroups(groups: ProxyGroup[], originalNodeNames: Set<stri
     originalProxy.set(name, result);
     return result;
   };
-  const memo = new Map<string, { group: ProxyGroup; hasProxy: boolean } | null>();
-  const prune = (name: string): { group: ProxyGroup; hasProxy: boolean } | null => {
+  const memo = new Map<string, { group: ProxyGroup; hasProxy: boolean; defaultProxy: boolean } | null>();
+  const memberDefault = (name: string): boolean => nodeNames.has(name) ? !isSubscriptionInfoNodeName(name) : prune(name)?.defaultProxy ?? false;
+  const prune = (name: string): { group: ProxyGroup; hasProxy: boolean; defaultProxy: boolean } | null => {
     if (memo.has(name)) return memo.get(name) ?? null;
     const group = byName.get(name);
     if (!group) return null;
@@ -216,7 +233,12 @@ function pruneCompatibleGroups(groups: ProxyGroup[], originalNodeNames: Set<stri
       hasProxy ||= child?.hasProxy ?? false;
       return child !== null;
     });
-    const result = !members.length || (hadProxy(name) && !hasProxy) ? null : { group: { ...group, proxies: members }, hasProxy };
+    if (members.length && hasProxy && originalDefault(name) && !memberDefault(members[0])) {
+      const preferred = members.findIndex(memberDefault);
+      if (preferred < 0) fail('兼容导出无法保留代理组的默认代理路径');
+      members.unshift(...members.splice(preferred, 1));
+    }
+    const result = !members.length || (hadProxy(name) && !hasProxy) ? null : { group: { ...group, proxies: members }, hasProxy, defaultProxy: memberDefault(members[0]) };
     memo.set(name, result);
     return result;
   };
@@ -281,7 +303,12 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
     const displayNames = buildDisplayNames(nodes, groups);
     const nodeLines = renderNodes(nodes, displayNames);
     const groupLines = renderGroups(groups, nodeNames, config, displayNames);
-    const ruleLines = await renderRules(options, config, groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT', literalTargetNames, displayNames, loadRuleList);
+    let fallbackTarget = groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT';
+    if (conversion.mode === 'compatible' && skipped.length && original.groups[0] && proxyDefaultResolver(original.groups, original.nodeNames)(original.groups[0].name)) {
+      const defaultsToProxy = proxyDefaultResolver(groups, nodeNames);
+      if (!defaultsToProxy(fallbackTarget)) fallbackTarget = groups.find((group) => defaultsToProxy(group.name))?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? fail('兼容导出无法保留 FINAL 的默认代理路径');
+    }
+    const ruleLines = await renderRules(options, config, fallbackTarget, literalTargetNames, displayNames, loadRuleList);
     return ['# SubBoost Loon', ...report, '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
   } catch (error) {
     if (error instanceof LoonConversionError && skipped.length) throw new LoonConversionError(`${error.message}\n${report.join('\n')}`);

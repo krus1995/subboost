@@ -136,5 +136,75 @@ describe('Loon compatible node export', () => {
     for (const strategy of ['consistent-hashing', 'sticky-sessions'] as const) {
       await expect(generateLoonConfig({ ...options, nodes: [supported], proxyGroupAdvanced: { auto: { groupType: 'load-balance', strategy } } }, load)).rejects.toThrow('strategy');
     }
+    await expect(generateLoonConfig({ ...options, nodes: [supported], customProxyGroups: [{ id: 'default-balance', name: 'Default balance', emoji: '', groupType: 'load-balance' }] }, load)).rejects.toThrow('strategy');
+  });
+
+  it('keeps the default proxy path after removing the preferred automatic group', async () => {
+    const text = await generateLoonConfig({ ...options, proxyGroupAdvanced: { auto: { includeRegex: 'XHTTP' } } }, load, compatible);
+    expect(text).toContain('🚀 节点选择 = select, Synthetic TCP, DIRECT, REJECT');
+    expect(text).toContain('FINAL,🐟 漏网之鱼');
+    expect(text).toContain('🐟 漏网之鱼 = select, 🚀 节点选择, DIRECT, REJECT');
+  });
+
+  it('repairs nested proxy defaults but preserves originally explicit DIRECT defaults', async () => {
+    const customProxyGroups: NonNullable<GenerateOptions['customProxyGroups']> = [
+      { id: 'gone', name: 'Gone', emoji: '', groupType: 'url-test', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: 'XHTTP' } },
+      { id: 'child', name: 'Child', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'custom', id: 'gone' }, { kind: 'node', name: supported.name }], memberOrder: [{ kind: 'custom', id: 'gone' }, { kind: 'direct' }, { kind: 'reject' }, { kind: 'node', name: supported.name }] } },
+      { id: 'parent', name: 'Parent', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'custom', id: 'child' }], memberOrder: [{ kind: 'custom', id: 'child' }, { kind: 'direct' }, { kind: 'reject' }] } },
+      { id: 'direct', name: 'Explicit direct', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'node', name: supported.name }] } },
+    ];
+    const input: GenerateOptions = { ...options, customProxyGroups, userConfig: { enabledGroups: [] } };
+    const text = await generateLoonConfig(input, load, compatible);
+    expect(text).toContain('Child = select, Synthetic TCP, DIRECT, REJECT');
+    expect(text).toContain('Parent = select, Child, DIRECT, REJECT');
+    expect(text).toContain('Explicit direct = select, DIRECT, REJECT, Synthetic TCP');
+    expect(text).toContain('FINAL,Child');
+    const reordered = await generateLoonConfig({ ...input, proxyGroupOrder: ['custom:gone', 'custom:direct', 'custom:parent', 'custom:child'] }, load, compatible);
+    expect(reordered).toContain('FINAL,Parent');
+    const explicitDirect = await generateLoonConfig({ ...input, proxyGroupOrder: ['custom:direct', 'custom:gone', 'custom:parent', 'custom:child'] }, load, compatible);
+    expect(explicitDirect).toContain('FINAL,Explicit direct');
+  });
+
+  it('rejects a proxy default that can only be replaced by explicitly direct-first children', async () => {
+    await expect(generateLoonConfig({ ...options, userConfig: { enabledGroups: [] }, customProxyGroups: [
+      { id: 'parent', name: 'Parent', emoji: '', groupType: 'select', includeInGroupMembers: false, advanced: { includeRegex: '^never$', extraMembers: [{ kind: 'node', name: unsupported.name }, { kind: 'custom', id: 'direct' }], memberOrder: [{ kind: 'node', name: unsupported.name }, { kind: 'direct' }, { kind: 'custom', id: 'direct' }] } },
+      { id: 'direct', name: 'Direct child', emoji: '', groupType: 'direct-first', includeInGroupMembers: false },
+    ] }, load, compatible)).rejects.toThrow('无法保留代理组的默认代理路径');
+  });
+
+  it('uses the surviving node for implicit FINAL when only originally direct groups remain', async () => {
+    const text = await generateLoonConfig({ ...options, userConfig: { enabledGroups: [] }, customProxyGroups: [
+      { id: 'gone', name: 'Gone', emoji: '', groupType: 'url-test', includeInGroupMembers: false, advanced: { includeRegex: 'XHTTP' } },
+      { id: 'direct', name: 'Direct child', emoji: '', groupType: 'direct-first', includeInGroupMembers: false },
+    ] }, load, compatible);
+    expect(text).toContain('FINAL,Synthetic TCP');
+    expect(text).toContain('Direct child = select, DIRECT, REJECT, Synthetic TCP');
+  });
+
+  it('validates active built-in rule targets while retaining disabled and stale edits', async () => {
+    const input: GenerateOptions = { ...options, userConfig: { enabledGroups: ['select', 'auto', 'cn'], experimentalCnUseCnRuleSet: false } };
+    const builtinRuleEdits: NonNullable<GenerateOptions['builtinRuleEdits']> = {
+      'module:cn:cn-ip': { target: supported.name },
+      'module:cn:geolocation-cn': { enabled: false, target: unsupported.name },
+      'module:cn:unknown-rule': { target: unsupported.name },
+      'module:disabled:cn-ip': { target: unsupported.name },
+      'module:cn:geoip-cn': {},
+    };
+    expect(await generateLoonConfig({ ...input, builtinRuleEdits }, async () => '192.0.2.0/24', compatible)).toContain('IP-CIDR,192.0.2.0/24,Synthetic TCP');
+    await expect(generateLoonConfig({ ...input, builtinRuleEdits: { 'module:cn:cn-ip': { target: unsupported.name } } }, load, compatible)).rejects.toThrow('兼容导出后不可用');
+    const disabled = await generateLoonConfig({ ...options, customProxyGroups: [{ id: 'off', name: 'Disabled', emoji: '', groupType: 'select', enabled: false }], userConfig: { ...options.userConfig, customRules: [{ id: 'off', type: 'DOMAIN', value: 'disabled.invalid', target: { kind: 'custom', id: 'off' } }] } }, load, compatible);
+    expect(disabled).not.toContain('disabled.invalid');
+  });
+
+  it('reports reserved or chained nodes and invalid option values without leaking fields', async () => {
+    for (const invalid of [{ ...supported, name: 'DIRECT' }, { ...supported, name: 'REJECT' }, { ...supported, 'dialer-proxy': 'private-secret' }, { ...supported, 'packet-encoding': 'private-secret' }]) {
+      const text = await generateLoonConfig({ ...options, nodes: [invalid, supported] }, load, compatible);
+      expect(text).toContain('reason=unsupported-settings');
+      expect(text).not.toContain('private-secret');
+    }
+    const external = parseSubscription('proxies:\n  - {name: Unknown, type: private-secret, server: example.invalid, port: 443}');
+    const text = await generateLoonConfig({ ...options, nodes: [...external.nodes, supported] }, load, compatible);
+    expect(text).toContain('protocol=unknown transport=none');
+    expect(text).not.toContain('private-secret');
   });
 });

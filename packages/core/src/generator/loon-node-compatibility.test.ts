@@ -12,6 +12,22 @@ const privateKey = "A".repeat(43) + "=";
 const publicKey = "B".repeat(43) + "=";
 
 describe("documented Loon protocol intersection", () => {
+  it.each(["2001:db8::1", "::1", "::ffff:192.0.2.1"])("preserves complete IPv6 literals %s", (address) => {
+    expect(renderLoonNode({ ...vless, server: address })).toContain(`VLESS,${address},443`);
+    expect(renderLoonNode({ ...vless, server: `[${address}]` })).toContain(`VLESS,${address},443`);
+    const node: ParsedNode = { ...base, type: "wireguard", server: address, "private-key": privateKey, "public-key": publicKey, ipv6: address, "allowed-ips": [`${address}/128`] };
+    const line = renderLoonNode(node);
+    expect(line).toContain(`interface-ipv6=${address}`);
+    expect(line).toContain(`endpoint=[${address}]:443`);
+    expect(line).toContain(`allowed-ips="${address}/128"`);
+  });
+  it.each(["2001:db8::g", "2001:db8:::1", "2001:db8::1 ", "2001:db8::1/64"])("rejects malformed IPv6 fields %s", (address) => {
+    expect(() => renderLoonNode({ ...vless, server: address })).toThrow("IPv6 地址");
+    const node: ParsedNode = { ...base, type: "wireguard", "private-key": privateKey, "public-key": publicKey, ip: "10.0.0.2" };
+    expect(() => renderLoonNode({ ...node, server: address })).toThrow("Loon wireguard");
+    expect(() => renderLoonNode({ ...node, ipv6: address })).toThrow("Loon wireguard");
+    expect(() => renderLoonNode({ ...node, "allowed-ips": [`${address}/128`] })).toThrow("Loon wireguard");
+  });
   it("exports standard RAW share links through the complete subscription path", async () => {
     const parsed = parseSubscription([
       `vless://${uuid}@example.invalid:443?type=raw&security=tls#Synthetic-raw`,
