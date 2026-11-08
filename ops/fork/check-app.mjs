@@ -29,4 +29,48 @@ if (process.argv[2] === "upgraded") {
   assert.deepEqual(subscription.urls, ["https://ci.invalid/subscription"]);
   assert.equal(subscription.config.smartNodeMatchingEnabled, true);
   assert.equal(subscription.autoUpdateState.nodeQuotaFailureCount, 0);
+
+  const config = {
+    enabledGroups: ["select", "auto", "final"],
+    proxyGroupNameOverrides: { select: "Routes", final: "Default" },
+    customRules: [
+      { id: "ads", type: "DOMAIN-SUFFIX", value: "ads.example", target: "REJECT" },
+      { id: "code", type: "DOMAIN-SUFFIX", value: "github.com", target: { kind: "module", id: "select" } },
+    ],
+  };
+  const nodes = ["Asia", "Europe"].map((name) => ({
+    name, type: "ss", server: "node.example", port: 443, cipher: "aes-128-gcm", password: "test-password",
+  }));
+  const postOptions = { headers: { cookie, "content-type": "application/json" } };
+  const created = await fetch(url + "/api/subscriptions", {
+    ...postOptions, method: "POST", body: JSON.stringify({ name: "Loon smoke", nodes, config }),
+  });
+  assert.equal(created.status, 201, "create Loon sample");
+  const { subscription: sample } = await created.json();
+  const itemPath = "/api/subscriptions/" + sample.id;
+  const profilePath = "/api/subscriptions/" + sample.token;
+  try {
+    const profile = await fetch(url + profilePath + "/loon.conf");
+    assert.equal(profile.status, 200, "read Loon sample");
+    assert.match(profile.headers.get("content-type"), /^text\/plain/);
+    const text = await profile.text();
+    for (const line of ["[Proxy]", "Asia = Shadowsocks", "Europe = Shadowsocks", "[Proxy Group]",
+      "Routes = select", "DOMAIN-SUFFIX,ads.example,REJECT", "DOMAIN-SUFFIX,github.com,🚀 Routes", "FINAL,🐟 Default"]) {
+      assert.ok(text.includes(line), "missing Loon sample output: " + line);
+    }
+
+    config.proxyGroupNameOverrides.select = "Development";
+    await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({ config }) });
+    const updated = await fetch(url + profilePath + "/loon.conf");
+    assert.equal(updated.status, 200);
+    assert.match(await updated.text(), /DOMAIN-SUFFIX,github\.com,🚀 Development/);
+
+    assert.equal((await fetch(url + profilePath + "/config.yaml")).status, 200);
+    await json(itemPath + "/reset-link", { method: "POST", headers: { cookie, "if-match": `"${sample.token}"` } });
+    for (const file of ["loon.conf", "config.yaml"]) {
+      assert.equal((await fetch(url + profilePath + "/" + file)).status, 404, "revoked " + file);
+    }
+  } finally {
+    await json(itemPath, { method: "DELETE", headers: { cookie } });
+  }
 }

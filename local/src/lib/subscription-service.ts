@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { generateClashYaml } from "@subboost/core/generator";
+import { generateLoonConfig } from "@subboost/core/generator/loon";
+import { loadLoonRuleList } from "./loon-rule-list";
 import { buildGenerateOptionsFromConfig, getEffectiveTestOptions } from "@subboost/core/subscription/config-utils";
 import { buildProxyProvidersFromConfig } from "@subboost/core/subscription/proxy-providers";
 import type { SubscriptionResponseInfo } from "@subboost/core/subscription/subscription-response-info";
@@ -97,8 +99,10 @@ export type SubscriptionDetail = SubscriptionSummary & {
   subscriptionInfo: Record<string, unknown>;
 };
 
-export type GeneratedSubscriptionYaml = {
-  yaml: string;
+export type SubscriptionFormat = "clash" | "loon";
+
+type GeneratedSubscriptionProfile = {
+  content: string;
   name: string;
   subscriptionInfo: SubscriptionResponseInfo;
   cacheExpirySeconds: number;
@@ -443,22 +447,24 @@ export async function refreshSubscription(ownerId: string, id: string) {
   };
 }
 
-export async function generateSubscriptionYaml(token: string): Promise<GeneratedSubscriptionYaml | null> {
+export async function generateSubscriptionProfile(token: string, format: SubscriptionFormat): Promise<GeneratedSubscriptionProfile | null> {
   const row = await prisma.subscription.findUnique({ where: { token }, include: { autoUpdateState: true } });
   if (!row) return null;
   const secrets = readSubscriptionSecrets(row);
   const { testUrl, testInterval } = getEffectiveTestOptions(secrets.config);
   const proxyProviders = buildProxyProvidersFromConfig(secrets.config, { testUrl, testInterval });
   if (secrets.nodes.length === 0 && !proxyProviders) return null;
-  const yaml = generateClashYaml(
-    buildGenerateOptionsFromConfig(secrets.config, {
-      nodes: secrets.nodes,
-      proxyProviders,
-    })
-  );
-  await prisma.subscription.update({ where: { id: row.id }, data: { lastAccessedAt: new Date() } });
+  const options = buildGenerateOptionsFromConfig(secrets.config, { nodes: secrets.nodes, proxyProviders });
+  const content = format === "loon"
+    ? await generateLoonConfig(options, loadLoonRuleList)
+    : generateClashYaml(options);
+  const accessed = await prisma.subscription.updateMany({
+    where: { id: row.id, token },
+    data: { lastAccessedAt: new Date() },
+  });
+  if (!accessed.count) return null;
   return {
-    yaml,
+    content,
     name: row.name,
     subscriptionInfo: secrets.subscriptionInfo,
     cacheExpirySeconds: CACHE_TTL_SECONDS,

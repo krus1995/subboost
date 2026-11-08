@@ -4,7 +4,7 @@ import { getCurrentAdmin } from "@local/lib/auth";
 import {
   createSubscription,
   deleteSubscription,
-  generateSubscriptionYaml,
+  generateSubscriptionProfile,
   getSubscription,
   listSubscriptions,
   refreshSubscription,
@@ -23,7 +23,7 @@ vi.mock("@local/lib/auth", () => ({
 vi.mock("@local/lib/subscription-service", () => ({
   createSubscription: vi.fn(),
   deleteSubscription: vi.fn(),
-  generateSubscriptionYaml: vi.fn(),
+  generateSubscriptionProfile: vi.fn(),
   getSubscription: vi.fn(),
   listSubscriptions: vi.fn(),
   refreshSubscription: vi.fn(),
@@ -90,8 +90,8 @@ beforeEach(() => {
   vi.mocked(getCurrentAdmin).mockResolvedValue(admin);
   vi.mocked(createSubscription).mockResolvedValue(subscription as never);
   vi.mocked(deleteSubscription).mockResolvedValue(true);
-  vi.mocked(generateSubscriptionYaml).mockResolvedValue({
-    yaml: "mixed-port: 7890\n",
+  vi.mocked(generateSubscriptionProfile).mockResolvedValue({
+    content: "mixed-port: 7890\n",
     name: "Main",
     subscriptionInfo: {
       upload: 64,
@@ -170,7 +170,7 @@ describe("local subscription routes", () => {
     );
     expect(pluralResponse.headers.get("profile-update-interval")).toBe("24");
     expect(await pluralResponse.text()).toBe("mixed-port: 7890\n");
-    expect(generateSubscriptionYaml).toHaveBeenCalledWith("token-1");
+    expect(generateSubscriptionProfile).toHaveBeenCalledWith("token-1", "clash");
   });
 
   it("rejects unauthenticated protected subscription routes before service calls", async () => {
