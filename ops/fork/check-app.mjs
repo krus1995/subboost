@@ -50,6 +50,11 @@ if (process.argv[2] === "upgraded") {
   const { subscription: sample } = await created.json();
   const itemPath = "/api/subscriptions/" + sample.id;
   const profilePath = "/api/subscriptions/" + sample.token;
+  async function readClashProfile() {
+    const response = await fetch(url + profilePath + "/config.yaml");
+    assert.equal(response.status, 200, "read Clash sample");
+    return load(await response.text());
+  }
   try {
     const profile = await fetch(url + profilePath + "/loon.conf");
     assert.equal(profile.status, 200, "read Loon sample");
@@ -60,11 +65,20 @@ if (process.argv[2] === "upgraded") {
       assert.ok(text.includes(line), "missing Loon sample output: " + line);
     }
 
+    const clash = await readClashProfile();
+    assert.deepEqual(clash.proxies.map((node) => node.name), ["Asia", "Europe"]);
+    assert.deepEqual(clash.rules, ["DOMAIN-SUFFIX,ads.example,REJECT", "DOMAIN-SUFFIX,github.com,🚀 Routes", "MATCH,🐟 Default"]);
+    for (const group of clash["proxy-groups"]) {
+      const members = [group.type, ...group.proxies].join(", ");
+      assert.ok(text.includes(group.name + " = " + members), "missing Loon group or different member order: " + group.name);
+    }
+
     config.proxyGroupNameOverrides.select = "Development";
     await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({ config }) });
     const updated = await fetch(url + profilePath + "/loon.conf");
     assert.equal(updated.status, 200);
     assert.match(await updated.text(), /DOMAIN-SUFFIX,github\.com,🚀 Development/);
+    assert.ok((await readClashProfile()).rules.includes("DOMAIN-SUFFIX,github.com,🚀 Development"));
 
     await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({ config: { enabledGroups: [] } }) });
     const withoutGroups = await fetch(url + profilePath + "/loon.conf");
@@ -72,9 +86,7 @@ if (process.argv[2] === "upgraded") {
     const nodeOnlyProfile = await withoutGroups.text();
     assert.match(nodeOnlyProfile, /FINAL,Asia/);
     assert.doesNotMatch(nodeOnlyProfile, / = select,/);
-    const withoutClashGroups = await fetch(url + profilePath + "/config.yaml");
-    assert.equal(withoutClashGroups.status, 200);
-    const clashNodeOnly = load(await withoutClashGroups.text());
+    const clashNodeOnly = await readClashProfile();
     assert.deepEqual(clashNodeOnly["proxy-groups"] ?? [], [], "explicitly disabled groups stay disabled in Clash");
     assert.deepEqual(clashNodeOnly.proxies.map((node) => node.name), ["Asia", "Europe"]);
     assert.equal(clashNodeOnly.rules.at(-1), "MATCH,Asia", "both formats use the first node as the final target");
