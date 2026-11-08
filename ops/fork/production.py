@@ -175,6 +175,30 @@ class Site:
                 ok = False
             require(ok == expected, "host Tunnel origin mismatch")
 
+    def assert_compose_identity(self, service, c):
+        lbl = labels(c)
+        require(c["State"]["Running"] and lbl.get("com.docker.compose.project") == self.project and
+                lbl.get("com.docker.compose.service") == service and
+                lbl.get("com.docker.compose.project.working_dir") == str(self.root),
+                "running Compose identity mismatch: " + service)
+        files_label = lbl.get("com.docker.compose.project.config_files", "")
+        paths = files_label.split(",")
+        if paths == [str(f) for f in self.files[:len(paths)]]:
+            return
+        # The upstream installer removes its temporary Compose file after copying it to the project.
+        require(service in ("db", "cron") and
+                re.fullmatch(r"/tmp/subboost-install\.[1-9][0-9]*/candidate-compose\.yml", files_label),
+                "unexpected Compose files: " + service)
+        digest = lbl.get("com.docker.compose.config-hash", "")
+        require(re.fullmatch(r"[0-9a-f]{64}", digest) and
+                f"{service} {digest}".encode() in self.dc("config", "--hash", service).splitlines(),
+                "installer Compose service config changed: " + service)
+        model = self.model["services"][service]
+        image = run(["docker", "image", "inspect", "--format", "{{.Id}}", model["image"]]).decode().strip()
+        require(c["Image"] == image, "installer service image changed: " + service)
+        networks = {self.model["networks"][key]["name"] for key in model["networks"]}
+        require(set(network_aliases(c)) == networks, "installer service networks changed: " + service)
+
     def preflight(self, readonly=False):
         self.model = json.loads(self.dc("config", "--format", "json"))
         require(self.model["name"] == self.project, "Compose project mismatch")
@@ -184,13 +208,7 @@ class Site:
         cron = container(self.cronid)
         self.old_image = self.old["Image"]
         for svc, c in (("app", self.old), ("db", db), ("cron", cron)):
-            lbl = labels(c)
-            paths = lbl.get("com.docker.compose.project.config_files", "").split(",")
-            require(c["State"]["Running"] and lbl.get("com.docker.compose.project") == self.project and
-                    lbl.get("com.docker.compose.service") == svc and
-                    lbl.get("com.docker.compose.project.working_dir") == str(self.root) and
-                    paths == [str(f) for f in self.files[:len(paths)]],
-                    "running Compose identity mismatch: " + svc)
+            self.assert_compose_identity(svc, c)
         mounts = [m for m in db["Mounts"] if m["Destination"] == "/var/lib/postgresql/data"]
         require(len(mounts) == 1 and mounts[0]["Type"] == "volume" and mounts[0]["Name"] == self.cfg["dbVolume"],
                 "database volume mismatch")

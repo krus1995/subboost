@@ -133,6 +133,44 @@ def image_stores(root):
     print("Image identity: both Docker stores, forged build/local/manifest/config IDs and modified blob checked.")
 
 
+def installer_containers(root):
+    site = Site(host.CONFIG, host.BASE)
+    site.files = [root / "docker-compose.yml", root / "tunnel.yml"]
+    network = "testing_default"
+    image = "sha256:" + "a"*64
+    image_ref = "example:installed"
+    digest = "b"*64
+    site.model = {"services": {s: {"image": image_ref, "networks": {"default": {}}} for s in ("db", "cron")},
+                  "networks": {"default": {"name": network}}}
+    installer = "/tmp/subboost-install.321/candidate-compose.yml"
+    def check(service, files, config_hash=digest, image_id=image, working_dir=None, actual_net=network):
+        lbl = {"com.docker.compose.project": site.project, "com.docker.compose.service": service,
+               "com.docker.compose.project.working_dir": str(working_dir or root),
+               "com.docker.compose.project.config_files": files, "com.docker.compose.config-hash": config_hash}
+        c = {"State": {"Running": True}, "Config": {"Labels": lbl}, "Image": image_id,
+             "NetworkSettings": {"Networks": {actual_net: {"Aliases": [service]}}}}
+        site.assert_compose_identity(service, c)
+
+    base, override = map(str, site.files)
+    check("app", base)
+    check("app", base + "," + override)
+    checked_error(lambda: check("app", override + "," + base))
+    checked_error(lambda: check("app", installer))
+    for service in ("db", "cron"):
+        with patch.object(site, "dc", return_value=f"{service} {digest}\n".encode()) as dc, \
+                patch("production.run", return_value=(image + "\n").encode()) as docker:
+            check(service, installer)
+            dc.assert_called_once_with("config", "--hash", service)
+            docker.assert_called_once_with(["docker", "image", "inspect", "--format", "{{.Id}}", image_ref])
+            checked_error(lambda: check(service, installer, working_dir=root / "other"))
+            checked_error(lambda: check(service, "/tmp/unrelated/candidate-compose.yml"))
+            checked_error(lambda: check(service, installer + "," + override))
+            checked_error(lambda: check(service, installer, config_hash="c"*64))
+            checked_error(lambda: check(service, installer, image_id="sha256:" + "d"*64))
+            checked_error(lambda: check(service, installer, actual_net="other"))
+    print("Compose identity: installer services and registered app overrides accepted; drift rejected.")
+
+
 def phase_boundaries():
     # Fail the candidate and final smoke separately; the actual DB replacement is exercised below.
     for fail_at in ("candidate", "activation"):
@@ -210,5 +248,6 @@ if __name__ == "__main__":
         root = Path(tmp)
         receiver(root)
         image_stores(root)
+        installer_containers(root)
         phase_boundaries()
         postgres(root, os.environ.get("CONTAINER_ENGINE", "docker"))
