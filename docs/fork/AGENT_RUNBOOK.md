@@ -1,4 +1,4 @@
-适用仓库 `krus1995/subboost`。生产地址 `https://subboost.krus1987.kdns.fr/`。本手册供 Codex Agent 直接执行，目标是接管现有原版部署，建立二次开发、用户发起的本地上游合并、验证和腾讯云自动部署的完整流程。
+适用仓库 `krus1995/subboost`。生产地址 `https://subboost.krus1987.kdns.fr/`。本手册供 Codex Agent 直接执行，目标是接管现有原版部署，建立二次开发、用户发起的本地上游合并、验证和手动发起的腾讯云部署的完整流程。
 
 用户已确认原版应用和 Cloudflare Tunnel 均已上线。执行起点是现有生产服务。2026 年 11 月 7 日编制，2026 年 11 月 8 日更新，采用用户发起的本地上游合并，以及公网 SSH root 密码部署流程。
 
@@ -12,7 +12,7 @@
 
 - 为用户当前开发任务创建功能分支和 PR，完成验证与合并。用户发起上游更新任务后，由本地 Codex 处理上游合并、冲突、检查和交付。
 
-- 为现有 SubBoost 服务建立备份、制品传输、镜像切换、健康验证和约定的回滚流程，并启用后续自动发布。
+- 为现有 SubBoost 服务建立备份、制品传输、镜像切换、健康验证和约定的回滚流程，后续通过 Actions 手动发布。
 
 - 在腾讯云现有 SubBoost 目录和资源范围内完成接管，继续使用现有生产域名、数据库、密钥和 Tunnel 路由。
 
@@ -66,7 +66,7 @@
 | 生产并发 | 同时一个发布，取消策略为 `cancel-in-progress: false` |
 | 备份 | 每次数据库迁移前创建已验证备份，默认保留最近 10 份成功备份 |
 
-选择镜像文件传输是因为这台服务器此前访问 GHCR 曾遇到问题。既有部署镜像获取方式在预检中记录。生产发布由 fork main 更新触发，并保留手动重试已验证发布的入口。
+选择镜像文件传输是因为这台服务器此前访问 GHCR 曾遇到问题。既有部署镜像获取方式在预检中记录。生产发布由用户手动触发，并保留手动重试已验证发布的入口。
 
 # 2 总体执行链路
 
@@ -80,7 +80,7 @@ flowchart TD
     F -->|失败| G[本地 Codex 修复]
     G --> E
     F -->|通过| H[Codex 合并 main]
-    H --> I[Actions 构建与部署]
+    H -->|用户手动触发部署| I[Actions 构建与部署]
     I --> J[生产验收]
 ```
 
@@ -253,7 +253,7 @@ codex plugin add pstack@pstack-claude
 | `ops/fork/deploy.sh` | 服务器上范围受控、串行、幂等的发布入口 |
 | `ops/fork/smoke.sh` | 对指定环境执行健康和必要业务验收 |
 | `.github/workflows/fork-ci.yml` | PR 和 main 的必需检查 |
-| `.github/workflows/fork-build-deploy.yml` | main 验证、制品和生产部署 |
+| `.github/workflows/fork-build-deploy.yml` | 手动构建 main 制品并部署到生产 |
 | `.agents/skills/verify-subboost/SKILL.md` | 读取规则并运行统一验收 |
 | `.agents/skills/sync-subboost-upstream/SKILL.md` | 用户发起任务后的本地上游比较、合并、冲突处理与验收 |
 | `.agents/skills/deploy-subboost/SKILL.md` | 选择已验证制品、发布、健康检查和回滚 |
@@ -307,7 +307,7 @@ blocking_items: []
 next_action: discover_existing_deployment
 ```
 
-代码交付阶段更新仓库中的状态。本地上游合并记录与本次任务一同提交，部署运行结果写入 Actions summary 和服务器回执，避免为了记录运行状态不断产生触发部署的新提交。
+代码交付阶段更新仓库中的状态。本地上游合并记录与本次任务一同提交，部署运行结果写入 Actions summary 和服务器回执。
 
 `FEATURES.md` 对每个定制功能记录需求、入口、数据影响、已知上游交叉区域、测试路径和验收命令。后续上游同步以这些回归作为保留定制行为的证据。
 
@@ -411,7 +411,7 @@ gh pr merge "$PR_NUMBER" --merge --match-head-commit "$EXPECTED_HEAD_SHA"
 
 ## 7.5 跟进部署并记录结果
 
-合并后重新获取 origin main，验证 U 已成为其祖先，记录最终 main SHA。该 main 更新触发既定构建与生产部署。Codex 持续跟进 Actions、服务器回执和生产域名验收，完成后记录上游版本、合并提交、定制功能结果和实际部署版本。
+合并后重新获取 origin main，验证 U 已成为其祖先，记录最终 main SHA。收到单独的部署指令后，手动启动发布工作流并跟进 Actions、服务器回执和生产域名验收，完成后记录上游版本、合并提交、定制功能结果和实际部署版本。
 
 遇到实际阻塞时保存当前分支、失败检查和下一步。后续用户继续该任务时，从这些记录恢复。
 
@@ -421,7 +421,7 @@ gh pr merge "$PR_NUMBER" --merge --match-head-commit "$EXPECTED_HEAD_SHA"
 
 Codex 和 Pstack 在用户当前开发环境执行，复用该环境已配置的模型与登录。Git 推送和 PR 操作使用用户现有 GitHub 身份，先通过 `gh auth status` 和仓库权限检查确认可用。账户需要具备本仓库的分支推送、PR 与合并权限，涉及 workflow 修改时核对对应权限。
 
-GitHub Actions 使用仓库提供的 `GITHUB_TOKEN` 运行确定性检查与构建。生产部署 job 读取第 9 节的受控凭据。实施时用一次本地用户身份提交与合并，验收 PR 检查到 main 部署的完整触发链。
+GitHub Actions 使用仓库提供的 `GITHUB_TOKEN` 运行确定性检查与构建。生产部署 job 读取第 9 节的受控凭据。实施时用一次本地用户身份提交与合并，验收 PR 检查。生产部署另行手动触发。
 
 ## 8.2 任务状态与续接
 
@@ -435,7 +435,7 @@ GitHub Actions 使用仓库提供的 `GITHUB_TOKEN` 运行确定性检查与构�
 
 ## 9.1 生产 environment
 
-创建 `production` environment，部署入口限定 fork 的 `main`。当前用户已要求自动部署，选择满足检查后自动执行的配置。一次性权限配置和每次发布条件分别记录。
+创建 `production` environment，部署入口限定 fork 的 `main`。只有手动启动工作流才进入构建与部署。一次性权限配置和每次发布条件分别记录。
 
 | 名称 | 类型 | 值或来源 |
 | - | - | - |
@@ -499,7 +499,7 @@ Actions 使用固定 host key 校验。建立 SSH 连接后先校验主机身份
 
 ## 10.2 构建精确的 main 提交
 
-`fork-build-deploy.yml` 触发于 fork `main` 的 push。常规自动和手动发布都部署当前 main 的完整 SHA。构建前在该精确 SHA 上运行第 6 节必需检查，或者复用能证明同一 SHA 已完成这些检查的运行结果。历史版本恢复走单独的 recovery 入口，核对当前生产版本、目标制品及第 11.4 节的数据边界。
+PR 运行第 6 节的必需检查。发布时从 Actions 选择 fork 的 `main` 并运行 `Fork build and deploy`，或执行 `gh workflow run fork-build-deploy.yml --ref main`。工作流为当前完整 SHA 选择已验证制品，首次发布该 SHA 时构建镜像。历史版本恢复走单独的 recovery 入口，核对当前生产版本、目标制品及第 11.4 节的数据边界。
 
 构建脚本读取当前包版本并设置现有 Dockerfile 接受的 release/version/build 参数，镜像标记包含完整提交。
 
@@ -543,7 +543,7 @@ docker build \
 
 ## 10.3 制品传输与串行控制
 
-Actions concurrency 组设为 `subboost-production`，`cancel-in-progress: false`。服务器再使用 `flock` 建立独占发布锁，防止手动与自动执行重叠。
+Actions concurrency 组设为 `subboost-production`，`cancel-in-progress: false`。服务器再使用 `flock` 建立独占发布锁，防止多个部署任务同时操作生产。
 
 制品传输使用 `sshpass -e scp`，SCP 端口参数使用 `-P`，主机公钥校验与密码认证选项和 SSH 一致。制品先上传到 `<incoming>/<SHA>.partial/`。校验完成后原子改名为 `<incoming>/<SHA>/`，再调用包装器。服务器校验 manifest、文件摘要、镜像架构、image ID 和 OCI revision，全部通过后才进入维护阶段。断线重连和查询发布回执也复用同一连接配置。
 
@@ -665,9 +665,9 @@ Cloudflare Tunnel 已连接，生产域名固定为 `subboost.krus1987.kdns.fr`�
 
 7. **提交 PR**。列明变更、验收、迁移与回滚条件，等待当前 HEAD 的必需检查。
 
-8. **完成交付**。由当前本地 Codex 在检查通过后执行合并，跟进 Actions 和服务器发布到生产验收完成，更新功能记录与证据。
+8. **完成交付**。由当前本地 Codex 在检查通过后执行合并，记录合并提交与检查结果。另行手动部署时再跟进生产验收。
 
-Pstack 的 Shipping、Babysit 等能力按当前技能文档调用。完成状态覆盖仓库合并和实际生产结果。遇到实际阻塞时，保存可接续的任务状态。[Pstack 主技能](https://github.com/michael-denyer/pstack-claude/blob/main/plugins/pstack/skills/poteto-mode/SKILL.md)
+Pstack 的 Shipping、Babysit 等能力按当前技能文档调用。代码交付记录合并结果，部署任务记录生产结果。遇到实际阻塞时，保存可接续的任务状态。[Pstack 主技能](https://github.com/michael-denyer/pstack-claude/blob/main/plugins/pstack/skills/poteto-mode/SKILL.md)
 
 # 14 执行顺序与阶段交付
 
@@ -681,7 +681,7 @@ Pstack 的 Shipping、Babysit 等能力按当前技能文档调用。完成状�
 | P5 | 建立制品和受控部署包装器 | 固定 SHA 的镜像、清单、传输校验与主机锁 |
 | P6 | 完成备份和恢复演练 | 可恢复备份、验证结果和旧镜像记录 |
 | P7 | 首次从原版接管到 fork | 正式 app 使用 fork 制品，域名与数据验收通过 |
-| P8 | 验收 main 持续发布链路 | 用户身份合并后的部署、重试与恢复验证 |
+| P8 | 验收 main 持续发布链路 | 手动部署、重试与恢复验证 |
 | P9 | 汇总交付与后续操作 | 第 16 节检查表、具体运行链接和剩余阻塞 |
 
 按阶段提交小范围变更。基础设施首次落地先通过功能分支和 CI，安装服务器包装器后再启用首次生产发布。实施过程中允许 P2、P3、P5 的独立准备工作并行，生产切换遵循 P6 → P7 顺序。
@@ -742,13 +742,13 @@ Agent 为每项填写真实结果、命令或 run URL。模拟测试使用隔离
 
 - [ ] 必需 job 失败、取消或意外跳过会使 `fork-required` 失败。
 
-- [ ] 用户现有 GitHub 身份推送与合并后，PR 检查和 main 部署实际运行。
+- [ ] 用户现有 GitHub 身份推送与合并后，PR 检查通过。另行手动部署时，核对 main 的发布记录。
 
 - [ ] 工作流、项目规则、发布脚本和迁移变更有对应检查与审查记录。
 
 - [ ] 合并后的 main 包含目标 U，实际生产版本与最终发布清单一致。
 
-## 16.3 自动部署与恢复
+## 16.3 手动部署与恢复
 
 - [ ] 构建使用最终 main SHA，镜像、清单、OCI revision 一致。
 
@@ -790,7 +790,7 @@ Agent 为每项填写真实结果、命令或 run URL。模拟测试使用隔离
 
 3. 实际生产 image ID、源码 SHA、生产地址和最近发布 run URL。
 
-4. 上游合并的本地任务方式、最近一次执行结果，以及自动部署的启用状态。
+4. 上游合并的本地任务方式、最近一次执行结果，以及手动部署入口。
 
 5. 检查、独立审查、备份恢复和生产 smoke 的证据位置。
 

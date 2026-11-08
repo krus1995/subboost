@@ -32,9 +32,10 @@ cat > bin/gh <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   *git/ref/heads/main*) echo "${TEST_TIP:-$GITHUB_SHA}" ;;
+  *workflows/fork-build-deploy.yml/runs*) printf '%s' "${TEST_RUNS:-}" ;;
   *actions/runs/90/artifacts*) echo '{"total_count":1,"artifacts":[{"id":123,"expired":false}]}' ;;
   *actions/runs/90) jq -n --arg sha "${TEST_BUILD_SHA:-$GITHUB_SHA}" '
-    {event:"push",path:".github/workflows/fork-build-deploy.yml",head_branch:"main",head_sha:$sha,
+    {event:(env.TEST_BUILD_EVENT // "workflow_dispatch"),path:".github/workflows/fork-build-deploy.yml",head_branch:"main",head_sha:$sha,
     head_repository:{full_name:"krus1995/subboost"}}' ;;
   *) exit 1 ;;
 esac
@@ -67,7 +68,13 @@ EOF
 printf '#!/usr/bin/env bash\nexit 0\n' > bin/sleep
 chmod +x bin/*
 export GITHUB_EVENT_NAME=workflow_dispatch
-bash "$scripts/select-release.sh"
+BUILD_RUN_ID= bash "$scripts/select-release.sh"
+grep -qx "run_id=$GITHUB_RUN_ID" "$GITHUB_OUTPUT"
+: > "$GITHUB_OUTPUT"
+TEST_RUNS=90 BUILD_RUN_ID= bash "$scripts/select-release.sh"
+grep -qx 'run_id=90' "$GITHUB_OUTPUT"
+: > "$GITHUB_OUTPUT"
+TEST_BUILD_EVENT=push bash "$scripts/select-release.sh"
 grep -qx 'artifact_id=123' "$GITHUB_OUTPUT"
 if TEST_BUILD_SHA=$BUSY_SHA bash "$scripts/select-release.sh"; then exit 1; fi
 

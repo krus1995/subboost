@@ -1,26 +1,20 @@
 name: Fork build and deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: Original push run containing the verified archive for current main
+        description: Optional original run ID to retry a verified archive for current main
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  checks:
-    if: github.repository == 'krus1995/subboost' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/fork-ci.yml
-
   artifact:
-    needs: checks
+    if: github.repository == 'krus1995/subboost' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     concurrency:
@@ -35,8 +29,6 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Test transfer and retry handling
-        run: bash ops/fork/test-transfer.sh
       - name: Select verified archive
         id: select
         env:
@@ -60,11 +52,9 @@ jobs:
           retention-days: 90
       - name: Report pending production takeover
         if: vars.FORK_DEPLOY_ENABLED != 'true'
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          echo 'Image archived. Production deployment awaits the verified host and restore rehearsal.' >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$EVENT" == workflow_dispatch ]]; then exit 1; fi
+          echo 'Image archived. Production deployment is disabled.' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
   deploy:
     if: vars.FORK_DEPLOY_ENABLED == 'true'

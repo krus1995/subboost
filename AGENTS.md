@@ -7,7 +7,7 @@
 - SubBoost 使用 Pstack 和项目自带的技能，不使用 Matt Pocock Skills。用 Pstack 的 poteto-mode 安排验证和独立审查。审查记录注明 base、候选完整 SHA、审查者、发现及处理结果。base 或候选变化后复核受影响的改动。
 - 统一检查入口为 `bash ops/fork/check.sh`。CI、规则、业务断言、覆盖率或依赖有改动时说明理由，依赖变更同时提交锁文件。保留现有迁移文件，schema 变更以新迁移提交。
 - 每项定制登记在 FEATURES.md，注明业务入口、数据、上游交叉区域和回归命令。流程和工具的修改只登记在 STATE.md。
-- 上游合并由用户发起。核对 PR 的 base、head 与 `fork-required` 后以 merge commit 合并。main 上的自动部署使用完整 SHA，记录镜像、前一版本、已验备份及实际结果。
+- 上游合并由用户发起。核对 PR 的 base、head 与 `fork-required` 后以 merge commit 合并。合并后结束本次交付。收到部署指令后手动触发工作流，使用 main 的完整 SHA，记录镜像、前一版本、已验备份及实际结果。
 - 切换到 fork 的前提是现有服务器身份、资源及隔离恢复演练通过。正式 app 可接流量前持久记录 ACTIVATING，此后旧库恢复需要用户确认可能丢失的写入。运维入口和原始授权范围见执行手册第 9 至 12 节。
 - 每阶段将结果、命令或链接、下一步记入 STATE.md；生产运行记录留在 Actions 和服务器回执中。缺凭据或检查失败时保留现场，写明未验项。
 

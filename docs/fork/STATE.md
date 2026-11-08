@@ -11,7 +11,7 @@ production_image_id: sha256:119137a1f337867f63c31bc1817b4aedaf449b259fbd0e3ba03c
 production_url: https://subboost.krus1987.kdns.fr/
 last_verified_run_url: https://github.com/krus1995/subboost/actions/runs/42448393728/attempts/2
 last_backup_receipt: /var/lib/subboost-fork/backups/9954b1790fdff83db8224abf6b67f7578605b74c-6565ae1a50/backup.json
-auto_deploy: enabled_after_rehearsal
+deployment_trigger: workflow_dispatch
 blocking_items: []
 next_action: verify_next_main_release
 ```
@@ -68,5 +68,7 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 | P7 | 向前修复后目标镜像运行，生产订阅、cron 和其他入口通过 | 下一次 main 发布核对新增的停写前镜像选择检查 |
 | P8 | 实际 runner 交付、观察者断线重连及同一制品重试均已验证 | 已完成 |
 | P9 | Actions 和主机回执已核对，首发 SHA、镜像 ID 与备份回执位置见上方快照 | 已完成 |
+
+发布流程验收：所有 PR 继续运行 `fork-required`。合并到 main 后不构建镜像、不部署。手动启动 `Fork build and deploy` 时，为当前 main 构建镜像或复用同一提交的已验证制品，再部署到生产。回归入口为 `bash ops/fork/check.sh rules`。
 
 本机开发约定集中在项目 AGENTS.md，涵盖工作树目录和清理时机、技能范围及 Pstack 的 19 行角色映射和默认推理强度。
