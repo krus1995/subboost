@@ -1,6 +1,10 @@
 "use client";
 import { SubscriptionQrButton } from "@subboost/ui/product/subscription/subscription-qr-code";
 
+import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
+import { readJsonResponse } from "@subboost/ui/product/client-response";
+import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
+import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -190,7 +194,7 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
     const filename = buildYamlDownloadFilename(subscription.name);
     try {
       const response = await fetch(adapter.resolveDownloadUrl?.(subscription) ?? subscription.subscriptionUrl);
-      if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
+      if (!response.ok) await readJsonResponse(response, `下载配置失败（${response.status}）`);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       triggerBrowserDownload(objectUrl, filename);
@@ -199,7 +203,7 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
       console.error("Failed to fetch subscription YAML for download:", error);
       toast({
         title: "下载失败",
-        description: "请刷新页面后重试，或先复制订阅链接到代理软件。",
+        description: error instanceof Error ? error.message : "请刷新页面后重试",
         variant: "destructive",
       });
     }
@@ -508,6 +512,9 @@ function SubscriptionRow({
   onRefresh: (id: string) => Promise<void>;
   onSettings: (sub: Subscription) => void;
 }) {
+  const [format, setFormat] = React.useState<ConfigFormat>("clash");
+  const selectedUrl = subscriptionFormatUrl(sub.subscriptionUrl, format);
+  const copyId = format === "clash" ? sub.id : `${sub.id}:loon`;
   const quotaWarning = buildNodeQuotaWarning(sub.autoUpdateState);
   const quotaDisabled = isNodeQuotaAutoUpdateDisabled(sub.autoUpdateState);
   return (
@@ -552,6 +559,8 @@ function SubscriptionRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+        <ConfigFormatSelect value={format} onChange={setFormat} />
+        {format === "loon" && <LoonSubscriptionActions key={`${selectedUrl}:${sub.updatedAt ?? sub.lastUpdatedAt}`} url={selectedUrl} />}
         <Button asChild variant="ghost" size="sm" className="gap-0 sm:gap-2" title="回到首页编辑该订阅（更新后链接不变）">
           <Link href={editHref}>
             <Pencil className="h-4 w-4" />
@@ -582,11 +591,11 @@ function SubscriptionRow({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => void onCopy(sub.subscriptionUrl, sub.id)}
+          onClick={() => void onCopy(selectedUrl, copyId)}
           className="gap-0 sm:gap-2"
           title="复制订阅链接"
         >
-          {copiedId === sub.id ? (
+          {copiedId === copyId ? (
             <>
               <Check className="h-4 w-4 text-green-500" />
               <span className="hidden sm:inline text-green-500">已复制</span>
@@ -598,17 +607,17 @@ function SubscriptionRow({
             </>
           )}
         </Button>
-        <SubscriptionQrButton url={sub.subscriptionUrl} />
-        <Button
+        <SubscriptionQrButton url={selectedUrl} />
+        {format === "clash" && <Button
           variant="ghost"
           size="sm"
-          onClick={() => void onDownload(sub)}
+          onClick={() => onDownload(sub)}
           className="gap-0 sm:gap-2"
           title="下载订阅配置"
         >
           <Download className="h-4 w-4" />
           <span className="hidden sm:inline">下载</span>
-        </Button>
+        </Button>}
         <Button
           variant="ghost"
           size="sm"

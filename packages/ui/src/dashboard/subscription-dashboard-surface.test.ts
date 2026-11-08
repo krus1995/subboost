@@ -108,6 +108,10 @@ vi.mock("@subboost/ui/dashboard/subscription-settings-dialog", () => ({
   },
 }));
 
+vi.mock("@subboost/ui/product/subscription/subscription-qr-code", () => ({
+  SubscriptionQrButton: (props: { url: string }) => { mocks.captures.qrUrl = props.url; return null; },
+}));
+
 import { SubscriptionDashboardSurface, type DashboardSurfaceAdapter } from "./subscription-dashboard-surface";
 import { buildAutoUpdateDisabledNotice } from "./dashboard-auto-update-warning";
 
@@ -444,6 +448,20 @@ describe("SubscriptionDashboardSurface", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:subboost-config");
   });
 
+  it("keeps the Loon URL consistent and checks compatibility only on request", async () => {
+    const configUrl = "https://example.test/subboost/api/subscriptions/token-1/config.yaml?download=1";
+    const loonUrl = "https://example.test/subboost/api/subscriptions/token-1/loon.conf?download=1";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderSurface(createAdapter(), { 0: [{ ...subscription, subscriptionUrl: configUrl }], 1: false, 12: "loon" });
+    expect(mocks.captures.qrUrl).toBe(loonUrl);
+    expect(mocks.captures.buttons.some((props: { children?: unknown }) => props.children === "检查 Loon 配置")).toBe(true);
+    expect(mocks.captures.buttons.some((props: { title?: string }) => props.title === "打开 Loon")).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await mocks.captures.buttons.find((props: { title?: string }) => props.title === "复制订阅链接").onClick();
+    await flushPromises();
+    expect(mocks.clipboardWriteText).toHaveBeenCalledWith(loonUrl);
+  });
   it("reports download failures without opening the subscription URL", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const dom = stubDocumentActions();
@@ -466,6 +484,15 @@ describe("SubscriptionDashboardSurface", () => {
     );
   });
 
+  it("shows a concrete Clash download error without referring to Loon", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => JSON.stringify({ error: "订阅不存在" }) }));
+    renderSurface(createAdapter(), { 0: [subscription], 1: false });
+    await mocks.captures.buttons.find((props: { title?: string }) => props.title === "下载订阅配置").onClick();
+    await flushPromises();
+    await flushPromises();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "下载失败", description: "订阅不存在" }));
+  });
   it("uses the adapter download URL resolver before fetching subscription YAML", async () => {
     const dom = stubDocumentActions();
     const blob = new Blob(["mixed-port: 7890\n"], { type: "text/yaml" });

@@ -150,7 +150,7 @@ function normalizeBaseConfigPatch(baseConfig: Record<string, unknown>): Record<s
  *
  * 规则：保留第一次出现的原名；从第二次起追加 " (2)/(3)..." 后缀。
  */
-function ensureUniqueProxyNames(nodes: ParsedNode[]): ParsedNode[] {
+export function ensureUniqueProxyNames(nodes: ParsedNode[]): ParsedNode[] {
   const used = new Set<string>();
   const counter = new Map<string, number>();
 
@@ -470,6 +470,7 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     ...proxyGroups.map((group) => group.name),
     ...outputNodes.filter((node) => !isSubscriptionInfoNodeName(node.name)).map((node) => node.name),
   ]);
+  const literalTargetNames = [...proxyGroups.map((group) => group.name), ...outputNodes.map((node) => node.name)];
   const fallbackPolicyTarget = chooseFallbackPolicyTarget(
     [
       proxyGroups[0]?.name,
@@ -578,7 +579,7 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     
     // 规则提供者（包含自定义分流组的规则）
     "rule-providers": {
-      ...generateRuleProviders(generateOpts),
+      ...generateRuleProviders({ ...generateOpts, literalTargetNames }),
     },
     
     // 规则（包含自定义分流组的规则）
@@ -587,6 +588,7 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
       customRules: config.customRules,
       ruleOrder: config.ruleOrder,
       availablePolicyTargets,
+      literalTargetNames,
       fallbackPolicyTarget,
     }),
   };

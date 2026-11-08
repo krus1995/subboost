@@ -72,3 +72,21 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 发布流程验收：所有 PR 继续运行 `fork-required`。合并到 main 后不构建镜像、不部署。手动启动 `Fork build and deploy` 时，为当前 main 构建镜像或复用同一提交的已验证制品，再部署到生产。回归入口为 `bash ops/fork/check.sh rules`。
 
 本机开发约定集中在项目 AGENTS.md，涵盖工作树目录和清理时机、技能范围及 Pstack 的 19 行角色映射和默认推理强度。
+
+## Loon 完整配置
+
+验收条件：用同一份已保存的节点、组与规则生成 Clash 和 Loon 两种输出，首页能下载，管理页能复制订阅地址并导入 Loon。Loon 配置保留节点顺序、组成员和规则目标，区分精确域名与域名后缀，保留 IPv4、IPv6 与 FINAL。遇到无法保留的设置，提示具体项目。公开读取使用已保存的节点快照，重置 token 后两种旧地址均失效。用自动化测试核对转换及接口；iPhone 上的实际导入、规则命中与远程配置刷新另行记录。
+
+标准模板用 22 份真实上游规则生成 166,335 行配置，约 7.6 MB。检查覆盖 GitHub 精确域名、后缀和 Telegram IPv6 网段。首页仅显示前 200 行，下载保留全文。本地 HTTP 检查读到了首页入口和 GitHub 规则文件。桌面浏览器插件缺少网络策略，按钮点击未在浏览器验收。iPhone 待验证导入、广告与 GitHub 的实际分流，以及同一地址更新后的刷新结果。
+
+独立审查基线为 `8181cec4fb444bfe8ac99d75183f24c4b638e811`，审查者为 Pstack 独立审查代理 final_review。候选 `4dc01c779f06d3e7438ef64a2717fd7719e36878` 中，名为 `module:select` 的节点作为规则目标时可能被解释成策略组。修复后预检和规则输出共用目标名称，已添加内置组开关和禁用自定义组的回归。管理页还修复了下载回调提前返回的问题。审查者复核代码候选 `e8f27b4ed60e331178245a252093f06c5eefbd4e` 后关闭该问题。
+
+仓库规则检查已通过。源码、容器及隔离旧库的完整检查由功能 PR 的 Fork CI 记录。合并后待收到部署指令再发布。
+
+### Clash 与 Loon 输出对照
+
+复测验收条件：同一份已保存配置分别从两个公开订阅地址读取，比较节点、组成员的顺序、规则目标和兜底策略；覆盖显式关闭全部组、字面节点名与组引用重名、真实规则的精确域名与后缀，以及 IPv4/IPv6。分别记录文件输出、客户端规则优先级差异和真机未验项。
+
+使用 8 个合成节点（Shadowsocks、VMess、VLESS、Trojan、Hysteria2、HTTP、HTTPS 和 SOCKS5）导出同一份标准配置，逐项核对 14 个策略组的名称、顺序与成员。按 Clash 文件引用的规则集展开后，共 166,308 行规则，包括兜底，逐行匹配 Loon 输出。规则数据固定在 [MetaCubeX 提交 26cf4440](https://github.com/MetaCubeX/meta-rules-dat/tree/26cf4440307754d2c2f65cf2f0457c0ae814900f/geo)。[Mihomo v1.19.33](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33) 将 22 份原始文本和对应 MRS 文件分别转换为内核识别的规则后，两边内容逐项相同。标准和空组两份 Clash 导出均通过该内核的 `-t` 检查。
+
+对照复现并修复了已保存订阅关闭全部组后 Clash 恢复默认组、字面节点名与策略组引用冲突、缺省 VMess alterId 导致 Mihomo 拒收配置的问题。Loon 导出也会写明支持协议的 UDP 默认值，遇到直接指向订阅信息节点的规则会提示调整。升级库的 HTTP 验收会读取两条真实订阅地址，核对节点及策略、组改名、空组兜底和 token 撤销。独立审查者 parity_review 从 `f350ffe32a964a68ae73cc4b459af7aaa890e91e` 复核代码候选 `f4998f3f1ae7a4b3201675821b5def2aaedb9c81` 和 HTTP 验收增量 `01d26d663269532b4902f181ad17aa6e79982513`，无阻断发现。完整检查归档于 [PR #8](https://github.com/krus1995/subboost/pull/8)。

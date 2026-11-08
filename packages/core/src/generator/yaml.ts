@@ -135,6 +135,7 @@ function getOrderedProxyKeys(node: Record<string, unknown>): string[] {
 export function canonicalizeProxy(node: Record<string, unknown>): Record<string, unknown> {
   const copy = sanitizeMihomoProxyNode(node);
   const type = typeof copy.type === "string" ? copy.type : "";
+  if (type === "vmess" && copy.alterId === undefined) copy.alterId = 0;
   if (copy.udp === undefined && UDP_SUPPORTED_TYPES.has(type as KnownNodeType)) {
     copy.udp = true;
   }

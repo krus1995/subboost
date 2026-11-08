@@ -36,6 +36,7 @@ export interface RulesGenerateOptions {
   cnIpNoResolve?: boolean;
   ruleOrder?: string[];
   availablePolicyTargets?: string[];
+  literalTargetNames?: readonly string[];
   fallbackPolicyTarget?: string;
 }
 
@@ -364,16 +365,17 @@ function buildCanonicalRuleEntries(options: Omit<RulesGenerateOptions, "ruleOrde
     cnIpNoResolve,
     availablePolicyTargets,
     fallbackPolicyTarget,
+    literalTargetNames: additionalLiteralTargetNames = [],
   } = options;
   const entries: GeneratedRuleEntry[] = [];
   const enabledSet = new Set(enabledModules);
   const moduleNames = buildModuleNameMap(proxyGroupNameOverrides);
   const activeCustomProxyGroups = getEnabledCustomProxyGroups(customProxyGroups);
-  const literalTargetNames = customProxyGroups.map((group) => group.name);
+  const literalTargetNames = [...customProxyGroups.map((group) => group.name), ...additionalLiteralTargetNames];
   const resolvePolicyTarget = createPolicyTargetResolver({ availablePolicyTargets, fallbackPolicyTarget });
   const editableEntries = buildOrderedEditableEntries(
-    customRules.filter((rule) => !isDisabledCustomProxyGroupTarget(rule.target, { moduleNames, customProxyGroups })),
-    customRuleSets.filter((ruleSet) => !isDisabledCustomProxyGroupTarget(ruleSet.target, { moduleNames, customProxyGroups })),
+    customRules.filter((rule) => !isDisabledCustomProxyGroupTarget(rule.target, { moduleNames, customProxyGroups, literalTargetNames })),
+    customRuleSets.filter((ruleSet) => !isDisabledCustomProxyGroupTarget(ruleSet.target, { moduleNames, customProxyGroups, literalTargetNames })),
     undefined,
     moduleNames,
     activeCustomProxyGroups,
@@ -480,6 +482,7 @@ export function normalizePersistedRuleOrder(options: RulesGenerateOptions): stri
     experimentalCnUseCnRuleSet: options.experimentalCnUseCnRuleSet,
     cnIpNoResolve: options.cnIpNoResolve,
     availablePolicyTargets: options.availablePolicyTargets,
+    literalTargetNames: options.literalTargetNames,
     fallbackPolicyTarget: options.fallbackPolicyTarget,
   });
 
@@ -506,6 +509,7 @@ export function resolveAppliedRuleOrder(options: RulesGenerateOptions): string[]
     experimentalCnUseCnRuleSet: options.experimentalCnUseCnRuleSet,
     cnIpNoResolve: options.cnIpNoResolve,
     availablePolicyTargets: options.availablePolicyTargets,
+    literalTargetNames: options.literalTargetNames,
     fallbackPolicyTarget: options.fallbackPolicyTarget,
   });
 
@@ -590,6 +594,7 @@ export function buildGeneratedRuleEntries(options: RulesGenerateOptions): Genera
     experimentalCnUseCnRuleSet: options.experimentalCnUseCnRuleSet,
     cnIpNoResolve: options.cnIpNoResolve,
     availablePolicyTargets: options.availablePolicyTargets,
+    literalTargetNames: options.literalTargetNames,
     fallbackPolicyTarget: options.fallbackPolicyTarget,
   });
   const orderKeys = resolveAppliedRuleOrder(options);

@@ -117,6 +117,8 @@ vi.mock("@subboost/ui/product/interactions", () => ({
   useProductInteractionAdapter: () => mocks.interactions,
 }));
 
+vi.mock("@subboost/ui/product/preview/loon-preview", () => ({ LoonPreview: () => React.createElement("div", null, "loon-preview") }));
+
 import { HomeLayout } from "./home-layout";
 
 function createSubscription(overrides: Record<string, unknown> = {}) {
@@ -197,6 +199,8 @@ describe("HomeLayout", () => {
       user: null,
     });
     expect(html).toContain("SubBoost");
+    expect(html).toContain("Loon 配置预览与下载");
+    expect(html).not.toContain("loon-preview");
     expect(html).toContain("quick-mode");
     expect(html).toContain("advanced-mode");
     expect(html).toContain("visual-graph");

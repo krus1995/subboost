@@ -87,6 +87,11 @@ function buildGenerateClashYamlOptions(
   };
 }
 
+export function buildGenerateOptions(state: ConfigState): GenerateClashYamlOptions {
+  const { effectiveNodes } = resolveNodeNameFilter(state.nodes, state.nodeNameFilter);
+  return buildGenerateClashYamlOptions(state, buildProxyProvidersFromSources(state), effectiveNodes);
+}
+
 export function computeGeneratedYamlResult(state: ConfigState): GeneratedYamlResult {
   const proxyProviders = buildProxyProvidersFromSources(state);
 

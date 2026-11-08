@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { load } from "js-yaml";
 import {
   buildSubscriptionCacheExpiry,
   buildSubscriptionFetchCallbacks,
@@ -6,7 +7,7 @@ import {
   deleteSubscription,
   formatSubscription,
   formatSubscriptionDetail,
-  generateSubscriptionYaml,
+  generateSubscriptionProfile,
   getSubscription,
   listSubscriptions,
   refreshSubscription,
@@ -42,7 +43,8 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@subboost/core/generator", () => ({
+vi.mock("@subboost/core/generator", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@subboost/core/generator")>(),
   generateClashYaml: mocks.generateClashYaml,
 }));
 
@@ -639,9 +641,57 @@ describe("local subscription service", () => {
     await expect(refreshSubscription("owner-1", "missing")).resolves.toBeNull();
   });
 
+  it("serves both formats from the saved snapshot and rechecks the token before delivery", async () => {
+    mocks.buildGenerateOptionsFromConfig.mockReturnValue({
+      nodes: [{ name: "Demo", type: "ss", server: "example.com", port: 443, password: "demo", cipher: "aes-128-gcm" }],
+      userConfig: { enabledGroups: ["select", "final"] },
+    });
+    const profile = await generateSubscriptionProfile("token-1", "loon");
+    expect(profile?.content).toContain("[Proxy Group]");
+    expect(profile?.content).toContain("FINAL,");
+    expect(mocks.importSourceUrlDirect).not.toHaveBeenCalled();
+    expect(mocks.prisma.subscription.findUnique).toHaveBeenCalledWith({
+      where: { token: "token-1" }, include: { autoUpdateState: true },
+    });
+    for (const format of ["clash", "loon"] as const) {
+      mocks.prisma.subscription.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(generateSubscriptionProfile("revoked-in-flight", format)).resolves.toBeNull();
+    }
+  });
+
+  it.each(["clash", "loon"] as const)("keeps an explicitly empty saved group list when exporting %s", async (format) => {
+    const { buildGenerateOptionsFromConfig } = await vi.importActual<typeof import("@subboost/core/subscription/config-utils")>("@subboost/core/subscription/config-utils");
+    const { generateClashYaml } = await vi.importActual<typeof import("@subboost/core/generator")>("@subboost/core/generator");
+    mocks.prisma.subscription.findUnique.mockResolvedValueOnce(row({ encryptedConfig: '{"enabledGroups":[]}' }));
+    mocks.buildGenerateOptionsFromConfig.mockImplementationOnce(buildGenerateOptionsFromConfig);
+    if (format === "clash") mocks.generateClashYaml.mockImplementationOnce(generateClashYaml);
+    const result = await generateSubscriptionProfile("token-1", format);
+    if (format === "loon") {
+      expect(result?.content).toContain("FINAL,Node");
+      expect(result?.content).not.toContain(" = select,");
+    } else {
+      expect(load(result?.content ?? "")).toEqual(expect.objectContaining({
+        "proxy-groups": null,
+        rules: ["MATCH,Node"],
+      }));
+    }
+  });
+
+  it("retains template defaults when the saved group list is missing", async () => {
+    const { buildGenerateOptionsFromConfig } = await vi.importActual<typeof import("@subboost/core/subscription/config-utils")>("@subboost/core/subscription/config-utils");
+    const { generateClashYaml } = await vi.importActual<typeof import("@subboost/core/generator")>("@subboost/core/generator");
+    mocks.prisma.subscription.findUnique.mockResolvedValueOnce(row({ encryptedConfig: '{}' }));
+    mocks.buildGenerateOptionsFromConfig.mockImplementationOnce(buildGenerateOptionsFromConfig);
+    mocks.generateClashYaml.mockImplementationOnce(generateClashYaml);
+    const result = await generateSubscriptionProfile("token-1", "clash");
+    expect(load(result?.content ?? "")).toEqual(expect.objectContaining({
+      "proxy-groups": expect.arrayContaining([expect.objectContaining({ name: "🚀 节点选择" })]),
+    }));
+  });
+
   it("generates YAML and updates access time when a subscription has nodes or proxy providers", async () => {
-    await expect(generateSubscriptionYaml("token-1")).resolves.toMatchObject({
-      yaml: "mixed-port: 7890\n",
+    await expect(generateSubscriptionProfile("token-1", "clash")).resolves.toMatchObject({
+      content: "mixed-port: 7890\n",
       name: "Saved",
       subscriptionInfo: { upload: 2048, total: 4096 },
       cacheExpirySeconds: 3600,
@@ -652,24 +702,24 @@ describe("local subscription service", () => {
       expect.objectContaining({ sources: expect.any(Array) }),
       expect.objectContaining({ nodes: [expect.objectContaining({ name: "Node" })], proxyProviders: null })
     );
-    expect(mocks.prisma.subscription.update).toHaveBeenCalledWith({
-      where: { id: "sub-1" },
+    expect(mocks.prisma.subscription.updateMany).toHaveBeenCalledWith({
+      where: { id: "sub-1", token: "token-1" },
       data: { lastAccessedAt: expect.any(Date) },
     });
 
     mocks.prisma.subscription.findUnique.mockResolvedValueOnce(null);
-    await expect(generateSubscriptionYaml("missing")).resolves.toBeNull();
+    await expect(generateSubscriptionProfile("missing", "clash")).resolves.toBeNull();
 
     mocks.prisma.subscription.findUnique.mockResolvedValueOnce(
       row({ encryptedNodes: JSON.stringify([]), encryptedConfig: JSON.stringify({}) })
     );
     mocks.buildProxyProvidersFromConfig.mockReturnValueOnce(null);
-    await expect(generateSubscriptionYaml("empty")).resolves.toBeNull();
+    await expect(generateSubscriptionProfile("empty", "clash")).resolves.toBeNull();
 
     mocks.prisma.subscription.findUnique.mockResolvedValueOnce(
       row({ encryptedNodes: JSON.stringify([]), encryptedConfig: JSON.stringify({ proxyProviders: { provider: {} } }) })
     );
     mocks.buildProxyProvidersFromConfig.mockReturnValueOnce({ provider: { url: "https://example.com/provider.yaml" } });
-    await expect(generateSubscriptionYaml("provider-only")).resolves.toMatchObject({ yaml: "mixed-port: 7890\n" });
+    await expect(generateSubscriptionProfile("provider-only", "clash")).resolves.toMatchObject({ content: "mixed-port: 7890\n" });
   });
 });

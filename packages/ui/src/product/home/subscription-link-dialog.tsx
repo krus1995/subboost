@@ -1,6 +1,11 @@
 "use client";
 
-import type * as React from "react";
+import * as React from "react";
+import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
+import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
+import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
+import { copyTextToClipboard } from "@subboost/ui/lib/clipboard";
+import { toast } from "@subboost/ui/components/ui/toaster";
 import { Check, Copy, Link as LinkIcon, Loader2 } from "lucide-react";
 import { Button } from "@subboost/ui/components/ui/button";
 import { FormField } from "@subboost/ui/components/ui/form-field";
@@ -62,6 +67,15 @@ export function SubscriptionLinkDialog({
   handleCopyUrl,
   handleCreateSubscription,
 }: Props) {
+  const [format, setFormat] = React.useState<ConfigFormat>("clash");
+  const [copiedLoonUrl, setCopiedLoonUrl] = React.useState("");
+  const selectedUrl = subscriptionFormatUrl(subscriptionUrl, format);
+  const selectedCopied = format === "clash" ? copied : copiedLoonUrl === selectedUrl;
+  const copySelectedUrl = async () => {
+    if (format === "clash") { handleCopyUrl(); return; }
+    if (await copyTextToClipboard(selectedUrl)) setCopiedLoonUrl(selectedUrl);
+    else toast({ title: "复制失败，请手动复制订阅链接", variant: "destructive" });
+  };
   const close = () => onOpenChange(false);
   const minAutoUpdateLabel = getAutoUpdateIntervalPolicyMinLabel(autoUpdatePolicy);
 
@@ -77,7 +91,7 @@ export function SubscriptionLinkDialog({
           </DialogTitle>
           <DialogDescription>
             {subscriptionUrl
-              ? "复制下方链接到 Clash 客户端导入使用"
+              ? `复制下方链接到 ${format === "loon" ? "Loon" : "Clash"} 客户端导入使用`
               : isEditingExistingSubscription
                 ? "将覆盖该订阅的配置与订阅源，链接保持不变"
                 : "生成持久化的订阅链接，支持在 Clash 客户端中自动更新"}
@@ -155,18 +169,20 @@ export function SubscriptionLinkDialog({
           </div>
         ) : (
           <div className="space-y-4 py-4">
-            <SubscriptionQrCode url={subscriptionUrl} />
+            <ConfigFormatSelect value={format} onChange={setFormat} />
+            <SubscriptionQrCode url={selectedUrl} />
+            {format === "loon" && !isCreatingSubscription && <LoonSubscriptionActions key={selectedUrl} url={selectedUrl} />}
             <div className="space-y-2">
               <p className="text-sm font-medium">订阅链接</p>
               <div className="flex gap-2">
-                <Input value={subscriptionUrl} readOnly className="font-mono text-xs" />
+                <Input value={selectedUrl} readOnly className="font-mono text-xs" />
                 <IconButton
-                  label={copied ? "已复制订阅链接" : "复制订阅链接"}
+                  label={selectedCopied ? "已复制订阅链接" : "复制订阅链接"}
                   variant="outline"
-                  onClick={handleCopyUrl}
+                  onClick={() => void copySelectedUrl()}
                   className="flex-shrink-0"
                 >
-                  {copied ? (
+                  {selectedCopied ? (
                     <Check className="h-4 w-4 text-green-400" />
                   ) : (
                     <Copy className="h-4 w-4" />

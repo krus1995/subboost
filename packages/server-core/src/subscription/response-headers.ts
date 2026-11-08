@@ -5,6 +5,7 @@ import {
 
 type BuildSubscriptionResponseHeadersOptions = {
   cacheControl?: string;
+  contentType?: "text/yaml;charset=utf-8" | "text/plain;charset=utf-8";
   cacheExpirySeconds?: number;
   autoUpdateIntervalSeconds?: number | null;
   isAdmin: boolean;
@@ -58,7 +59,7 @@ export function buildSubscriptionResponseHeaders(
   options: BuildSubscriptionResponseHeadersOptions
 ): Record<string, string> {
   const headers: Record<string, string> = {
-    "content-type": "text/yaml;charset=utf-8",
+    "content-type": options.contentType ?? "text/yaml;charset=utf-8",
     // 订阅客户端可能把 filename 当作订阅显示名，响应头不要补 .yaml。
     "content-disposition": buildContentDisposition(name),
     "cache-control": options.cacheControl ?? "no-cache",

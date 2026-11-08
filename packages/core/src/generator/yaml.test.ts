@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import * as yamlParser from "js-yaml";
-import { collectDnsPolicyEntries, configToYaml } from "./yaml";
+import { canonicalizeProxy, collectDnsPolicyEntries, configToYaml } from "./yaml";
 import type { ClashConfig } from "@subboost/core/types/config";
 
 const REALITY_PUBLIC_KEY = "A".repeat(43);
 
 describe("configToYaml", () => {
+  it("defaults VMess alterId to zero and preserves explicit values", () => {
+    const node = { name: "VMess", type: "vmess", server: "example.com", port: 443, uuid: "11111111-1111-1111-1111-111111111111", cipher: "auto" };
+    expect(canonicalizeProxy(node)).toMatchObject({ alterId: 0, udp: true });
+    expect(canonicalizeProxy({ ...node, alterId: 64, udp: false })).toMatchObject({ alterId: 64, udp: false });
+    expect(canonicalizeProxy({ ...node, type: "vless" })).not.toHaveProperty("alterId");
+    expect(node).not.toHaveProperty("alterId");
+  });
   it("serializes generated sections with canonical proxy field cleanup", () => {
     const yaml = configToYaml({
       dns: {

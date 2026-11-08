@@ -22,6 +22,7 @@ export interface Subscription {
   autoUpdateState: SubscriptionAutoUpdateState;
   smartNodeMatchingEnabled: boolean;
   lastUpdatedAt: string | null;
+  updatedAt?: string;
   lastAccessedAt: string | null;
   createdAt: string;
 }
