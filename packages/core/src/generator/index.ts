@@ -150,7 +150,7 @@ function normalizeBaseConfigPatch(baseConfig: Record<string, unknown>): Record<s
  *
  * 规则：保留第一次出现的原名；从第二次起追加 " (2)/(3)..." 后缀。
  */
-function ensureUniqueProxyNames(nodes: ParsedNode[]): ParsedNode[] {
+export function ensureUniqueProxyNames(nodes: ParsedNode[]): ParsedNode[] {
   const used = new Set<string>();
   const counter = new Map<string, number>();
 

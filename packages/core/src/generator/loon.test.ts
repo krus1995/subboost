@@ -12,7 +12,7 @@ describe('generateLoonConfig', () => {
   it('renders native sections with both nodes and ordered default group actions', async () => {
     const text = await generateLoonConfig(base, load);
     expect(text).toContain('[General]\nip-mode = dual');
-    expect(text).toContain('[Proxy]\n香港 A = shadowsocks');
+    expect(text).toContain('[Proxy]\n香港 A = Shadowsocks');
     expect(text.indexOf('香港 A =')).toBeLessThan(text.indexOf('日本 B ='));
     expect(text).toContain('🚀 节点选择 = select, ⚡ 自动选择, DIRECT, REJECT, 香港 A, 日本 B');
     expect(text).toContain('⚡ 自动选择 = url-test, 香港 A, 日本 B, url=https://www.gstatic.com/generate_204, interval=300');
@@ -45,7 +45,7 @@ describe('generateLoonConfig', () => {
 
   it('stably renames duplicate nodes', async () => {
     const text = await generateLoonConfig({ ...base, nodes: [nodes[0], nodes[0]] }, load);
-    expect(text).toContain('香港 A (2) = shadowsocks');
+    expect(text).toContain('香港 A (2) = Shadowsocks');
     expect(text).toContain('url-test, 香港 A, 香港 A (2),');
   });
 
@@ -74,5 +74,67 @@ describe('generateLoonConfig', () => {
 
   it('refuses ambiguous list syntax instead of skipping a rule', async () => {
     await expect(generateLoonConfig({ nodes }, async () => 'regexp:.*example')).rejects.toThrow('Loon 无法保留');
+  });
+});
+
+
+describe('Loon renderer edge cases', () => {
+  it('renders a large built-in list without spreading it as function arguments', async () => {
+    const list = Array.from({ length: 160_000 }, (_, i) => `exact-${i}.example`).join('\n');
+    const text = await generateLoonConfig({ nodes, userConfig: { enabledGroups: ['select', 'cn'], experimentalCnUseCnRuleSet: true } }, async (path) => path.startsWith('geoip/') ? '192.0.2.0/24' : list);
+    expect(text).toContain('DOMAIN,exact-159999.example,');
+    expect(text).toContain('FINAL,');
+  });
+
+  it('omits custom rules whose custom target group is disabled', async () => {
+    const text = await generateLoonConfig({ ...base, customProxyGroups: [{ id: 'off', name: '关闭', enabled: false, emoji: '', groupType: 'select' }], userConfig: { ...base.userConfig, customRules: [{ id: 'off', type: 'DOMAIN', value: 'off.example', target: { kind: 'custom', id: 'off' } }] } }, load);
+    expect(text).not.toContain('off.example');
+    expect(text).not.toContain('关闭 =');
+  });
+
+  it('rejects an empty auto group', async () => {
+    await expect(generateLoonConfig({ ...base, nodes: [] }, load)).rejects.toThrow('空成员列表');
+  });
+
+  it('rejects an auto group with DIRECT or another group as a member', async () => {
+    for (const extraMembers of [[{ kind: 'direct' as const }], [{ kind: 'module' as const, id: 'select' }]]) {
+      await expect(generateLoonConfig({ ...base, proxyGroupAdvanced: { auto: { extraMembers } } }, load)).rejects.toThrow(/url-test 非节点成员|循环引用/);
+    }
+  });
+
+  it('rejects self-referential custom group cycles', async () => {
+    await expect(generateLoonConfig({ ...base, proxyGroupAdvanced: { select: { extraMembers: [{ kind: 'custom', id: 'loop' }] } }, customProxyGroups: [{ id: 'loop', name: '循环', emoji: '', groupType: 'select', advanced: { extraMembers: [{ kind: 'module', id: 'select' }] } }] }, load)).rejects.toThrow('循环引用');
+  });
+
+  it.each([
+    { userConfig: { dnsYaml: '[unclosed' } },
+    { userConfig: { autoSelectStrategy: 'fallback' as const } },
+    { userConfig: { mixedPort: 1234 } },
+    { userConfig: { allowLan: false } },
+    { userConfig: { testInterval: 0 } },
+    { userConfig: { enabledGroups: ['missing'] } },
+    { userConfig: { ruleProviderBaseUrl: 'https://secret.example' } },
+    { userConfig: { listenerPorts: { '香港 A': 1234 } } },
+    { nodes: [{ ...nodes[0], name: 'DIRECT' }] },
+    { proxyGroupNameOverrides: { auto: '香港 A' } },
+    { proxyGroupAdvanced: { auto: { includeRegex: '[' } } },
+    { proxyGroupAdvanced: { auto: { excludeRegex: '[' } } },
+    { proxyGroupAdvanced: { auto: { extraMembers: [{ kind: 'module' as const, id: 'missing' }] } } },
+    { proxyGroupAdvanced: { auto: { extraMembers: [{ kind: 'custom' as const, id: 'missing' }] } } },
+    { userConfig: { customRules: [{ id: 'r', type: 'DOMAIN' as const, value: 'example.com', target: 'DIRECT', noResolve: true }] } },
+  ])('reports an explicit safe conversion error for %j', async (patch) => {
+    await expect(generateLoonConfig({ ...base, ...patch }, load)).rejects.toThrow('Loon 无法保留');
+    await expect(generateLoonConfig({ ...base, ...patch }, load)).rejects.not.toThrow('https://secret.example');
+  });
+
+  it('handles an empty mapping and whitespace names through shared normalization', async () => {
+    const text = await generateLoonConfig({ nodes: [{ ...nodes[0], name: '   ' }], userConfig: { enabledGroups: [] } }, load);
+    expect(text).toContain('未命名节点 =');
+    expect(text).toContain('FINAL,未命名节点');
+  });
+
+  it('allows disabled chain groups and empty provider options', async () => {
+    const text = await generateLoonConfig({ ...base, proxyProviders: {}, dialerProxyGroups: [{ id: 'off', name: '链', enabled: false, relayNodes: [], targetNodes: [], type: 'select' }] }, load);
+    expect(text).toContain('FINAL,');
   });
 });
