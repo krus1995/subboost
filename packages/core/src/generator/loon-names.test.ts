@@ -41,7 +41,22 @@ describe('Loon display names', () => {
     expect(text).toContain('FINAL,／／［A］');
   });
 
-  it.each(['bad\nname', 'bad\u0000name', 'bad\u0085name', 'bad\u2028name'])('rejects structural controls in %j', async (name) => {
+  it('preserves original extra, excluded and ordered members of an automatic group', async () => {
+    const text = await generateLoonConfig({
+      nodes: ['[A]', '[B]', '[C]'].map(node),
+      userConfig: { enabledGroups: ['auto'] },
+      proxyGroupAdvanced: { auto: {
+        includeRegex: '\\[A\\]|\\[C\\]',
+        extraMembers: [{ kind: 'node', name: '[B]' }],
+        excludedMembers: [{ kind: 'node', name: '[C]' }],
+        memberOrder: [{ kind: 'node', name: '[B]' }, { kind: 'node', name: '[A]' }],
+      } },
+    }, load);
+    expect(text).toContain('⚡ 自动选择 = url-test, ［B］, ［A］, url=');
+    expect(text).not.toContain('url-test, ［B］, ［A］, ［C］');
+  });
+
+  it.each(['bad\nname', 'bad\u0000name', 'bad\u0085name', 'bad\u2028name', '\nname', 'name\t'])('rejects structural controls in %j', async (name) => {
     await expect(generateLoonConfig({ nodes: [node(name)], userConfig: { enabledGroups: [] } }, load)).rejects.toThrow();
   });
 
