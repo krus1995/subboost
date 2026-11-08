@@ -9,4 +9,4 @@ description: 用户要求同步 SubBoost 上游正式版本、指定 tag 或提�
 - 冲突时查看 `git status` 和三方版本，对照定制清单逐文件解决冲突并完成合并。将理由记入 STATE.md。检查 merge-base 到 U 的 workflow、项目规则、发布脚本和数据库迁移差异。
 - 正式版已包含时更新 ops/fork/config.json 中的 upstreamTag、upstreamCommit。用户指定开发提交时保留最近已包含的正式版，另行记录 U。检查 B 与 U 都是候选祖先，再运行 verify-subboost。
 - 记录独立审查者、base、head、阻塞项和修复结果。推送该任务分支，创建或更新 PR，用本地身份执行 `gh pr checks "$pr" --required --watch`。确认 fork-required 已出现在当前 PR 并通过，base 变化时合入最新 main，更新验证与审查。用 `gh pr merge "$pr" --merge --match-head-commit "$head"` 合并。
-- 获取远端 main 并核对 U 已包含。按 deploy-subboost 跟进 Actions 和生产回执，记录生产 SHA、image ID 和业务验收。
+- 获取远端 main，确认包含 U，记录合并 SHA 后结束上游同步。收到单独的部署指令后再运行 deploy-subboost。

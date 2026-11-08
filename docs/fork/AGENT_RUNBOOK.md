@@ -80,7 +80,7 @@ flowchart TD
     F -->|失败| G[本地 Codex 修复]
     G --> E
     F -->|通过| H[Codex 合并 main]
-    H --> I[Actions 构建与部署]
+    H -->|用户手动触发部署| I[Actions 构建与部署]
     I --> J[生产验收]
 ```
 
@@ -307,7 +307,7 @@ blocking_items: []
 next_action: discover_existing_deployment
 ```
 
-代码交付阶段更新仓库中的状态。本地上游合并记录与本次任务一同提交，部署运行结果写入 Actions summary 和服务器回执，避免为了记录运行状态不断产生触发部署的新提交。
+代码交付阶段更新仓库中的状态。本地上游合并记录与本次任务一同提交，部署运行结果写入 Actions summary 和服务器回执。
 
 `FEATURES.md` 对每个定制功能记录需求、入口、数据影响、已知上游交叉区域、测试路径和验收命令。后续上游同步以这些回归作为保留定制行为的证据。
 
@@ -665,9 +665,9 @@ Cloudflare Tunnel 已连接，生产域名固定为 `subboost.krus1987.kdns.fr`�
 
 7. **提交 PR**。列明变更、验收、迁移与回滚条件，等待当前 HEAD 的必需检查。
 
-8. **完成交付**。由当前本地 Codex 在检查通过后执行合并，跟进 Actions 和服务器发布到生产验收完成，更新功能记录与证据。
+8. **完成交付**。由当前本地 Codex 在检查通过后执行合并，记录合并提交与检查结果。另行手动部署时再跟进生产验收。
 
-Pstack 的 Shipping、Babysit 等能力按当前技能文档调用。完成状态覆盖仓库合并和实际生产结果。遇到实际阻塞时，保存可接续的任务状态。[Pstack 主技能](https://github.com/michael-denyer/pstack-claude/blob/main/plugins/pstack/skills/poteto-mode/SKILL.md)
+Pstack 的 Shipping、Babysit 等能力按当前技能文档调用。代码交付记录合并结果，部署任务记录生产结果。遇到实际阻塞时，保存可接续的任务状态。[Pstack 主技能](https://github.com/michael-denyer/pstack-claude/blob/main/plugins/pstack/skills/poteto-mode/SKILL.md)
 
 # 14 执行顺序与阶段交付
 
