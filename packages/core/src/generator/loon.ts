@@ -147,11 +147,11 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
   const order = options.proxyGroupOrder ?? [];
   const rank = (name: string) => { const index = order.findIndex((key) => key === keys.get(name)); return index < 0 ? order.length : index; };
   groups.sort((a, b) => rank(a.name) - rank(b.name));
-  return { groups, available, lines: renderGroups(groups, nodeNames, config) };
+  return { groups, literalTargetNames: targetOptions.literalTargetNames, lines: renderGroups(groups, nodeNames, config) };
 }
 
-async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, loadRuleList: (path: string) => Promise<string>): Promise<string[]> {
-  const entries = buildGeneratedRuleEntries({ enabledModules: config.enabledGroups, customRules: config.customRules, customProxyGroups: options.customProxyGroups, builtinRuleEdits: options.builtinRuleEdits, proxyGroupNameOverrides: options.proxyGroupNameOverrides, experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet, cnIpNoResolve: config.cnIpNoResolve, ruleOrder: config.ruleOrder, fallbackPolicyTarget });
+async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, literalTargetNames: readonly string[], loadRuleList: (path: string) => Promise<string>): Promise<string[]> {
+  const entries = buildGeneratedRuleEntries({ enabledModules: config.enabledGroups, customRules: config.customRules, customProxyGroups: options.customProxyGroups, builtinRuleEdits: options.builtinRuleEdits, proxyGroupNameOverrides: options.proxyGroupNameOverrides, experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet, cnIpNoResolve: config.cnIpNoResolve, ruleOrder: config.ruleOrder, fallbackPolicyTarget, literalTargetNames });
   const lines: string[] = [];
   for (const entry of entries) {
     const [type, value] = entry.text.split(',');
@@ -167,7 +167,7 @@ async function renderRules(options: GenerateOptions, config: UserConfig, fallbac
 export async function generateLoonConfig(options: GenerateOptions, loadRuleList: (path: string) => Promise<string>): Promise<string> {
   const config = resolveConfig(options);
   const { nodes, lines: nodeLines } = prepareNodes(options.nodes);
-  const { groups, lines: groupLines } = prepareGroups(options, config, nodes);
-  const ruleLines = await renderRules(options, config, groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT', loadRuleList);
+  const { groups, literalTargetNames, lines: groupLines } = prepareGroups(options, config, nodes);
+  const ruleLines = await renderRules(options, config, groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT', literalTargetNames, loadRuleList);
   return ['# SubBoost Loon', '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
 }

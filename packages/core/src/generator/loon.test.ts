@@ -231,3 +231,32 @@ it('hides unsafe unknown protocol labels in the node conversion error', async ()
   await expect(generateLoonConfig({ ...base, nodes: [node] }, load)).rejects.toThrow('未知协议');
   await expect(generateLoonConfig({ ...base, nodes: [node] }, load)).rejects.not.toThrow('private-secret');
 });
+
+describe('Loon literal targets that resemble group references', () => {
+  it.each(['module:select', 'module:ad', 'custom:off'])('keeps node %s as both a custom rule and built-in rule target', async (name) => {
+    const text = await generateLoonConfig({
+      nodes: [{ ...nodes[0], name }, nodes[1]],
+      customProxyGroups: [{ id: 'off', name: '关闭的组', emoji: '', groupType: 'select', enabled: false }],
+      userConfig: { enabledGroups: ['ad'], customRules: [{ id: 'literal', type: 'DOMAIN', value: 'literal.example', target: name }] },
+      builtinRuleEdits: { 'module:ad:category-ads-all': { target: name } },
+    }, load);
+    expect(text).toContain(`${name} = Shadowsocks`);
+    expect(text).toContain(`DOMAIN,literal.example,${name}`);
+    expect(text).toContain(`DOMAIN,exact.example,${name}`);
+    expect(text).toContain(`DOMAIN-SUFFIX,suffix.example,${name}`);
+    expect(text).not.toContain('🚀 节点选择 =');
+    expect(text).not.toContain('DOMAIN,literal.example,🛑 广告拦截');
+  });
+
+  it('continues resolving a structured module reference while a similarly named node exists', async () => {
+    const text = await generateLoonConfig({
+      nodes: [{ ...nodes[0], name: 'module:ad' }],
+      userConfig: { enabledGroups: ['ad'], customRules: [
+        { id: 'literal', type: 'DOMAIN', value: 'literal.example', target: 'module:ad' },
+        { id: 'reference', type: 'DOMAIN', value: 'reference.example', target: { kind: 'module', id: 'ad' } },
+      ] },
+    }, load);
+    expect(text).toContain('DOMAIN,literal.example,module:ad');
+    expect(text).toContain('DOMAIN,reference.example,🛑 广告拦截');
+  });
+});
