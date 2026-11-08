@@ -37,7 +37,9 @@ export function renderLoonNode(node: ParsedNode): string {
   const knownTypes = [...supportedTypes, "ssr", "anytls", "hysteria", "tuic", "wireguard", "snell", "socks4", "ssh", "direct", "reject", "dns", "mieru", "masque", "sudoku", "trusttunnel", "relay"];
   const typeLabel = knownTypes.includes(node.type) ? node.type : "扩展协议";
   let field = "节点地址或端口";
-  const fail = (reason = field): never => { throw new LoonConversionError(`Loon ${typeLabel} 节点转换失败（${reason}）`); };
+  function fail(reason = field): never {
+    throw new LoonConversionError(`Loon ${typeLabel} 节点转换失败（${reason}）`);
+  }
   const consumed = new Set(["name", "type", "server", "port", "_originName", "_sourceIds", "_meta"]);
   const take = (key: string): unknown => { consumed.add(key); field = key; return data[key]; };
   const name = validateLoonName(node.name);
