@@ -489,6 +489,24 @@ class Site:
         run(["docker", "start", self.cronid])
         self.check_cron_history(self.cronid)
 
+    def check_service_env_files(self, staged):
+        services = json.loads(self.dc("config", "--no-env-resolution", "--format", "json", env_file=staged))["services"]
+        # Compose v2 can drop env_file even with --no-env-resolution. Compose v5 retains the resolved paths.
+        raw_paths = (not any(service.get("env_file") for service in services.values())
+                     and self.dc("version", "--short").strip().lstrip(b"v").startswith(b"2."))
+        if raw_paths:
+            try:
+                services = json.loads(self.dc("config", "--no-interpolate", "--format", "json", env_file=staged))["services"]
+            except CheckError:
+                raise CheckError("Docker Compose cannot report service env_file paths; upgrade Docker Compose") from None
+        for name in self.model["services"]:
+            for entry in services[name].get("env_file", []):
+                path = entry["path"] if isinstance(entry, dict) else entry
+                require(not raw_paths or "$" not in path,
+                        "use a fixed env_file path for service " + name + " or upgrade Docker Compose")
+                require((self.root / path).resolve() != self.env_file,
+                        "service " + name + " must use an env_file separate from the project env file")
+
     def set_image(self, image, *, preview=False):
         require("SUBBOOST_IMAGE" not in os.environ, "unset SUBBOOST_IMAGE in the deployment process environment")
         raw = self.env_file.read_bytes()
@@ -503,12 +521,7 @@ class Site:
             try:
                 handle.write(b"".join(lines))
                 handle.flush()
-                unresolved = json.loads(self.dc("config", "--no-env-resolution", "--format", "json", env_file=staged))
-                for name, service in unresolved["services"].items():
-                    for entry in service.get("env_file", []):
-                        path = entry["path"] if isinstance(entry, dict) else entry
-                        require((self.root / path).resolve() != self.env_file,
-                                "service " + name + " must use an env_file separate from the project env file")
+                self.check_service_env_files(staged)
                 model = json.loads(self.dc("config", "--format", "json", env_file=staged))
                 require(model["services"]["app"]["image"] == image, "SUBBOOST_IMAGE did not select the target app image")
                 require(model == expected, "changing SUBBOOST_IMAGE affected other Compose settings")

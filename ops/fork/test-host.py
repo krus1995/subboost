@@ -224,6 +224,14 @@ def compose_image_selection(root):
     site.set_image(new, preview=True)
     site.set_image(new)
     assert json.loads(site.dc("config", "--format", "json"))["services"]["cron"]["environment"] == {"CRON_SETTING": "value"}
+    setup(raw=original + b"SERVICE_ENV=.env\n", other={"image": "cron:original", "env_file": ["${SERVICE_ENV}"]})
+    rejects_before_stop()
+    setup(raw=original + b"SERVICE_ENV=cron.env\n", other={"image": "cron:original", "env_file": ["${SERVICE_ENV}"]})
+    native = json.loads(site.dc("config", "--no-env-resolution", "--format", "json"))
+    if native["services"]["cron"].get("env_file"):
+        site.set_image(new, preview=True)
+    else:
+        rejects_before_stop()
     print("Compose image selection: staged and active models checked; invalid releases rejected before stopping writers.")
 
 
