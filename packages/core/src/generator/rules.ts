@@ -4,7 +4,7 @@ import { getCustomRuleOrderKey } from "@subboost/core/rules/custom-rule-utils";
 import { supportsNoResolve } from "@subboost/core/rules/custom-rule-types";
 import { resolveProxyGroupModuleName } from "@subboost/core/proxy-group-name";
 import { isDisabledCustomProxyGroupTarget, resolveProxyGroupTargetName } from "@subboost/core/proxy-group-targets";
-import { PROXY_GROUP_MODULES, type ProxyGroupModule, type ProxyGroupRule } from "./proxy-group-modules";
+import { EXPERIMENTAL_CN_RULE, PROXY_GROUP_MODULES, type ProxyGroupModule, type ProxyGroupRule } from "./proxy-group-modules";
 import { getEffectiveModuleRules, getModuleRuleOrderKey } from "./module-rules";
 import { createPolicyTargetResolver } from "./policy-targets";
 
@@ -40,12 +40,7 @@ export interface RulesGenerateOptions {
   fallbackPolicyTarget?: string;
 }
 
-export const EXPERIMENTAL_CN_RULE: ProxyGroupRule = {
-  id: "cn",
-  name: "国内域名 (完整)",
-  behavior: "domain",
-  path: "geosite/cn.mrs",
-};
+export { EXPERIMENTAL_CN_RULE };
 
 /**
  * 规则生成顺序（按自上而下、首次命中即停原则）

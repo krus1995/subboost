@@ -498,3 +498,15 @@ export const PROXY_GROUP_MODULES: ProxyGroupModule[] = [
   },
 ];
 
+
+export const EXPERIMENTAL_CN_RULE: ProxyGroupRule = {
+  id: "cn",
+  name: "国内域名 (完整)",
+  behavior: "domain",
+  path: "geosite/cn.mrs",
+};
+
+export const LOON_RULE_LISTS = new Map(
+  [...PROXY_GROUP_MODULES.flatMap(group => group.rules), EXPERIMENTAL_CN_RULE]
+    .map(rule => [rule.path.replace(/\.mrs$/, ".list"), rule.behavior] as const)
+);

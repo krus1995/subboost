@@ -8,7 +8,9 @@
 
 首页的「Loon」页签按当前编辑内容在浏览器生成配置并下载 `loon.conf`。已保存的订阅可在订阅链接对话框、管理页选择 Loon，检查配置、复制链接、下载或打开客户端。两种格式共用订阅 token；重置链接后，原来的 Clash 和 Loon 地址都失效。
 
-服务端通过 `GET /api/subscriptions/<token>/loon.conf` 读取同一条加密订阅的节点快照、配置和流量信息。已有数据库无需迁移。公开读取只使用保存的节点，内置规则来自项目当前使用的 MetaCubeX 规则仓库。匿名预览通过 `GET /api/loon/rules?path=...` 读取受支持的公开规则文件，节点和密码保留在浏览器中。规则读取失败返回 503，以便稍后重试。
+服务端通过 `GET /api/subscriptions/<token>/loon.conf` 读取同一条加密订阅的节点快照、配置和流量信息。已有数据库无需迁移。公开读取只使用保存的节点，内置规则来自项目当前使用的 MetaCubeX 规则仓库。匿名预览通过 `GET /api/loon/rules?path=...` 读取受支持的公开规则文件，节点和密码保留在浏览器中。应用随镜像提供全部内置规则。冷启动时两个接口直接读取本地文件，后台逐项刷新已经请求的规则，成功更新后缓存 24 小时。上游超时、返回空文件或规则语法无效时保留最近可用的正文。新进程从镜像快照开始，Clash 客户端会独立更新远端规则。
+
+打包文件位于 `local/public/loon-rules/`，清单记录上游提交和各文件的 Git blob 摘要。`node local/scripts/verify-loon-rule-snapshot.mjs` 核对白名单和摘要，`bash ops/fork/check.sh image` 在无公网的内部网络首次读取含广告和私有网络规则的已保存订阅，并逐条对照域名与 IP 规则。
 
 首页与已保存订阅都按 Loon 能表达的协议及参数导出。支持 Shadowsocks、ShadowsocksR、VMess、VLESS、Trojan、AnyTLS、Hysteria2、WireGuard、HTTP(S) 和 SOCKS5。VMess 和 VLESS 支持 TCP、WebSocket 和可保留 Host、路径的 HTTP；Hysteria2 可保留 Salamander 混淆。兼容导出把通用 `safari` 和 `ios` 指纹映射到 `safari-ios18`。Reality 允许混合密钥交换时，通用 Safari 和 Chrome 可分别使用 `safari-ios-26` 和 `chrome147`。如果源配置同时指定这类新版指纹并要求禁用混合密钥交换，Loon 缺少单独的关闭选项，导出时会提示跳过。配置注释记录发生转换的节点序号和目标指纹。XHTTP、gRPC、HTTPUpgrade、TUIC、Mieru 及无法保留的 TLS 客户端指纹会列入跳过清单。配置注释与管理页显示数量、原节点序号及原因。原订阅和 Clash 节点保留原样。[Loon 节点参数](https://nsloon.app/docs/Node/) · [Sub-Store 指纹映射](https://github.com/sub-store-org/Sub-Store/commit/e08f1b1)
 
