@@ -47,6 +47,7 @@ function renderNodes(nodes: ParsedNode[], displayNames: ReadonlyMap<string, stri
   return nodes.map((node, index) => {
     const type = /^[a-z0-9-]+$/i.test(node.type) ? node.type : '未知协议';
     const label = `第 ${index + 1} 个节点（${type}）`;
+    if (node.name === 'DIRECT' || node.name === 'REJECT') fail(`${label}使用的保留名称`);
     if (node['dialer-proxy'] || node.type === 'relay') fail(`${label}的 dialer-proxy 链式代理`);
     try { return renderLoonNode({ ...node, name: displayNames.get(node.name) ?? node.name }); } catch (error) {
       const detail = error instanceof LoonConversionError ? `：${error.message}` : '';
@@ -57,12 +58,12 @@ function renderNodes(nodes: ParsedNode[], displayNames: ReadonlyMap<string, stri
 
 function buildDisplayNames(nodes: ParsedNode[], groups: ProxyGroup[]): ReadonlyMap<string, string> {
   const punctuation: Record<string, string> = { ',': '，', ';': '；', '#': '＃', '=': '＝', '[': '［', ']': '］', '"': '＂', '\\': '＼' };
-  const safe = (name: string) => !name.startsWith('//') && !/[,;#=\[\]"\\]/u.test(name);
+  const safe = (name: string) => !name.startsWith('//') && !Array.from(name).some((character) => Object.hasOwn(punctuation, character));
   const used = new Set(['DIRECT', 'REJECT', ...groups.map((group) => group.name), ...nodes.map((node) => node.name).filter(safe)]);
   const names = new Map<string, string>();
   for (const node of nodes) {
     if (safe(node.name)) continue;
-    const base = node.name.replace(/[,;#=\[\]"\\]/gu, (character) => punctuation[character]).replace(/^\/\//, '／／');
+    const base = Array.from(node.name, (character) => Object.hasOwn(punctuation, character) ? punctuation[character] : character).join('').replace(/^\/\//, '／／');
     let name = base;
     let suffix = 2;
     while (used.has(name)) name = `${base} (${suffix++})`;
@@ -183,8 +184,7 @@ async function renderRules(options: GenerateOptions, config: UserConfig, fallbac
 export async function generateLoonConfig(options: GenerateOptions, loadRuleList: (path: string) => Promise<string>): Promise<string> {
   const config = resolveConfig(options);
   for (const [index, node] of options.nodes.entries()) {
-    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(node.name)) fail(`第 ${index + 1} 个节点的名称控制字符`);
-    if (node.name.trim() === 'DIRECT' || node.name.trim() === 'REJECT') fail(`第 ${index + 1} 个节点使用的保留名称`);
+    if (typeof node.name === 'string' && /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(node.name)) fail(`第 ${index + 1} 个节点的名称控制字符`);
   }
   const nodes = ensureUniqueProxyNames(options.nodes);
   const { groups, nodeNames, literalTargetNames } = prepareGroups(options, config, nodes);

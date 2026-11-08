@@ -64,4 +64,15 @@ describe('Loon display names', () => {
     await expect(generateLoonConfig({ nodes: [{ ...node('[A]'), uuid: 'invalid' }], userConfig: { enabledGroups: [] } }, load)).rejects.toThrow('uuid');
     await expect(generateLoonConfig({ nodes: [node('[A]')], customProxyGroups: [{ id: 'a', name: '[A]', emoji: '', groupType: 'select' }] }, load)).rejects.toThrow();
   });
+
+  it('keeps shared normalization for legacy missing and non-string names', async () => {
+    const missing = node('unused');
+    Reflect.deleteProperty(missing, 'name');
+    const numeric = node('unused');
+    Reflect.set(numeric, 'name', 123);
+    const text = await generateLoonConfig({ nodes: [missing, numeric], userConfig: { enabledGroups: [] } }, load);
+    expect(text).toContain('未命名节点 = VLESS');
+    expect(text).toContain('123 = VLESS');
+    expect(text).toContain('FINAL,未命名节点');
+  });
 });
