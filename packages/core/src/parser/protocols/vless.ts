@@ -261,7 +261,8 @@ export function parseVLESS(uri: string): VLESSNode {
     if (raw === "none") return "tcp";
     if (raw === "websocket") return "ws";
     if (raw === "httpupgrade") return "ws";
-    if (raw === "tcp" && headerType === "http") return "http";
+    if ((raw === "tcp" || raw === "raw") && headerType === "http") return "http";
+    if (raw === "raw") return "tcp";
     return raw;
   })();
   const pbk = pickQueryValue(params, ["pbk", "public-key", "public_key", "publicKey"]);

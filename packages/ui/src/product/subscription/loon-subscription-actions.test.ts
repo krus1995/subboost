@@ -75,6 +75,32 @@ describe("Loon subscription preparation", () => {
     expect(html).not.toContain("下载 .conf");
   });
 
+  it("offers the original import URL and download after a mixed subscription check", async () => {
+    const mixed = "# SUBBOOST-LOON-COMPAT v1 included=1 skipped=1\n# SUBBOOST-LOON-SKIP v1 index=2 protocol=vmess transport=grpc reason=unsupported-settings\n" + config;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(mixed)));
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    const html = render();
+    expect(html).toContain("可导出 1 个节点，跳过 1 个不兼容节点");
+    expect(html).toContain("第 2 个节点：当前参数无法转换（vmess / grpc）");
+    expect(html).toContain(`loon://import?sub=${encodeURIComponent(url)}`);
+    expect(html).toContain("下载 .conf");
+  });
+
+  it("shows safe skipped reasons when every node is incompatible and keeps download disabled", async () => {
+    const message = "没有可导出的 Loon 节点\n# SUBBOOST-LOON-COMPAT v1 included=0 skipped=1\n# SUBBOOST-LOON-SKIP v1 index=1 protocol=ssr transport=none reason=unsupported-protocol";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: message }, { status: 422 })));
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    const html = render();
+    expect(html).toContain("可导出 0 个节点，跳过 1 个不兼容节点");
+    expect(html).toContain("第 1 个节点：Loon 不支持此协议");
+    expect(html).not.toContain("SUBBOOST-LOON");
+    expect(html).not.toContain("下载 .conf");
+  });
+
   it("rejects a successful HTML login page", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>Login</html>", { headers: { "content-type": "text/html" } })));
     render();

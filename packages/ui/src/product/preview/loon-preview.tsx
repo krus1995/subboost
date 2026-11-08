@@ -6,6 +6,7 @@ import { generateLoonConfig } from "@subboost/core/generator/loon";
 import { buildGenerateOptions } from "@subboost/ui/store/config-store/generated-yaml";
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { Button } from "@subboost/ui/components/ui/button";
+import { LoonCompatibilityNotice } from "@subboost/ui/product/subscription/loon-compatibility-notice";
 
 type Source = ReturnType<typeof useConfigStore.getState>;
 type Generation =
@@ -53,7 +54,7 @@ export function LoonPreview() {
     const id = ++requestId.current;
     setGeneration({ kind: "loading", source });
     try {
-      const config = await generateLoonConfig(buildGenerateOptions(source), loadRuleList);
+      const config = await generateLoonConfig(buildGenerateOptions(source), loadRuleList, { mode: "compatible" });
       if (id === requestId.current && source === useConfigStore.getState()) setGeneration({ kind: "ready", source, config, preview: summarizeLoonConfig(config) });
     } catch (error) {
       if (id === requestId.current && source === useConfigStore.getState()) {
@@ -77,7 +78,11 @@ export function LoonPreview() {
         </Button>
         <Button size="sm" variant="outline" disabled={current.kind !== "ready"} onClick={download}>下载 .conf</Button>
       </div>
-      {current.kind === "error" ? <p role="alert" className="text-sm text-red-400">{current.message}</p> : null}
+      {current.kind === "error" && <>
+        <p role="alert" className="text-sm text-red-400">{current.message.split("\n# SUBBOOST-LOON-COMPAT v1 ")[0]}</p>
+        <LoonCompatibilityNotice config={current.message} />
+      </>}
+      {current.kind === "ready" && <LoonCompatibilityNotice config={current.config} />}
       <pre className="min-h-0 flex-1 overflow-auto whitespace-pre text-xs">{current.kind === "ready" ? current.preview : "点击生成以预览 Loon 完整配置。"}</pre>
     </div>
   );

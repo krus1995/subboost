@@ -60,7 +60,7 @@ describe('generateLoonConfig', () => {
     { userConfig: { customRules: [{ id: 'r', type: 'DOMAIN' as const, value: 'example.com', target: 'missing' }] } },
     { proxyGroupAdvanced: { auto: { strategy: 'consistent-hashing' as const } } },
     { proxyGroupAdvanced: { auto: { extraMembers: [{ kind: 'node' as const, name: 'missing' }] } } },
-    { proxyGroupAdvanced: { auto: { groupType: 'fallback' as const } } },
+    { proxyGroupAdvanced: { auto: { groupType: 'load-balance' as const, strategy: 'sticky-sessions' as const } } },
     { nodes: [{ ...nodes[0], 'dialer-proxy': '日本 B' }] },
   ])('rejects unsupported or missing references without credentials: %j', async (patch) => {
     await expect(generateLoonConfig({ ...base, ...patch }, load)).rejects.toThrow('Loon 无法保留');
@@ -98,7 +98,7 @@ describe('Loon renderer edge cases', () => {
 
   it('rejects an auto group with DIRECT or another group as a member', async () => {
     for (const extraMembers of [[{ kind: 'direct' as const }], [{ kind: 'module' as const, id: 'select' }]]) {
-      await expect(generateLoonConfig({ ...base, proxyGroupAdvanced: { auto: { extraMembers } } }, load)).rejects.toThrow(/url-test 非节点成员|循环引用/);
+      await expect(generateLoonConfig({ ...base, proxyGroupAdvanced: { auto: { extraMembers } } }, load)).rejects.toThrow(/测速组直接内置策略成员|循环引用/);
     }
   });
 

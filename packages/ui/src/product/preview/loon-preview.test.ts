@@ -64,6 +64,7 @@ describe("LoonPreview", () => {
     click?.();
     click?.();
     expect(mocks.generate).toHaveBeenCalledTimes(1);
+    expect(mocks.generate).toHaveBeenCalledWith(mocks.options, expect.any(Function), { mode: "compatible" });
     await settle();
     expect(render()).toContain("[General]");
     expect(mocks.buttons[0].disabled).toBe(true);
@@ -76,6 +77,17 @@ describe("LoonPreview", () => {
     expect(anchor.click).toHaveBeenCalledOnce();
     const blob: Blob = createObjectURL.mock.calls[0][0];
     expect(await blob.text()).toContain("[General]");
+  });
+
+  it("shows mixed node counts and safe skipped reasons", async () => {
+    mocks.generate.mockResolvedValue("# SUBBOOST-LOON-COMPAT v1 included=1 skipped=1\n# SUBBOOST-LOON-SKIP v1 index=2 protocol=ssr transport=none reason=unsupported-settings\n[General]\n[Rule]");
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    const html = render();
+    expect(html).toContain("可导出 1 个节点，跳过 1 个不兼容节点");
+    expect(html).toContain("第 2 个节点：当前参数无法转换（ssr / none）");
+    expect(mocks.buttons[1].disabled).toBe(false);
   });
 
   it("limits a large preview to 200 lines while downloading the complete configuration", async () => {

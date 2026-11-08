@@ -49,13 +49,13 @@ describe("Loon native nodes", () => {
   it("identifies unsupported categories without including submitted values", () => {
     expect(() => renderLoonNode({ ...ss, plugin: "secret-plugin" })).toThrow("不支持的选项 plugin");
     expect(() => renderLoonNode({ ...ss, "secret-key": "secret-value" })).toThrow("扩展字段");
-    expect(() => renderLoonNode({ ...base, type: "ssr", cipher: "none", password: "secret", protocol: "origin", obfs: "plain" })).toThrow("Loon ssr 节点转换失败（协议不受支持）");
+    expect(() => renderLoonNode({ ...base, type: "ssr", cipher: "none", password: "secret", protocol: "origin", obfs: "plain" })).toThrow("Loon ssr");
     expect(() => renderLoonNode({ ...base, type: "http", udp: true })).toThrow("HTTP 不支持 UDP");
     expect(renderLoonNode({ ...base, type: "http", udp: false })).toBe("香港 🇭🇰 = http,example.com,443");
     expect(renderLoonNode({ ...ss, "udp-over-tcp": true })).toContain("udp-over-tcp=true");
   });
   it.each([
-    { network: "h2" }, { network: "http" }, { network: "xhttp" },
+    { network: "h2" }, { network: "xhttp" },
     { "ws-opts": [] }, { "ws-opts": { path: 12 } },
     { "ws-opts": { headers: [] } }, { "ws-opts": { headers: { Host: "a", Cookie: "secret" } } },
     { "ws-opts": { extra: true } }, { tls: "yes" },

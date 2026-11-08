@@ -459,7 +459,7 @@ export async function generateSubscriptionProfile(token: string, format: Subscri
     options.userConfig = { ...options.userConfig, enabledGroups: [] };
   }
   const content = format === "loon"
-    ? await generateLoonConfig(options, loadLoonRuleList)
+    ? await generateLoonConfig(options, loadLoonRuleList, { mode: "compatible" })
     : generateClashYaml(options);
   const accessed = await prisma.subscription.updateMany({
     where: { id: row.id, token },
