@@ -46,7 +46,9 @@ for (const status of ["success", "failure", "cancelled", "skipped"]) {
 assert.deepEqual(ci.on.pull_request.branches, [config.branch]);
 assert.ok("workflow_call" in ci.on);
 const release = workflows["fork-build-deploy.yml"];
-assert.deepEqual(release.on.push.branches, [config.branch]);
+assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+assert.equal(release.on.workflow_dispatch.inputs.build_run_id.required, false);
+assert.equal(release.jobs.artifact.if, "github.repository == 'krus1995/subboost' && github.ref == 'refs/heads/main'");
 assert.equal(release.jobs.deploy.if, "vars.FORK_DEPLOY_ENABLED == 'true'");
 assert.equal(release.jobs.deploy.environment.name, "production");
 assert.equal(release.jobs.deploy.environment.url, config.productionUrl);
@@ -57,7 +59,7 @@ for (const [name, workflow] of Object.entries(workflows)) {
     if (name !== "fork-build-deploy.yml" || jobName !== "deploy") assert.equal(job.concurrency?.queue, undefined);
   }
 }
-assert.ok(Object.values(release.jobs).some((job) => job.uses === "./.github/workflows/fork-ci.yml"));
+assert.equal(release.jobs.deploy.needs, "artifact");
 for (const workflow of [ci, release]) {
   for (const job of Object.values(workflow.jobs)) {
     for (const step of job.steps || []) {
