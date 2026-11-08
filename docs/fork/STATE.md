@@ -108,3 +108,7 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 独立审查基线 `bfb5955b3e80ee7a6a9982ce6ab62faa54ed2d73`，首次候选 `342d85f94cb1d1a755a6bccdbb46c9106e58220d`。name_review_plan 发现 IPv6 校验接受地址外字符；review_routing 复现过滤后默认策略意外直连。修复候选 `ae47361e9fc478ab341973887f3d8049096ad17b` 已收紧地址验证，并在原默认代理失效时优先选仍可代理的成员。两位审查者均已复核关闭。回归包括合法和无效地址、嵌套策略组、原本明确直连的组和无法保留目标的分流规则。隔离 HTTP 验收命令为 `bash ops/fork/check.sh image`。
 
 review_routing 随后复核 Safari 映射候选 `84c478800e12d0d770c1d90b74aa9f4ae15545cf`，提出显式禁用混合密钥交换与现代指纹冲突的问题。根据 Mihomo 的握手实现修正后，审查者复核 `0254b36b6f27a1492388ed1d946a7ef6e206d504`，确认冲突组合会被跳过，SNI、证书指纹、公钥及 short-id 仍保留。四个相关测试文件共 199 项通过。完整 CI 发现一条旧断言以官方已支持的 SSR `none` 作为拒绝样本，现使用不支持的 `aes-256-gcm` 核对拒绝分支，`none` 单独验证成功导出。[PR #10 和完整 CI](https://github.com/krus1995/subboost/pull/10) 记录最终源码和隔离镜像验收。发布后的原地址和 iPhone 握手待验证。
+
+### Loon 规则冷启动
+
+验收条件：生产镜像首次启动且无法访问 GitHub 时，「检查 Loon 配置」使用的已保存订阅地址可返回完整配置。广告规则、精确域名、域名后缀和 IPv4/IPv6 分流使用完整规则正文。镜像构建核对全部内置规则路径及内容；网络恢复时仍可更新规则。测试覆盖空缓存和上游超时。
