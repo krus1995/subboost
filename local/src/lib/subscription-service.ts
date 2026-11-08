@@ -455,6 +455,9 @@ export async function generateSubscriptionProfile(token: string, format: Subscri
   const proxyProviders = buildProxyProvidersFromConfig(secrets.config, { testUrl, testInterval });
   if (secrets.nodes.length === 0 && !proxyProviders) return null;
   const options = buildGenerateOptionsFromConfig(secrets.config, { nodes: secrets.nodes, proxyProviders });
+  if (format === "loon" && Array.isArray(secrets.config.enabledGroups) && secrets.config.enabledGroups.length === 0) {
+    options.userConfig = { ...options.userConfig, enabledGroups: [] };
+  }
   const content = format === "loon"
     ? await generateLoonConfig(options, loadLoonRuleList)
     : generateClashYaml(options);

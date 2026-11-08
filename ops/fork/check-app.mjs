@@ -65,6 +65,12 @@ if (process.argv[2] === "upgraded") {
     assert.equal(updated.status, 200);
     assert.match(await updated.text(), /DOMAIN-SUFFIX,github\.com,🚀 Development/);
 
+    await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({ config: { enabledGroups: [] } }) });
+    const withoutGroups = await fetch(url + profilePath + "/loon.conf");
+    assert.equal(withoutGroups.status, 200);
+    const nodeOnlyProfile = await withoutGroups.text();
+    assert.match(nodeOnlyProfile, /FINAL,Asia/);
+    assert.doesNotMatch(nodeOnlyProfile, / = select,/);
     assert.equal((await fetch(url + profilePath + "/config.yaml")).status, 200);
     await json(itemPath + "/reset-link", { method: "POST", headers: { cookie, "if-match": `"${sample.token}"` } });
     for (const file of ["loon.conf", "config.yaml"]) {

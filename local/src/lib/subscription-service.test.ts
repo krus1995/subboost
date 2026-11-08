@@ -658,6 +658,16 @@ describe("local subscription service", () => {
     }
   });
 
+  it("keeps an explicitly empty saved group list when exporting Loon", async () => {
+    mocks.prisma.subscription.findUnique.mockResolvedValueOnce(row({ encryptedConfig: '{"enabledGroups":[]}' }));
+    mocks.buildGenerateOptionsFromConfig.mockReturnValue({ nodes: [
+      { name: "Demo", type: "trojan", server: "example.com", port: 443, password: "synthetic" },
+    ] });
+    const result = await generateSubscriptionProfile("token-1", "loon");
+    expect(result?.content).toContain("FINAL,Demo");
+    expect(result?.content).not.toContain(" = select,");
+  });
+
   it("generates YAML and updates access time when a subscription has nodes or proxy providers", async () => {
     await expect(generateSubscriptionProfile("token-1", "clash")).resolves.toMatchObject({
       content: "mixed-port: 7890\n",
