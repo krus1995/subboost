@@ -72,3 +72,7 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 发布流程验收：所有 PR 继续运行 `fork-required`。合并到 main 后不构建镜像、不部署。手动启动 `Fork build and deploy` 时，为当前 main 构建镜像或复用同一提交的已验证制品，再部署到生产。回归入口为 `bash ops/fork/check.sh rules`。
 
 本机开发约定集中在项目 AGENTS.md，涵盖工作树目录和清理时机、技能范围及 Pstack 的 19 行角色映射和默认推理强度。
+
+## Loon 完整配置
+
+验收条件：用同一份已保存的节点、组与规则生成 Clash 和 Loon 两种输出，首页能下载，管理页能复制订阅地址并导入 Loon。Loon 配置保留节点顺序、组成员和规则目标，区分精确域名与域名后缀，保留 IPv4、IPv6 与 FINAL。遇到无法保留的设置，提示具体项目。公开读取使用已保存的节点快照，重置 token 后两种旧地址均失效。用自动化测试核对转换及接口；iPhone 上的实际导入、规则命中与远程配置刷新另行记录。
