@@ -2,8 +2,8 @@ import { failLoonConversion as fail } from './loon-error';
 
 const SUPPORTED_RULE_TYPES = new Set(['DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'IP-CIDR', 'IP-CIDR6']);
 
-export function loonAtom(value: string): string {
-  if (!value.trim() || value.startsWith('//') || /[,;#=\r\n\[\]"\\]/.test(value)) fail('名称或参数中的特殊字符');
+export function loonAtom(value: string, errorItem = '名称或参数中的特殊字符'): string {
+  if (!value.trim() || value.startsWith('//') || /[,;#=\r\n\[\]"\\]/.test(value)) fail(errorItem);
   return value;
 }
 

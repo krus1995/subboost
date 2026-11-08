@@ -49,7 +49,7 @@ function prepareNodes(input: ParsedNode[]): { nodes: ParsedNode[]; lines: string
   const lines = nodes.map((node, index) => {
     const type = /^[a-z0-9-]+$/i.test(node.type) ? node.type : '未知协议';
     const label = `第 ${index + 1} 个节点（${type}）`;
-    atom(node.name);
+    atom(node.name, `${label}的名称特殊字符`);
     if (node.name === 'DIRECT' || node.name === 'REJECT') fail(`${label}使用的保留名称`);
     if (node['dialer-proxy'] || node.type === 'relay') fail(`${label}的 dialer-proxy 链式代理`);
     try { return renderLoonNode(node); } catch (error) {
@@ -98,8 +98,8 @@ function renderGroups(groups: ProxyGroup[], nodeNames: Set<string>, available: S
     if (!members.length) fail(`${label}的空成员列表`);
     if (members.some((name) => !available.has(name))) fail(`${label}的缺失成员`);
     if (group.type === 'url-test' && members.some((name) => !nodeNames.has(name))) fail(`${label}的 url-test 非节点成员`);
-    const body = [group.type, ...members.map(atom)];
-    if (group.type === 'url-test') body.push(`url=${atom(group.url ?? config.testUrl)}`, `interval=${group.interval ?? config.testInterval}`);
+    const body = [group.type, ...members.map((name) => atom(name, `${label}的成员名称特殊字符`))];
+    if (group.type === 'url-test') body.push(`url=${atom(group.url ?? config.testUrl, `${label}的 testUrl 字段`)}`, `interval=${group.interval ?? config.testInterval}`);
     return `${group.name} = ${body.join(', ')}`;
   });
 }
@@ -112,7 +112,7 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
   const groups = generateProxyGroups({ nodes, enabledModules: config.enabledGroups, ruleProviderBaseUrl: config.ruleProviderBaseUrl, testUrl: config.testUrl, testInterval: config.testInterval, customProxyGroups: options.customProxyGroups, proxyGroupAdvanced: options.proxyGroupAdvanced, proxyGroupNameOverrides: options.proxyGroupNameOverrides });
   const available = new Set(['DIRECT', 'REJECT', ...nodeNames]);
   for (const group of groups) {
-    atom(group.name);
+    atom(group.name, `代理组 ${loonLabel(group.name)} 的名称特殊字符`);
     if (available.has(group.name)) fail(`代理组 ${loonLabel(group.name)} 的重复名称`);
     available.add(group.name);
   }
