@@ -10,13 +10,15 @@
 
 服务端通过 `GET /api/subscriptions/<token>/loon.conf` 读取同一条加密订阅的节点快照、配置和流量信息。已有数据库无需迁移。公开读取只使用保存的节点，内置规则来自项目当前使用的 MetaCubeX 规则仓库。匿名预览通过 `GET /api/loon/rules?path=...` 读取受支持的公开规则文件，节点和密码保留在浏览器中。规则读取失败返回 503，以便稍后重试。
 
-首版支持 Shadowsocks、VMess、VLESS、Trojan、基础 Hysteria2、HTTP(S) 和 SOCKS5 的已实现参数，支持原生手动选择与测速组。内置规则按原顺序展开，区分精确域名、域名后缀和 IPv4/IPv6 网段，用 `FINAL` 指定兜底策略。Loon 优先匹配请求域名，再匹配 IP。基础配置使用系统 DNS。自定义基础 YAML、第三方远程规则集、链式代理、仅远程节点提供者及不支持的协议参数会产生诊断。公开订阅遇到不兼容配置时返回 422。
+首页与已保存订阅都按 Loon 能表达的协议及参数导出。支持 Shadowsocks、ShadowsocksR、VMess、VLESS、Trojan、AnyTLS、Hysteria2、WireGuard、HTTP(S) 和 SOCKS5。VMess 和 VLESS 支持 TCP、WebSocket 和可保留 Host、路径的 HTTP；Hysteria2 可保留 Salamander 混淆。XHTTP、gRPC、HTTPUpgrade 及无法保留的 TLS 客户端指纹会列入跳过清单。配置注释与管理页显示数量、原节点序号及原因。原订阅和 Clash 节点保留原样。[Loon 节点参数](https://nsloon.app/docs/Node/)
+
+策略组支持手动选择、测速、可用性回退和轮询负载均衡。组可以嵌套。过滤后失去代理出站的组会从配置及其父组移除。分流规则按原顺序展开，保留精确域名、后缀及 IPv4/IPv6 网段，以 `FINAL` 指定兜底。无可导出节点、显式规则失去目标、无法表达的基础 YAML 或第三方远程规则集，会让该地址返回 HTTP 422。Loon 使用系统 DNS，优先匹配请求域名，再匹配 IP。[Loon 策略组](https://nsloon.app/docs/Policy/policygroup/)
 
 与上游共享的代码包括节点命名、策略组成员与规则排序、保存设置的读取、订阅响应头、首页和管理页。平台专用生成器位于 `packages/core/src/generator/loon*.ts`。上游更新节点字段、模板或公开订阅接口后，运行以下检查。
 
 - `npm run test:unit -- loon subscription-service.test.ts subscription-route-contract.test.ts subscription-link-dialog subscription-dashboard-surface` 核对导出内容、格式切换、失败诊断、缓存与 token 撤销。
 - `bash ops/fork/check.sh source` 核对 lint、分支覆盖率、类型和构建。
-- `bash ops/fork/check.sh image` 在隔离数据库创建两个合成节点，通过 HTTP 验证策略改名、更新后的分流目标及两种旧链接失效。
+- `bash ops/fork/check.sh image` 在隔离数据库保存混合订阅，通过 HTTP 核对节点清单、策略组、全不兼容时的诊断及旧链接失效。
 
 Loon 的远程配置导入和两类规则的优先级见[官方 URL Scheme](https://nsloon.app/docs/Scheme/) 和[官方规则说明](https://nsloon.app/docs/Rule/)。
 

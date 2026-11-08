@@ -122,6 +122,36 @@ describe("LoonPreview", () => {
     expect(mocks.buttons[0].disabled).toBe(false);
   });
 
+  it("ignores a stale failure after edits while a newer generation succeeds", async () => {
+    let rejectOld: (reason: Error) => void = () => undefined;
+    mocks.generate.mockReturnValueOnce(new Promise<string>((_resolve, reject) => { rejectOld = reject; }));
+    render();
+    mocks.buttons[0].onClick?.();
+    mocks.options = { nodes: [{ name: "edited" }] };
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("[General]");
+    rejectOld(new Error("obsolete failure"));
+    await settle();
+    const html = render();
+    expect(html).not.toContain("obsolete failure");
+    expect(html).toContain("[General]");
+    expect(mocks.buttons[1].disabled).toBe(false);
+  });
+
+  it("shows a generic failure for a rejected non-Error and permits retry", async () => {
+    mocks.generate.mockRejectedValueOnce("untrusted failure detail");
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("生成 Loon 配置失败");
+    expect(render()).not.toContain("untrusted failure detail");
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("[General]");
+  });
+
   it("clears a previous result on edits and displays generation failures", async () => {
     render();
     mocks.buttons[0].onClick?.();

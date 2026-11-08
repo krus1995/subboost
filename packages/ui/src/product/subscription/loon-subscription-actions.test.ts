@@ -101,6 +101,31 @@ describe("Loon subscription preparation", () => {
     expect(html).not.toContain("下载 .conf");
   });
 
+  it("shows a generic failure for non-Error fetch rejection and permits retry", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce({ private: "detail" }).mockResolvedValueOnce(new Response(config)));
+    render();
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("读取 Loon 配置失败");
+    expect(render()).not.toContain("detail");
+    mocks.buttons[0].onClick?.();
+    await settle();
+    expect(render()).toContain("打开 Loon");
+  });
+
+  it("ignores a failed check that arrives after switching subscription and unmounting", async () => {
+    let rejectOld: (reason: Error) => void = () => undefined;
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise<Response>((_resolve, reject) => { rejectOld = reject; })));
+    render();
+    mocks.buttons[0].onClick?.();
+    mocks.cleanup?.();
+    render(url.replace("token", "new-token"));
+    rejectOld(new Error("obsolete network failure"));
+    await settle();
+    expect(render(url.replace("token", "new-token"))).not.toContain("obsolete network failure");
+    expect(render(url.replace("token", "new-token"))).toContain("检查 Loon 配置");
+  });
+
   it("rejects a successful HTML login page", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>Login</html>", { headers: { "content-type": "text/html" } })));
     render();

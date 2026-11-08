@@ -23,6 +23,10 @@ describe("Loon response validation", () => {
     await expect(readLoonConfig(Response.json({ error: "Loon 不支持 proxy-providers，请先导入节点" }, { status })))
       .rejects.toThrow("Loon 不支持 proxy-providers，请先导入节点");
   });
+  it.each(["invalid-json", "null", "[]", '{"error":42}', '{"other":"private-detail"}'])("uses a generic HTTP failure for an invalid error payload %s", async (body) => {
+    await expect(readLoonConfig(new Response(body, { status: 502 }))).rejects.toThrow("读取 Loon 配置失败（502）");
+  });
+
   it("rejects HTML and a Clash document even with HTTP 200", async () => {
     await expect(readLoonConfig(new Response("<html>Login</html>", { headers: { "content-type": "text/html" } }))).rejects.toThrow("有效的 Loon 配置");
     await expect(readLoonConfig(new Response("proxies: []"))).rejects.toThrow("有效的 Loon 配置");
