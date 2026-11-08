@@ -171,7 +171,7 @@ export function SubscriptionLinkDialog({
           <div className="space-y-4 py-4">
             <ConfigFormatSelect value={format} onChange={setFormat} />
             <SubscriptionQrCode url={selectedUrl} />
-            {format === "loon" && <LoonSubscriptionActions key={selectedUrl} url={selectedUrl} />}
+            {format === "loon" && !isCreatingSubscription && <LoonSubscriptionActions key={selectedUrl} url={selectedUrl} />}
             <div className="space-y-2">
               <p className="text-sm font-medium">订阅链接</p>
               <div className="flex gap-2">

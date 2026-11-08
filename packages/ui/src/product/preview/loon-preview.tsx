@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { downloadLoonConfig } from "@subboost/ui/product/subscription/download-loon-config";
 import { generateLoonConfig } from "@subboost/core/generator/loon";
 import { buildGenerateOptions } from "@subboost/ui/store/config-store/generated-yaml";
 import { useConfigStore } from "@subboost/ui/store/config-store";
@@ -65,14 +66,7 @@ export function LoonPreview() {
 
   const download = () => {
     if (current.kind !== "ready") return;
-    const url = URL.createObjectURL(new Blob([current.config], { type: "text/plain;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "loon.conf";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 100);
+    downloadLoonConfig(current.config);
   };
 
   return (

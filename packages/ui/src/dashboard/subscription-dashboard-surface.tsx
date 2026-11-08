@@ -2,7 +2,7 @@
 import { SubscriptionQrButton } from "@subboost/ui/product/subscription/subscription-qr-code";
 
 import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
-import { readLoonConfig } from "@subboost/ui/product/subscription/loon-response";
+import { readJsonResponse } from "@subboost/ui/product/client-response";
 import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
 import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
 import * as React from "react";
@@ -190,11 +190,11 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const downloadSubscription = async (subscription: Subscription, format: ConfigFormat = "clash") => {
-    const filename = buildYamlDownloadFilename(subscription.name).replace(/\.yaml$/, format === "loon" ? ".conf" : ".yaml");
+  const downloadSubscription = async (subscription: Subscription) => {
+    const filename = buildYamlDownloadFilename(subscription.name);
     try {
-      const response = await fetch(subscriptionFormatUrl(adapter.resolveDownloadUrl?.(subscription) ?? subscription.subscriptionUrl, format));
-      if (!response.ok) await readLoonConfig(response);
+      const response = await fetch(adapter.resolveDownloadUrl?.(subscription) ?? subscription.subscriptionUrl);
+      if (!response.ok) await readJsonResponse(response, `下载配置失败（${response.status}）`);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       triggerBrowserDownload(objectUrl, filename);
@@ -508,7 +508,7 @@ function SubscriptionRow({
   editHref: string;
   onCopy: (subscriptionUrl: string, id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onDownload: (sub: Subscription, format?: ConfigFormat) => Promise<void>;
+  onDownload: (sub: Subscription) => Promise<void>;
   onRefresh: (id: string) => Promise<void>;
   onSettings: (sub: Subscription) => void;
 }) {
@@ -560,7 +560,7 @@ function SubscriptionRow({
 
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
         <ConfigFormatSelect value={format} onChange={setFormat} />
-        {format === "loon" && <LoonSubscriptionActions key={`${selectedUrl}:${sub.lastUpdatedAt}`} url={selectedUrl} />}
+        {format === "loon" && <LoonSubscriptionActions key={`${selectedUrl}:${sub.updatedAt ?? sub.lastUpdatedAt}`} url={selectedUrl} />}
         <Button asChild variant="ghost" size="sm" className="gap-0 sm:gap-2" title="回到首页编辑该订阅（更新后链接不变）">
           <Link href={editHref}>
             <Pencil className="h-4 w-4" />
@@ -611,7 +611,7 @@ function SubscriptionRow({
         {format === "clash" && <Button
           variant="ghost"
           size="sm"
-          onClick={() => void onDownload(sub, format)}
+          onClick={() => void onDownload(sub)}
           className="gap-0 sm:gap-2"
           title="下载订阅配置"
         >

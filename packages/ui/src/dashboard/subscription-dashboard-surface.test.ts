@@ -484,6 +484,15 @@ describe("SubscriptionDashboardSurface", () => {
     );
   });
 
+  it("shows a concrete Clash download error without referring to Loon", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => JSON.stringify({ error: "订阅不存在" }) }));
+    renderSurface(createAdapter(), { 0: [subscription], 1: false });
+    await mocks.captures.buttons.find((props: { title?: string }) => props.title === "下载订阅配置").onClick();
+    await flushPromises();
+    await flushPromises();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "下载失败", description: "订阅不存在" }));
+  });
   it("uses the adapter download URL resolver before fetching subscription YAML", async () => {
     const dom = stubDocumentActions();
     const blob = new Blob(["mixed-port: 7890\n"], { type: "text/yaml" });

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { downloadLoonConfig } from "@subboost/ui/product/subscription/download-loon-config";
 import { Button } from "@subboost/ui/components/ui/button";
 import { loonImportUrl } from "./config-format";
 import { localLoonConfigUrl, readLoonConfig } from "./loon-response";
@@ -29,14 +30,7 @@ export function LoonSubscriptionActions({ url }: { url: string }) {
   };
   const download = () => {
     if (current.kind !== "ready") return;
-    const objectUrl = URL.createObjectURL(new Blob([current.config], { type: "text/plain;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = "loon.conf";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 100);
+    downloadLoonConfig(current.config);
   };
   return (
     <div className="flex flex-wrap items-center gap-2">

@@ -178,6 +178,16 @@ describe("SubscriptionLinkDialog", () => {
     expect(html).toContain("订阅链接二维码");
     expect(baseProps.handleCopyUrl).not.toHaveBeenCalled();
   });
+  it("unmounts the previous Loon check when saving the same subscription again", () => {
+    captures.format = "loon";
+    const html = renderToStaticMarkup(React.createElement(SubscriptionLinkDialog, {
+      ...baseProps,
+      subscriptionUrl: "https://example.test/subscriptions/token/config.yaml",
+      isEditingExistingSubscription: true,
+      isCreatingSubscription: true,
+    }));
+    expect(html).not.toContain("检查 Loon 配置");
+  });
   it("renders generated links and copy/finish actions", () => {
     const html = renderToStaticMarkup(
       React.createElement(SubscriptionLinkDialog, {
