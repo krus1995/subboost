@@ -82,3 +82,11 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 独立审查基线为 `8181cec4fb444bfe8ac99d75183f24c4b638e811`，审查者为 Pstack 独立审查代理 final_review。候选 `4dc01c779f06d3e7438ef64a2717fd7719e36878` 中，名为 `module:select` 的节点作为规则目标时可能被解释成策略组。修复后预检和规则输出共用目标名称，已添加内置组开关和禁用自定义组的回归。管理页还修复了下载回调提前返回的问题。审查者复核代码候选 `e8f27b4ed60e331178245a252093f06c5eefbd4e` 后关闭该问题。
 
 仓库规则检查已通过。源码、容器及隔离旧库的完整检查由功能 PR 的 Fork CI 记录。合并后待收到部署指令再发布。
+
+### Clash 与 Loon 输出对照
+
+复测验收条件：同一份已保存配置分别从两个公开订阅地址读取，比较节点、组成员的顺序、规则目标和兜底策略；覆盖显式关闭全部组、字面节点名与组引用重名、真实规则的精确域名与后缀，以及 IPv4/IPv6。分别记录文件输出、客户端规则优先级差异和真机未验项。
+
+使用 8 个合成节点（Shadowsocks、VMess、VLESS、Trojan、Hysteria2、HTTP、HTTPS 和 SOCKS5）导出同一份标准配置，逐项核对 14 个策略组的名称、顺序与成员。按 Clash 文件引用的规则集展开后，共 166,308 行规则，包括兜底，逐行匹配 Loon 输出。规则数据固定在 [MetaCubeX 提交 26cf4440](https://github.com/MetaCubeX/meta-rules-dat/tree/26cf4440307754d2c2f65cf2f0457c0ae814900f/geo)。[Mihomo v1.19.33](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33) 将 22 份原始文本和对应 MRS 文件分别转换为内核识别的规则后，两边内容逐项相同。标准和空组两份 Clash 导出均通过该内核的 `-t` 检查。
+
+对照复现并修复了已保存订阅关闭全部组后 Clash 恢复默认组、字面节点名与策略组引用冲突、缺省 VMess alterId 导致 Mihomo 拒收配置的问题。Loon 导出也会写明支持协议的 UDP 默认值，遇到直接指向订阅信息节点的规则会提示调整。升级库的 HTTP 验收会读取两条真实订阅地址，核对节点及策略、组改名、空组兜底和 token 撤销。独立审查者 parity_review 从 `f350ffe32a964a68ae73cc4b459af7aaa890e91e` 复核代码候选 `f4998f3f1ae7a4b3201675821b5def2aaedb9c81` 和 HTTP 验收增量 `01d26d663269532b4902f181ad17aa6e79982513`，无阻断发现。完整检查归档于 [PR #8](https://github.com/krus1995/subboost/pull/8)。

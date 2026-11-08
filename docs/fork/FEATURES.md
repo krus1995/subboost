@@ -19,3 +19,7 @@
 - `bash ops/fork/check.sh image` 在隔离数据库创建两个合成节点，通过 HTTP 验证策略改名、更新后的分流目标及两种旧链接失效。
 
 Loon 的远程配置导入和两类规则的优先级见[官方 URL Scheme](https://nsloon.app/docs/Scheme/) 和[官方规则说明](https://nsloon.app/docs/Rule/)。
+
+两种导出共用节点、组成员和规则目标。使用系统 DNS 的 Loon 在域名请求上优先匹配域名规则。Mihomo 的默认模板使用 fake-IP，并按规则排列顺序匹配。如果域名和它解析到的 IP 分别命中不同策略，客户端可能给同一请求选出不同策略。自动测速的结果也取决于客户端实际测得的延迟。[Loon 规则优先级](https://nsloon.app/docs/Rule/) · [Mihomo 规则优先级](https://wiki.metacubex.one/en/config/rules/#priority)
+
+同源对照可运行 `npm run test:unit -- loon-policy-parity.test.ts subscription-service.test.ts loon-node.test.ts yaml.test.ts`。`bash ops/fork/check.sh image` 会通过真实订阅地址核对组成员、分流目标和链接重置。
