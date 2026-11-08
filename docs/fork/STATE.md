@@ -1,19 +1,19 @@
 # Fork 接管记录
 
 ```yaml
-phase: awaiting_first_production_receipt
-status: in_progress
+phase: production_active
+status: completed
 fork_head_sha: 401534742802e2b1542783197ce66451bad82739
 upstream_release: v2.11.0
 upstream_commit_sha: 401534742802e2b1542783197ce66451bad82739
-production_source_sha: null
-production_image_id: null
+production_source_sha: 9954b1790fdff83db8224abf6b67f7578605b74c
+production_image_id: sha256:119137a1f337867f63c31bc1817b4aedaf449b259fbd0e3ba03c2db3499a0d61
 production_url: https://subboost.krus1987.kdns.fr/
-last_verified_run_url: https://github.com/krus1995/subboost/actions/runs/42399628853
-last_backup_receipt: /var/lib/subboost-fork/rehearsal.json
+last_verified_run_url: https://github.com/krus1995/subboost/actions/runs/42448393728/attempts/2
+last_backup_receipt: /var/lib/subboost-fork/backups/9954b1790fdff83db8224abf6b67f7578605b74c-6565ae1a50/backup.json
 auto_deploy: enabled_after_rehearsal
 blocking_items: []
-next_action: deploy_current_main_and_verify_active_receipt
+next_action: verify_next_main_release
 ```
 
 2026-11-08 首次接管，从 `origin/main` 创建 `codex/fork-delivery`。原工作区仅有用户提供的未跟踪手册，保留原件。首次公网检查中，首页、登录页返回 HTTP 200，live 返回 ok，ready 返回 database ready。随后在生产主机完成的验证见下方维护窗口记录。
@@ -42,11 +42,15 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 
 生产预检和恢复演练均已通过。演练将停写后的生产备份恢复到隔离库，旧镜像成功解密已有订阅。原 app 和 cron 恢复运行后，本机和公网均能读回订阅，原数据库卷和原库 OID 保持一致。复查覆盖另外 2 个健康入口和 4 个运行中的容器。systemd 任务退出码为 0，主机回执 `/var/lib/subboost-fork/rehearsal.json` 记录 `smokePassed=true`。
 
-演练通过后已启用 `FORK_DEPLOY_ENABLED` 并回读确认。首次部署仍需核对生产容器的镜像 ID 和 OCI revision，并验收订阅读取、cron 和 Tunnel 入口。后续运行以 Actions summary、主机 `/var/lib/subboost-fork/current.json` 和对应 SHA 的部署回执为准。查询与故障恢复命令见[主机接管说明](SERVER.md)。
+演练通过后已启用 `FORK_DEPLOY_ENABLED` 并回读确认。此页保存首发快照。后续运行以 Actions summary、主机 `/var/lib/subboost-fork/current.json` 和对应 SHA 的部署回执为准。查询与故障恢复命令见[主机接管说明](SERVER.md)。
 
 合并提交 `84c45a9` 触发首次发布。两台 GitHub runner 均已通过固定主机公钥的 SSH 登录，但 SCP 上传缓慢，其中一次在 155 秒内传了约 3.1 MB，全包约 319 MB。观察期间尚未提交制品，原站继续运行。[首次发布尝试](https://github.com/krus1995/subboost/actions/runs/42447035721)
 
-部署作业的总时限现为 360 分钟。上传前，临时 runner 尝试启用 TCP BBR 拥塞控制并输出实际算法。上传完成后才开始计算提交和等待回执的 90 分钟，整项作业仍受总时限约束。BBR 对这条公网线路的实际传输速度有待后续发布验证。
+部署作业的总时限现为 360 分钟。上传完成后才开始计算提交和等待回执的 90 分钟。发布 `9954b17` 时，runner 记录的 TCP 拥塞控制算法为 `bbr`，全包经 SCP 约 4 分钟传完。
+
+第一次发布尝试到达 `ACTIVATING` 后，正式 Compose 仍从上游的 `SUBBOOST_CANDIDATE_IMAGE` 选择旧镜像。主机已将 app 镜像选择改为正式 `SUBBOOST_IMAGE`，核对渲染模型只有 app 的镜像改变后启动目标镜像。原库 OID 保持一致，公网解密订阅读取、cron 和另外两个入口均通过。观察者断开 SSH 并重新连接后，能查回同一发布任务。主机重新核验后写入 `ACTIVE` 回执，并标记 `reconciled`。第二次尝试用相同制品复核成功，systemd 中仍是第一次提交的任务。[首次尝试](https://github.com/krus1995/subboost/actions/runs/42448393728/attempts/1) · [同一制品复核](https://github.com/krus1995/subboost/actions/runs/42448393728/attempts/2)
+
+针对这次故障，包装器在预检、首次演练和发布停写前预演镜像选择。真实 Compose 渲染回归已覆盖上游候选变量、进程环境覆盖、缺失或重复赋值，以及镜像变量同时改变其他服务的情况。
 
 ## 验收记录
 
@@ -59,8 +63,8 @@ GitHub CLI 以仓库管理员 krus1995 登录。production environment 只允许
 | P2 | 2,657 个单测通过，分支覆盖率 97.05%。空库与旧库六个迁移通过，破坏密文能使回归失败 | 新候选的审查和检查随 PR 更新 |
 | P3 | 真实 v2.11.0 返回 no-op；隔离分支的冲突与接续演练通过 | 日常在用户发起同步时运行 |
 | P4 | production 环境只允许 main，部署凭据已配置，本机与首发 runner 均用固定主机公钥登录成功 | 已完成 |
-| P5 | 制品、摘要、重复请求、乱序 SHA、SSH 中断后查询都已在隔离环境检查 | main 的构建记录见 Actions；首次真实传输后核对容器 image ID |
-| P6 | 生产备份已在隔离库恢复，旧镜像成功解密原订阅，演练回执已保存。隔离测试另覆盖失败迁移和损坏密文 | 首发停写后重新备份并核对本次部署回执 |
-| P7 | 生产预检通过，演练后原 app、cron 和 Tunnel 入口正常 | fork 接流量后复查订阅、cron、网络与其他入口 |
-| P8 | PR 检查和 main 制品构建已运行，主机恢复演练通过 | 真实 runner 首发、同一制品的重试及断线后回执 |
-| P9 | 主机已有演练回执，查询和续接命令已记录 | 首发后对照 Actions 和主机回执核对生产 SHA、镜像 ID 与发布备份位置 |
+| P5 | 首发制品经 SCP 送达，实际镜像 ID 与回执吻合。重复请求及乱序 SHA 在隔离环境验证 | 已完成 |
+| P6 | 首发停写后重新备份并记录回执。生产恢复演练通过解密检查，隔离测试覆盖失败迁移和损坏密文 | 已完成 |
+| P7 | 向前修复后目标镜像运行，生产订阅、cron 和其他入口通过 | 下一次 main 发布核对新增的停写前镜像选择检查 |
+| P8 | 实际 runner 交付、观察者断线重连及同一制品重试均已验证 | 已完成 |
+| P9 | Actions 和主机回执已核对，首发 SHA、镜像 ID 与备份回执位置见上方快照 | 已完成 |

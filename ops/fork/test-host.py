@@ -171,6 +171,70 @@ def installer_containers(root):
     print("Compose identity: installer services and registered app overrides accepted; drift rejected.")
 
 
+def compose_image_selection(root):
+    site = Site(host.CONFIG, host.BASE)
+    site.root = root / "image-selection"
+    site.root.mkdir()
+    site.env_file = site.root / ".env"
+    compose = site.root / "compose.json"
+    site.files = [compose]
+    old, new = "subboost:original", "subboost-fork:new"
+    original = f"OTHER=value\nexport SUBBOOST_IMAGE={old}\nSUBBOOST_CANDIDATE_IMAGE={old}\n".encode()
+    release = {"sourceSha": "a"*40, "imageReference": new}
+
+    def setup(selector="${SUBBOOST_IMAGE}", raw=original, other=None):
+        site.env_file.write_bytes(raw)
+        services = {"app": {"image": selector}, "cron": other or {"image": "cron:original"}}
+        compose.write_text(json.dumps({"services": services}))
+        site.model = json.loads(site.dc("config", "--format", "json"))
+
+    def rejects_before_stop():
+        before = site.env_file.read_bytes()
+        entries = set(site.root.iterdir())
+        with patch.object(site, "cid", side_effect=AssertionError("release passed image preflight")):
+            checked_error(lambda: site.deploy(release, root, None, None))
+        assert site.env_file.read_bytes() == before and set(site.root.iterdir()) == entries
+
+    setup()
+    site.set_image(new, preview=True)
+    assert site.env_file.read_bytes() == original and set(site.root.iterdir()) == {compose, site.env_file}
+    site.set_image(new)
+    assert site.env_file.read_bytes() == original.replace(f"export SUBBOOST_IMAGE={old}".encode(),
+                                                        f"SUBBOOST_IMAGE={new}".encode())
+    setup("${SUBBOOST_CANDIDATE_IMAGE}")
+    rejects_before_stop()
+    setup("${SUBBOOST_IMAGE:-subboost:original}", raw=b"OTHER=value\n")
+    rejects_before_stop()
+    for duplicate in (b"SUBBOOST_IMAGE=duplicate\n", b"SUBBOOST_IMAGE: duplicate\n"):
+        setup(raw=original + duplicate)
+        rejects_before_stop()
+    setup(other={"image": "${SUBBOOST_IMAGE}"})
+    rejects_before_stop()
+    setup()
+    with patch.dict(os.environ, {"SUBBOOST_IMAGE": new}):
+        rejects_before_stop()
+    setup(new)
+    rejects_before_stop()
+    (site.root / "linked.env").symlink_to(site.env_file)
+    for path in (".env", "linked.env"):
+        setup(other={"image": "cron:original", "env_file": [path]})
+        rejects_before_stop()
+    (site.root / "cron.env").write_text("CRON_SETTING=value\n")
+    setup(other={"image": "cron:original", "env_file": ["cron.env"]})
+    site.set_image(new, preview=True)
+    site.set_image(new)
+    assert json.loads(site.dc("config", "--format", "json"))["services"]["cron"]["environment"] == {"CRON_SETTING": "value"}
+    setup(raw=original + b"SERVICE_ENV=.env\n", other={"image": "cron:original", "env_file": ["${SERVICE_ENV}"]})
+    rejects_before_stop()
+    setup(raw=original + b"SERVICE_ENV=cron.env\n", other={"image": "cron:original", "env_file": ["${SERVICE_ENV}"]})
+    native = json.loads(site.dc("config", "--no-env-resolution", "--format", "json"))
+    if native["services"]["cron"].get("env_file"):
+        site.set_image(new, preview=True)
+    else:
+        rejects_before_stop()
+    print("Compose image selection: staged and active models checked; invalid releases rejected before stopping writers.")
+
+
 def phase_boundaries():
     # Fail the candidate and final smoke separately; the actual DB replacement is exercised below.
     for fail_at in ("candidate", "activation"):
@@ -249,5 +313,9 @@ if __name__ == "__main__":
         receiver(root)
         image_stores(root)
         installer_containers(root)
+        if shutil.which("docker") or os.environ.get("CONTAINER_ENGINE", "docker") == "docker":
+            compose_image_selection(root)
+        else:
+            print("Compose image selection requires the Docker Compose CLI; skipped on this Podman-only host.")
         phase_boundaries()
         postgres(root, os.environ.get("CONTAINER_ENGINE", "docker"))

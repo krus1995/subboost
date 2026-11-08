@@ -229,7 +229,7 @@ def command(args):
     op, *args = args
     if op == "preflight" and not args:
         site = Site(CONFIG, BASE)
-        print(json.dumps(site.preflight(readonly=True)))
+        print(json.dumps(site.preflight(readonly=True, target_image="subboost-fork:preflight")))
         return
     if op == "retry-current" and not args:
         sha = main_sha()
@@ -241,7 +241,7 @@ def command(args):
     if op in ("rehearse", "backup", "logs") and not args:
         site = Site(CONFIG, BASE)
         if op == "logs":
-            os.execvp("docker", site.compose + ["logs", "--tail", "60", "-f", "app", "cron"])
+            os.execvp("docker", site.compose_args("logs", "--tail", "60", "-f", "app", "cron"))
         with gate("deploy.lock"):
             if op == "rehearse":
                 result = site.rehearsal()

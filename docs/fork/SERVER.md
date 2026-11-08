@@ -33,6 +33,14 @@ rg -l 'subboost|ghcr.io/subboost' /etc/cron.d /etc/crontab /var/spool/cron/cront
 
 如果现有 app 手工连入 Tunnel 网络，把该网络和 ingress 依赖的别名写入同一个 Compose 项目的最后一个 override，保留原 Compose 文件次序。同一项目保留已运行的 db 和 cron。核对 `docker compose … config` 的本地解析结果，避免将包含密钥的配置输出到日志。发布包装器会检查 Compose 重建后能否保留必要网络和别名。
 
+首次接管还要核对最终生效的 `services.app.image`。正式 `.env` 只写一条 `SUBBOOST_IMAGE` 赋值，部署进程的环境中应清除同名变量。旧安装器可能让 app 优先读取 `SUBBOOST_CANDIDATE_IMAGE`。遇到这种配置，先保存原 Compose 文件，再让 app 的镜像字段读取 `${SUBBOOST_IMAGE:?set SUBBOOST_IMAGE}`。在 root 受限进程内比较修改前后的渲染结果，核对仍选中预期镜像，其他字段一致。然后重新运行预检和首次恢复演练。
+
+预检用临时的 0600 文件替代 Compose 插值所用的 `--env-file`，检查渲染结果是否只改变 app 的镜像。服务自己声明的 `env_file` 仍按原路径读取。若有服务直接或通过符号链接读取正式插值文件，临时副本无法反映替换后传入该服务的变量。预检会在停写前报告服务名。请为该服务单独配置只包含所需变量的环境文件，再运行预检。
+
+部分 Compose v2 版本（已在 2.38.2 复现）会从插值后的模型中省略服务的 `env_file`。这时包装器从未插值的模型检查固定路径。遇到含变量的路径时，改用固定路径，或升级到能报告插值后路径的 Compose 版本，再运行预检。
+
+激活时包装器原子替换正式 `.env`，再用正式路径渲染并核对完整模型，通过后才重建 app。如果这一步报告模型不一致，正式 `.env` 已写入目标引用。按下文 `ACTIVATING` 阶段的步骤核对现场并向前修复。
+
 ## 安装与配置
 
 从审查过的工作树传送 `ops/fork/` 后运行 `bash ops/fork/install-host.sh`。该命令创建 root 独占的配置、上传、回执、备份目录和一份本机备份加密密钥。将 `/etc/subboost-fork/backup.key` 单独保存在已获授权的受限密钥存储中。丢失该文件将无法解密备份。

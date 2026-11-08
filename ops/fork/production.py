@@ -1,4 +1,5 @@
 """Local Docker Compose takeover. Only this module touches the existing app and database."""
+import copy
 import hashlib
 import json
 import os
@@ -6,6 +7,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -87,10 +89,6 @@ class Site:
         self.credentials = rooted_file(cfg["businessCredentials"], private=True)
         self.backup_key = rooted_file(self.config_path.parent / "backup.key", private=True)
         require(re.fullmatch(r"[a-z0-9][a-z0-9_-]*", self.project) and self.files, "invalid Compose identity")
-        self.compose = ["docker", "compose", "--project-directory", str(self.root), "-p", self.project,
-                        "--env-file", str(self.env_file)]
-        for file in self.files:
-            self.compose.extend(["-f", str(file)])
         self.local = cfg["localUrl"]
         require(re.fullmatch(r"http://127\.0\.0\.1:[0-9]+", self.local), "invalid local URL")
         self.port = cfg["candidatePort"]
@@ -108,13 +106,20 @@ class Site:
         self.temp_db = None
         self.temp_oid = None
 
+    def compose_args(self, *args, env_file=None):
+        cmd = ["docker", "compose", "--project-directory", str(self.root), "-p", self.project,
+               "--env-file", str(env_file or self.env_file)]
+        for file in self.files:
+            cmd.extend(["-f", str(file)])
+        return cmd + list(args)
+
     def cid(self, service):
-        value = run(self.compose + ["ps", "--all", "--quiet", service]).decode().strip()
+        value = self.dc("ps", "--all", "--quiet", service).decode().strip()
         require(re.fullmatch(r"[a-f0-9]{12,64}", value), "ambiguous or missing Compose container: " + service)
         return value
 
-    def dc(self, *args):
-        return run(self.compose + list(args))
+    def dc(self, *args, env_file=None):
+        return run(self.compose_args(*args, env_file=env_file))
 
     def dbcmd(self, *args):
         return ["docker", "exec", "-i", self.dbid, *args]
@@ -199,9 +204,13 @@ class Site:
         networks = {self.model["networks"][key]["name"] for key in model["networks"]}
         require(set(network_aliases(c)) == networks, "installer service networks changed: " + service)
 
-    def preflight(self, readonly=False):
+    def preflight(self, readonly=False, target_image=None):
         self.model = json.loads(self.dc("config", "--format", "json"))
         require(self.model["name"] == self.project, "Compose project mismatch")
+        if target_image is not None:
+            if target_image == self.model["services"]["app"]["image"]:
+                self.set_image("subboost-fork:preflight-" + secrets.token_hex(8), preview=True)
+            self.set_image(target_image, preview=True)
         self.appid, self.dbid, self.cronid = [self.cid(s) for s in ("app", "db", "cron")]
         self.old = container(self.appid)
         db = container(self.dbid)
@@ -480,21 +489,49 @@ class Site:
         run(["docker", "start", self.cronid])
         self.check_cron_history(self.cronid)
 
-    def set_image(self, image):
-        # Keep existing Compose paths and shell-management commands pointed at the same image.
+    def check_service_env_files(self, staged):
+        services = json.loads(self.dc("config", "--no-env-resolution", "--format", "json", env_file=staged))["services"]
+        # Compose v2 can drop env_file even with --no-env-resolution. Compose v5 retains the resolved paths.
+        raw_paths = (not any(service.get("env_file") for service in services.values())
+                     and self.dc("version", "--short").strip().lstrip(b"v").startswith(b"2."))
+        if raw_paths:
+            try:
+                services = json.loads(self.dc("config", "--no-interpolate", "--format", "json", env_file=staged))["services"]
+            except CheckError:
+                raise CheckError("Docker Compose cannot report service env_file paths; upgrade Docker Compose") from None
+        for name in self.model["services"]:
+            for entry in services[name].get("env_file", []):
+                path = entry["path"] if isinstance(entry, dict) else entry
+                require(not raw_paths or "$" not in path,
+                        "use a fixed env_file path for service " + name + " or upgrade Docker Compose")
+                require((self.root / path).resolve() != self.env_file,
+                        "service " + name + " must use an env_file separate from the project env file")
+
+    def set_image(self, image, *, preview=False):
+        require("SUBBOOST_IMAGE" not in os.environ, "unset SUBBOOST_IMAGE in the deployment process environment")
         raw = self.env_file.read_bytes()
         lines = raw.splitlines(keepends=True)
-        indices = [i for i, line in enumerate(lines) if re.match(rb"^\s*(?:export\s+)?SUBBOOST_IMAGE\s*=", line)]
-        require(len(indices) == 1, "ambiguous SUBBOOST_IMAGE assignment")
+        indices = [i for i, line in enumerate(lines) if re.match(rb"^\s*(?:export\s+)?SUBBOOST_IMAGE\s*[=:]", line)]
+        require(len(indices) == 1, "expected exactly one SUBBOOST_IMAGE assignment in the project env file")
         lines[indices[0]] = ("SUBBOOST_IMAGE=" + image + "\n").encode()
-        import tempfile
-        with tempfile.NamedTemporaryFile(dir=self.root, delete=False) as handle:
-            handle.write(b"".join(lines))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(handle.name, self.env_file)
-        model = json.loads(self.dc("config", "--format", "json"))
-        require(model["services"]["app"]["image"] == image, "Compose did not select registered image")
+        expected = copy.deepcopy(self.model)
+        expected["services"]["app"]["image"] = image
+        with tempfile.NamedTemporaryFile(dir=self.env_file.parent, delete=False) as handle:
+            staged = Path(handle.name)
+            try:
+                handle.write(b"".join(lines))
+                handle.flush()
+                self.check_service_env_files(staged)
+                model = json.loads(self.dc("config", "--format", "json", env_file=staged))
+                require(model["services"]["app"]["image"] == image, "SUBBOOST_IMAGE did not select the target app image")
+                require(model == expected, "changing SUBBOOST_IMAGE affected other Compose settings")
+                if not preview:
+                    os.fsync(handle.fileno())
+                    os.replace(staged, self.env_file)
+                    require(json.loads(self.dc("config", "--format", "json")) == expected,
+                            "active Compose model differs from the verified image change")
+            finally:
+                staged.unlink(missing_ok=True)
 
     def check_cron_history(self, cid):
         info = container(cid)
@@ -543,8 +580,8 @@ class Site:
         self.check_cron_history(self.cronid)
 
     def rehearsal(self):
-        baseline = self.preflight()
         self.sha = secrets.token_hex(20)
+        baseline = self.preflight(target_image="subboost-fork:" + self.sha)
         self.candidate = "subboost-candidate-" + self.sha
         self.snapshot = self.base / "backups" / ("rehearsal-" + self.sha)
         self.snapshot.mkdir(mode=0o700)
@@ -590,7 +627,7 @@ class Site:
     def deploy(self, m, path, status, current):
         self.sha = m["sourceSha"]
         self.candidate = "subboost-candidate-" + self.sha
-        self.preflight()
+        self.preflight(target_image=m["imageReference"])
         self.verify_rehearsal()
         archive = path / "image.tar.gz"
         self.room(m, archive)
