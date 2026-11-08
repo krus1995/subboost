@@ -16,7 +16,7 @@
     "lint": "eslint app src --max-warnings=0",
     "pretypecheck": "node scripts/ensure-root-node-modules.cjs && npm run clean",
     "typecheck": "npm run db:generate && next typegen && tsc --noEmit -p tsconfig.json",
-    "prebuild": "node scripts/ensure-root-node-modules.cjs && npm run clean",
+    "prebuild": "node scripts/ensure-root-node-modules.cjs && node scripts/verify-loon-rule-snapshot.mjs && npm run clean",
     "build": "npm run db:generate && next build --webpack",
     "start": "node scripts/start-standalone.cjs",
     "check": "npm run lint && npm run typecheck && npm run build"

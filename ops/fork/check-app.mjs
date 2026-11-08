@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { load } from "js-yaml";
 
 const url = "http://127.0.0.1:3000";
@@ -56,6 +57,25 @@ if (process.argv[2] === "upgraded") {
     return load(await response.text());
   }
   try {
+    // The app is on Docker's internal network. Its first built-in rules must work offline.
+    await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({
+      config: { enabledGroups: ["select", "ad", "private", "final"], experimentalCnUseCnRuleSet: false },
+    }) });
+    const cold = await fetch(url + profilePath + "/loon.conf", { signal: AbortSignal.timeout(10_000) });
+    assert.equal(cold.status, 200, "cold offline Loon subscription");
+    const coldRules = new Set((await cold.text()).split("\n"));
+    for (const [file, target] of [
+      ["geosite/category-ads-all.list", "🛑 广告拦截"], ["geosite/private.list", "🏠 私有网络"], ["geoip/private.list", "🏠 私有网络"],
+    ]) {
+      const raw = await readFile("public/loon-rules/" + file, "utf8");
+      for (const entry of raw.trim().split(/\r?\n/).filter(line => line && !line.startsWith("#"))) {
+        const expected = file.startsWith("geoip/")
+          ? `${entry.includes(":") ? "IP-CIDR6" : "IP-CIDR"},${entry},${target},no-resolve`
+          : `${entry.startsWith("+.") ? "DOMAIN-SUFFIX" : "DOMAIN"},${entry.replace(/^\+\./, "")},${target}`;
+        assert.ok(coldRules.has(expected), "missing bundled Loon rule " + expected);
+      }
+    }
+    await json(itemPath, { ...postOptions, method: "PUT", body: JSON.stringify({ config }) });
     const profile = await fetch(url + profilePath + "/loon.conf");
     assert.equal(profile.status, 200, "read Loon sample");
     assert.match(profile.headers.get("content-type"), /^text\/plain/);
