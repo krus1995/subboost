@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { load } from "js-yaml";
 
 const url = "http://127.0.0.1:3000";
 async function json(path, options) {
@@ -71,7 +72,12 @@ if (process.argv[2] === "upgraded") {
     const nodeOnlyProfile = await withoutGroups.text();
     assert.match(nodeOnlyProfile, /FINAL,Asia/);
     assert.doesNotMatch(nodeOnlyProfile, / = select,/);
-    assert.equal((await fetch(url + profilePath + "/config.yaml")).status, 200);
+    const withoutClashGroups = await fetch(url + profilePath + "/config.yaml");
+    assert.equal(withoutClashGroups.status, 200);
+    const clashNodeOnly = load(await withoutClashGroups.text());
+    assert.deepEqual(clashNodeOnly["proxy-groups"] ?? [], [], "explicitly disabled groups stay disabled in Clash");
+    assert.deepEqual(clashNodeOnly.proxies.map((node) => node.name), ["Asia", "Europe"]);
+    assert.equal(clashNodeOnly.rules.at(-1), "MATCH,Asia", "both formats use the first node as the final target");
     await json(itemPath + "/reset-link", { method: "POST", headers: { cookie, "if-match": `"${sample.token}"` } });
     for (const file of ["loon.conf", "config.yaml"]) {
       assert.equal((await fetch(url + profilePath + "/" + file)).status, 404, "revoked " + file);

@@ -10,9 +10,23 @@ const uuid = "52396e06-041a-4cc2-be5c-8525eb457809";
 const ss: ParsedNode = { ...base, type: "ss", cipher: "aes-128-gcm", password: "pass,word" };
 
 describe("Loon native nodes", () => {
+  it.each<ParsedNode>([
+    ss,
+    { ...base, type: "vmess", uuid, cipher: "auto" },
+    { ...base, type: "vless", uuid },
+    { ...base, type: "trojan", password: "secret" },
+    { ...base, type: "hysteria2", password: "secret" },
+    { ...base, type: "socks5" },
+  ])("preserves default UDP and QUIC forwarding for $type", (node) => {
+    expect(renderLoonNode(node)).toContain("udp=true,block-quic=false");
+    expect(renderLoonNode({ ...node, udp: true })).toContain("udp=true,block-quic=false");
+    const disabled = renderLoonNode({ ...node, udp: false });
+    expect(disabled).toContain("udp=false");
+    expect(disabled).not.toContain("block-quic");
+  });
   it("quotes comma credentials and preserves Unicode and internal source metadata", () => {
     expect(renderLoonNode({ ...ss, _originName: "original", _sourceIds: ["source"], _meta: {} }))
-      .toBe('香港 🇭🇰 = Shadowsocks,example.com,443,aes-128-gcm,"pass,word"');
+      .toBe('香港 🇭🇰 = Shadowsocks,example.com,443,aes-128-gcm,"pass,word",udp=true,block-quic=false');
   });
   it("uses native protocol syntax and the existing parser can read it", () => {
     const node: ParsedNode = { ...base, type: "vmess", uuid, alterId: 0, cipher: "auto", tls: true, servername: "tls.example.com", "skip-cert-verify": false, network: "ws", "ws-opts": { path: "/socket", headers: { Host: "cdn.example.com" } } };
@@ -118,7 +132,7 @@ describe("Loon native nodes", () => {
   });
   it("renders basic Hysteria2 and rejects bandwidth and obfuscation options", () => {
     const node: ParsedNode = { ...base, type: "hysteria2", password: "secret", sni: "hy.example.com", "skip-cert-verify": false, alpn: ["h3"] };
-    expect(renderLoonNode(node)).toBe('香港 🇭🇰 = Hysteria2,example.com,443,"secret",skip-cert-verify=false,sni=hy.example.com,alpn="h3"');
+    expect(renderLoonNode(node)).toBe('香港 🇭🇰 = Hysteria2,example.com,443,"secret",udp=true,block-quic=false,skip-cert-verify=false,sni=hy.example.com,alpn="h3"');
     expect(() => renderLoonNode({ ...node, up: "10 Mbps" })).toThrow("Loon");
     expect(() => renderLoonNode({ ...node, obfs: "salamander" })).toThrow("Loon");
   });

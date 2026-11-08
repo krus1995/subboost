@@ -125,7 +125,9 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
       if (normalized.kind === 'module' && !config.enabledGroups.includes(normalized.id)) fail(`${label}引用的缺失内置代理组`);
       if (normalized.kind === 'custom' && !customGroups.some((group) => group.id === normalized.id)) fail(`${label}引用的缺失自定义代理组`);
     }
-    if (!available.has(resolveProxyGroupTargetName(target, targetOptions))) fail(`${label}引用的缺失节点或代理组`);
+    const targetName = resolveProxyGroupTargetName(target, targetOptions);
+    if (nodeNames.has(targetName) && isSubscriptionInfoNodeName(targetName)) fail(`${label}引用的信息节点`);
+    if (!available.has(targetName)) fail(`${label}引用的缺失节点或代理组`);
   };
   for (const [index, rule] of config.customRules.entries()) {
     if (isDisabledCustomProxyGroupTarget(rule.target, targetOptions)) continue;

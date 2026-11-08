@@ -171,7 +171,13 @@ export function renderLoonNode(node: ParsedNode): string {
   if (node.type === "http" || node.type === "https") {
     const udp = take("udp");
     if (udp !== undefined && udp !== false) fail("HTTP 不支持 UDP 转发");
-  } else boolean("udp");
+  } else {
+    const inputUdp = take("udp");
+    const udp = inputUdp === undefined ? true : inputUdp;
+    if (typeof udp !== "boolean") fail();
+    option("udp", String(udp));
+    if (udp) option("block-quic", "false");
+  }
   boolean("tfo", "fast-open");
   if (tls) {
     boolean("skip-cert-verify");

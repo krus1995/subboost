@@ -67,6 +67,7 @@ export interface ProxyGroupGenerateOptions {
   experimentalCnUseCnRuleSet?: boolean;
   proxyGroupNameOverrides?: Record<string, string>;
   ruleOrder?: string[];
+  literalTargetNames?: readonly string[];
 }
 
 /** @deprecated Use `ProxyGroupGenerateOptions`; retained for 2.x source compatibility. */
@@ -481,6 +482,7 @@ export function generateRuleProviders(options: ProxyGroupGenerateOptions): Recor
   const providers: Record<string, RuleProvider> = {};
   const enabledSet = new Set(enabledModules);
   const moduleNames = buildModuleNameMap(options.proxyGroupNameOverrides);
+  const literalTargetNames = options.literalTargetNames ?? options.nodes.map((node) => node.name);
 
   // 预设模块的规则
   for (const proxyModule of PROXY_GROUP_MODULES) {
@@ -513,7 +515,7 @@ export function generateRuleProviders(options: ProxyGroupGenerateOptions): Recor
 
   // 用户新增规则集统一由 customRuleSets 提供，不再挂在某个分流组对象上。
   for (const ruleSet of customRuleSets) {
-    if (isDisabledCustomProxyGroupTarget(ruleSet.target, { moduleNames, customProxyGroups })) continue;
+    if (isDisabledCustomProxyGroupTarget(ruleSet.target, { moduleNames, customProxyGroups, literalTargetNames })) continue;
     if (!ruleSet?.id || !ruleSet.path || providers[ruleSet.id]) continue;
     providers[ruleSet.id] = {
       type: "http",
