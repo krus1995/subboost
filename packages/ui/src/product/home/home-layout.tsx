@@ -51,14 +51,13 @@ type SubscriptionLinkState = {
   smartNodeMatchingEnabled: boolean;
   setSmartNodeMatchingEnabled: (value: boolean) => void;
   isCreatingSubscription: boolean;
-  copied: boolean;
   saveRequirementDialog: boolean;
   setSaveRequirementDialog: (open: boolean) => void;
   isEditingExistingSubscription: boolean;
   handleGenerateSubscription: (mode: ProductMode) => void;
   handleAcceptSaveRequirement: () => void;
   handleCreateSubscription: () => void;
-  handleCopyUrl: () => void;
+  handleLinkCopied: () => void;
 };
 
 type Props = {
@@ -323,7 +322,7 @@ export function HomeLayout({
                   </div>
                 </TabsContent>
                 <TabsContent forceMount value="loon" className="mt-0 data-[state=inactive]:hidden lg:absolute lg:inset-0">
-                  <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl border border-ink/10 overflow-hidden">{loonVisited && <LoonPreview />}</div>
+                  <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl border border-ink/10 overflow-hidden">{loonVisited && <LoonPreview active={previewTab === "loon"} />}</div>
                 </TabsContent>
                 <TabsContent value="visual" className="mt-0 data-[state=inactive]:hidden lg:absolute lg:inset-0">
                   <div className="h-[clamp(420px,70vh,820px)] lg:h-full rounded-xl bg-ink/5 border border-ink/10 overflow-hidden">
@@ -401,10 +400,9 @@ export function HomeLayout({
         smartNodeMatchingEnabled={subscription.smartNodeMatchingEnabled}
         setSmartNodeMatchingEnabled={subscription.setSmartNodeMatchingEnabled}
         isCreatingSubscription={subscription.isCreatingSubscription}
-        copied={subscription.copied}
         isEditingExistingSubscription={subscription.isEditingExistingSubscription}
-        handleCopyUrl={subscription.handleCopyUrl}
         handleCreateSubscription={subscription.handleCreateSubscription}
+        onLinkCopied={subscription.handleLinkCopied}
       />
     </div>
   );

@@ -6,19 +6,19 @@
 
 ## Loon 完整配置
 
-首页的「Loon」页签按当前编辑内容在浏览器生成配置并下载 `loon.conf`。已保存的订阅可在订阅链接对话框、管理页选择 Loon，检查配置、复制链接、下载或打开客户端。两种格式共用订阅 token；重置链接后，原来的 Clash 和 Loon 地址都失效。
+保存订阅后，在首页结果对话框或订阅管理页点「复制链接」，再选 Clash 或 Loon，即可把对应地址粘贴到客户端。复制时只写入地址。客户端读取 `config.yaml` 或 `loon.conf` 时，服务端按同一份已保存配置生成相应格式。两个地址共用一个访问凭据（token），重置后原地址同时失效。选择「更多方式」可以扫码、查看地址或下载文件。首页编辑器切到 Loon 页签后，会根据当前编辑内容自动生成预览；下载的 `loon.conf` 包含完整配置。
 
 服务端通过 `GET /api/subscriptions/<token>/loon.conf` 读取同一条加密订阅的节点快照、配置和流量信息。已有数据库无需迁移。公开读取只使用保存的节点，内置规则来自项目当前使用的 MetaCubeX 规则仓库。匿名预览通过 `GET /api/loon/rules?path=...` 读取受支持的公开规则文件，节点和密码保留在浏览器中。应用随镜像提供全部内置规则。冷启动时两个接口直接读取本地文件，后台逐项刷新已经请求的规则，成功更新后缓存 24 小时。上游超时、返回空文件或规则语法无效时保留最近可用的正文。新进程从镜像快照开始，Clash 客户端会独立更新远端规则。
 
 打包文件位于 `local/public/loon-rules/`，清单记录上游提交和各文件的 Git blob 摘要。`node local/scripts/verify-loon-rule-snapshot.mjs` 核对白名单和摘要，`bash ops/fork/check.sh image` 在无公网的内部网络首次读取含广告和私有网络规则的已保存订阅，并逐条对照域名与 IP 规则。
 
-首页与已保存订阅都按 Loon 能表达的协议及参数导出。支持 Shadowsocks、ShadowsocksR、VMess、VLESS、Trojan、AnyTLS、Hysteria2、WireGuard、HTTP(S) 和 SOCKS5。VMess 和 VLESS 支持 TCP、WebSocket 和可保留 Host、路径的 HTTP；Hysteria2 可保留 Salamander 混淆。兼容导出把通用 `safari` 和 `ios` 指纹映射到 `safari-ios18`。Reality 允许混合密钥交换时，通用 Safari 和 Chrome 可分别使用 `safari-ios-26` 和 `chrome147`。如果源配置同时指定这类新版指纹并要求禁用混合密钥交换，Loon 缺少单独的关闭选项，导出时会提示跳过。配置注释记录发生转换的节点序号和目标指纹。XHTTP、gRPC、HTTPUpgrade、TUIC、Mieru 及无法保留的 TLS 客户端指纹会列入跳过清单。配置注释与管理页显示数量、原节点序号及原因。原订阅和 Clash 节点保留原样。[Loon 节点参数](https://nsloon.app/docs/Node/) · [Sub-Store 指纹映射](https://github.com/sub-store-org/Sub-Store/commit/e08f1b1)
+首页与已保存订阅都按 Loon 能表达的协议及参数导出。支持 Shadowsocks、ShadowsocksR、VMess、VLESS、Trojan、AnyTLS、Hysteria2、WireGuard、HTTP(S) 和 SOCKS5。VMess 和 VLESS 支持 TCP、WebSocket 和可保留 Host、路径的 HTTP；Hysteria2 可保留 Salamander 混淆。兼容导出把通用 `safari` 和 `ios` 指纹映射到 `safari-ios18`。Reality 允许混合密钥交换时，通用 Safari 和 Chrome 可分别使用 `safari-ios-26` 和 `chrome147`。如果源配置同时指定这类新版指纹并要求禁用混合密钥交换，Loon 缺少单独的关闭选项，导出时会提示跳过。配置注释记录发生转换的节点序号和目标指纹。XHTTP、gRPC、HTTPUpgrade、TUIC、Mieru 及无法保留的 TLS 客户端指纹会列入跳过清单。Loon 配置注释记录数量、原节点序号及原因，首页的 Loon 预览也会显示这些信息。原订阅和 Clash 节点保留原样。[Loon 节点参数](https://nsloon.app/docs/Node/) · [Sub-Store 指纹映射](https://github.com/sub-store-org/Sub-Store/commit/e08f1b1)
 
 策略组支持手动选择、测速、可用性回退和轮询负载均衡。组可以嵌套。过滤后失去代理出站的组会从配置及其父组移除。分流规则按原顺序展开，保留精确域名、后缀及 IPv4/IPv6 网段，以 `FINAL` 指定兜底。无可导出节点、显式规则失去目标、无法表达的基础 YAML 或第三方远程规则集，会让该地址返回 HTTP 422。Loon 使用系统 DNS，优先匹配请求域名，再匹配 IP。[Loon 策略组](https://nsloon.app/docs/Policy/policygroup/)
 
 与上游共享的代码包括节点命名、策略组成员与规则排序、保存设置的读取、订阅响应头、首页和管理页。平台专用生成器位于 `packages/core/src/generator/loon*.ts`。上游更新节点字段、模板或公开订阅接口后，运行以下检查。
 
-- `npm run test:unit -- loon subscription-service.test.ts subscription-route-contract.test.ts subscription-link-dialog subscription-dashboard-surface` 核对导出内容、格式切换、失败诊断、缓存与 token 撤销。
+- `npm run test:unit -- loon subscription-service.test.ts subscription-route-contract.test.ts subscription-link-menu subscription-link-dialog subscription-dashboard-surface` 核对导出内容、两种链接的复制、预览和失败提示，以及缓存和链接重置。
 - `bash ops/fork/check.sh source` 核对 lint、分支覆盖率、类型和构建。
 - `bash ops/fork/check.sh image` 在隔离数据库保存混合订阅，通过 HTTP 核对节点清单、策略组、全不兼容时的诊断及旧链接失效。
 

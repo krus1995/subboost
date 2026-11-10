@@ -36,7 +36,6 @@ export function useEditingSubscriptionLoader({
   authChecked = true,
   loadSubscription,
   loginHref = "/login",
-  setCopied,
   setEditingSubscription,
   setStoreSources,
   setSubscriptionName,
@@ -54,7 +53,6 @@ export function useEditingSubscriptionLoader({
         setEditingSubscription(null);
         setSubscriptionName("");
         setSubscriptionUrl("");
-        setCopied(false);
       }
       previousEditId.current = null;
       setIsLoadingEditingSubscription(false);
@@ -575,7 +573,6 @@ export function useEditingSubscriptionLoader({
           });
           setSubscriptionName(sub.name || "");
           setSubscriptionUrl("");
-          setCopied(false);
         }
       } finally {
         if (!cancelled) setIsLoadingEditingSubscription(false);
@@ -596,7 +593,7 @@ export function useEditingSubscriptionLoader({
     return () => {
       cancelled = true;
     };
-  }, [authChecked, userId, editSubscriptionId, loadSubscription, loginHref, setCopied, setEditingSubscription, setStoreSources, setSubscriptionName, setSubscriptionUrl]);
+  }, [authChecked, userId, editSubscriptionId, loadSubscription, loginHref, setEditingSubscription, setStoreSources, setSubscriptionName, setSubscriptionUrl]);
 
   return isLoadingEditingSubscription;
 }

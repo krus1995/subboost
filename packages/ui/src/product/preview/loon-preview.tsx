@@ -8,15 +8,14 @@ import { useConfigStore } from "@subboost/ui/store/config-store";
 import { Button } from "@subboost/ui/components/ui/button";
 import { LoonCompatibilityNotice } from "@subboost/ui/product/subscription/loon-compatibility-notice";
 
-type Source = ReturnType<typeof useConfigStore.getState>;
 type Generation =
   | { kind: "idle" }
-  | { kind: "loading"; source: Source }
-  | { kind: "ready"; source: Source; config: string; preview: string }
-  | { kind: "error"; source: Source; message: string };
+  | { kind: "loading"; key: string }
+  | { kind: "ready"; key: string; config: string; preview: string }
+  | { kind: "error"; key: string; message: string };
 
-export async function loadLoonRuleList(path: string): Promise<string> {
-  const response = await fetch(`/api/loon/rules?path=${encodeURIComponent(path)}`);
+export async function loadLoonRuleList(path: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(`/api/loon/rules?path=${encodeURIComponent(path)}`, { signal });
   if (!response.ok) throw new Error(`读取 Loon 规则失败（${response.status}）`);
   return response.text();
 }
@@ -31,59 +30,68 @@ export function summarizeLoonConfig(config: string): string {
     ? `${config.slice(0, end)}\n\n# 仅预览前 200 行，下载包含完整配置。`
     : config;
 }
-export function LoonPreview() {
+
+export function LoonPreview({ active = true }: { active?: boolean }) {
   const source = useConfigStore();
-  const [generation, setGeneration] = React.useState<Generation>({ kind: "idle" });
-  const requestId = React.useRef(0);
-  const pendingSource = React.useRef<Source | null>(null);
-  const ruleLists = React.useRef(new Map<string, Promise<string>>());
-  React.useEffect(() => () => { requestId.current += 1; }, []);
-  const current = generation.kind !== "idle" && generation.source === source ? generation : { kind: "idle" } as const;
-
-  const loadRuleList = (path: string): Promise<string> => {
-    const existing = ruleLists.current.get(path);
-    if (existing) return existing;
-    const request = loadLoonRuleList(path).finally(() => { ruleLists.current.delete(path); });
-    ruleLists.current.set(path, request);
-    return request;
-  };
-
-  const generate = async () => {
-    if (pendingSource.current === source || current.kind === "ready") return;
-    pendingSource.current = source;
-    const id = ++requestId.current;
-    setGeneration({ kind: "loading", source });
+  const prepared = React.useMemo(() => {
     try {
-      const config = await generateLoonConfig(buildGenerateOptions(source), loadRuleList, { mode: "compatible" });
-      if (id === requestId.current && source === useConfigStore.getState()) setGeneration({ kind: "ready", source, config, preview: summarizeLoonConfig(config) });
+      const options = buildGenerateOptions(source);
+      return { kind: "ready", options, key: JSON.stringify(options) } as const;
     } catch (error) {
-      if (id === requestId.current && source === useConfigStore.getState()) {
-        setGeneration({ kind: "error", source, message: error instanceof Error ? error.message : "生成 Loon 配置失败" });
-      }
-    } finally {
-      if (id === requestId.current) pendingSource.current = null;
+      const message = error instanceof Error ? error.message : "生成 Loon 配置失败";
+      return { kind: "error", message, key: `error:${message}` } as const;
     }
-  };
+  }, [source]);
+  const [generation, setGeneration] = React.useState<Generation>({ kind: "idle" });
+  const [retry, setRetry] = React.useState(0);
+  const current = generation.kind !== "idle" && generation.key === prepared.key ? generation : { kind: "idle" } as const;
+  const preparedRef = React.useRef(prepared);
+  React.useEffect(() => { preparedRef.current = prepared; }, [prepared]);
 
-  const download = () => {
-    if (current.kind !== "ready") return;
-    downloadLoonConfig(current.config);
-  };
+  React.useEffect(() => {
+    if (!active) return;
+    const input = preparedRef.current;
+
+    const controller = new AbortController();
+    const pending = new Map<string, Promise<string>>();
+    const load = (path: string): Promise<string> => {
+      controller.signal.throwIfAborted();
+      const existing = pending.get(path);
+      if (existing) return existing;
+      const request = loadLoonRuleList(path, controller.signal);
+      pending.set(path, request);
+      return request;
+    };
+    const timer = setTimeout(async () => {
+      setGeneration({ kind: "loading", key: input.key });
+      try {
+        if (input.kind === "error") throw new Error(input.message);
+        const config = await generateLoonConfig(input.options, load, { mode: "compatible" });
+        if (controller.signal.aborted) return;
+        const result = { kind: "ready", key: input.key, config, preview: summarizeLoonConfig(config) } as const;
+        setGeneration(result);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          const result = { kind: "error", key: input.key, message: error instanceof Error ? error.message : "生成 Loon 配置失败" } as const;
+          setGeneration(result);
+        }
+      }
+    }, 200);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [active, prepared.key, retry]);
 
   return (
     <div className="flex h-full flex-col gap-3 p-3">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void generate()} disabled={current.kind === "loading" || current.kind === "ready"}>
-          {current.kind === "loading" ? "正在生成 Loon 配置" : "生成 Loon 配置"}
-        </Button>
-        <Button size="sm" variant="outline" disabled={current.kind !== "ready"} onClick={download}>下载 .conf</Button>
+        <Button size="sm" variant="outline" disabled={current.kind !== "ready"} onClick={() => { if (current.kind === "ready") downloadLoonConfig(current.config); }}>下载 .conf</Button>
+        {current.kind === "error" && <Button size="sm" onClick={() => { setRetry((value) => value + 1); }}>重试</Button>}
       </div>
       {current.kind === "error" && <>
         <p role="alert" className="text-sm text-red-400">{current.message.split("\n# SUBBOOST-LOON-COMPAT v1 ")[0]}</p>
         <LoonCompatibilityNotice config={current.message} />
       </>}
       {current.kind === "ready" && <LoonCompatibilityNotice config={current.config} />}
-      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre text-xs">{current.kind === "ready" ? current.preview : "点击生成以预览 Loon 完整配置。"}</pre>
+      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre text-xs">{current.kind === "ready" ? current.preview : current.kind === "error" ? "无法生成 Loon 配置。" : "正在生成 Loon 配置…"}</pre>
     </div>
   );
 }
