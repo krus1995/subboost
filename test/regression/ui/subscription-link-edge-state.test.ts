@@ -198,7 +198,7 @@ describe("subscription link edge state", () => {
     );
   });
 
-  it("tracks a successful editing-link copy and clears copied state after the timer", async () => {
+  it("tracks a successful editing-link copy", async () => {
     vi.useFakeTimers();
     const editingSubscription = {
       id: "sub-1",
@@ -211,14 +211,12 @@ describe("subscription link edge state", () => {
     hook.setSubscriptionUrl("https://subboost.test/s/token-1");
     hook = useHookHarness({ editingSubscription });
 
-    await hook.handleCopyUrl();
-    expect(mocks.bag.state[7]).toBe(true);
+    hook.handleLinkCopied();
     await vi.runAllTimersAsync();
 
     expect(mocks.bag.interactions.subscriptionLinkCopied).toHaveBeenCalledWith({
       flow: "update",
       mode: "quick",
     });
-    expect(mocks.bag.state[7]).toBe(false);
   });
 });

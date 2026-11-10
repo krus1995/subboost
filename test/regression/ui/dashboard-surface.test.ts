@@ -50,6 +50,8 @@ vi.mock("../../../node_modules/react/index.js", async (importOriginal) =>
 
 vi.mock("next/link", () => ({ default: (props: any) => props.children }));
 vi.mock("lucide-react", () => ({
+  MoreHorizontal: () => null,
+  ChevronDown: () => null,
   QrCode: () => null,
   X: () => null,
   AlertTriangle: () => null,
@@ -247,16 +249,16 @@ describe("public dashboard surface remaining branch coverage", () => {
     }));
   });
 
-  it("renders copied state and adapter defaults for edit and quick action links", () => {
+  it("renders copy menu and adapter defaults for edit and quick action links", () => {
     const adapter = createAdapter({
       newSubscriptionHref: undefined,
       editSubscriptionHref: undefined,
       settingsTitle: undefined,
       settingsDescription: undefined,
     });
-    const { html } = renderSurface(adapter, { 0: [subscription], 1: false, 2: "sub-1" });
+    const { html } = renderSurface(adapter, { 0: [subscription], 1: false });
 
-    expect(html).toContain("已复制");
+    expect(html).toContain("复制链接");
     expect(html).toContain("账户设置");
     expect(html).toContain("管理您的账户和数据导出");
   });
@@ -267,12 +269,12 @@ describe("public dashboard surface remaining branch coverage", () => {
       ...subscription,
       autoUpdateInterval: Number.NaN,
     } satisfies Subscription;
-    const { setters } = renderSurface(createAdapter(), { 0: [invalidInterval], 1: false, 2: null, 3: null });
+    const { setters } = renderSurface(createAdapter(), { 0: [invalidInterval], 1: false, 2: null });
     mocks.captures.buttons.find((props: any) => props.title === "订阅设置（改名 / 自动更新）").onClick();
-    expect(setters[9]).toHaveBeenCalledWith(24);
+    expect(setters[8]).toHaveBeenCalledWith(24);
 
     const failingAdapter = createAdapter({ updateSubscriptionSettings: vi.fn(async () => { throw "bad"; }) });
-    renderSurface(failingAdapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Renamed", 7: true, 8: false, 9: 24, 10: false });
+    renderSurface(failingAdapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Renamed", 6: true, 7: false, 8: 24, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
       title: "保存失败，请稍后重试",
@@ -288,13 +290,13 @@ describe("public dashboard surface remaining branch coverage", () => {
     const { setters } = renderSurface(adapter, {
       0: [subscription, sibling],
       1: false,
-      4: true,
-      5: subscription,
-      6: "Renamed",
-      7: false,
-      8: true,
-      9: 6,
-      10: false,
+      3: true,
+      4: subscription,
+      5: "Renamed",
+      6: false,
+      7: true,
+      8: 6,
+      9: false,
     });
 
     await mocks.captures.settingsDialog.onSave();

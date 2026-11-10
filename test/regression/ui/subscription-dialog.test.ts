@@ -11,6 +11,8 @@ const captures = vi.hoisted(() => ({
 }));
 
 vi.mock("lucide-react", () => ({
+  MoreHorizontal: () => null,
+  ChevronDown: () => null,
   Check: () => React.createElement("span", null, "check-icon"),
   Copy: () => React.createElement("span", null, "copy-icon"),
   Link: () => React.createElement("span", null, "link-icon"),
@@ -83,7 +85,7 @@ const baseProps = {
   isCreatingSubscription: false,
   copied: false,
   isEditingExistingSubscription: false,
-  handleCopyUrl: vi.fn(),
+  onLinkCopied: vi.fn(),
   handleCreateSubscription: vi.fn(),
 };
 
@@ -133,8 +135,8 @@ describe("public SubscriptionLinkDialog branch coverage", () => {
       })
     );
     expect(created).toContain("订阅链接已生成");
-    expect(created).toContain("创建成功");
-    expect(created).toContain("您可以在仪表盘中管理所有订阅");
+
+    expect(created).toContain("选择 Clash 或 Loon");
     expect(created).toContain("copy-icon");
   });
 });

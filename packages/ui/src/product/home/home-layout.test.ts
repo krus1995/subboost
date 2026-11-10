@@ -141,14 +141,13 @@ function createSubscription(overrides: Record<string, unknown> = {}) {
     smartNodeMatchingEnabled: true,
     setSmartNodeMatchingEnabled: vi.fn(),
     isCreatingSubscription: false,
-    copied: false,
     saveRequirementDialog: false,
     setSaveRequirementDialog: vi.fn(),
     isEditingExistingSubscription: false,
     handleGenerateSubscription: vi.fn(),
     handleAcceptSaveRequirement: vi.fn(),
     handleCreateSubscription: vi.fn(),
-    handleCopyUrl: vi.fn(),
+    handleLinkCopied: vi.fn(),
     ...overrides,
   };
 }

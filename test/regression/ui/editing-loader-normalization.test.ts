@@ -197,7 +197,6 @@ describe("editing subscription loader state normalization", () => {
         })
       ),
       loginHref: "/login",
-      setCopied: vi.fn(),
       setEditingSubscription,
       setStoreSources,
       setSubscriptionName: vi.fn(),

@@ -95,7 +95,6 @@ function makeOptions(overrides: Record<string, unknown> = {}) {
     editSubscriptionId: "sub-1",
     loadSubscription: vi.fn(),
     loginHref: "/login",
-    setCopied: vi.fn(),
     setEditingSubscription: vi.fn(),
     setStoreSources: vi.fn(),
     setSubscriptionName: vi.fn(),

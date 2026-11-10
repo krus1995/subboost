@@ -14,7 +14,6 @@ export type EditingSubscriptionLoaderOptions = {
   authChecked?: boolean;
   loadSubscription?: (id: string) => Promise<Response>;
   loginHref?: string;
-  setCopied: (copied: boolean) => void;
   setEditingSubscription: (subscription: EditingSubscription | null) => void;
   setStoreSources: (sources: SubscriptionSource[]) => void;
   setSubscriptionName: (name: string) => void;

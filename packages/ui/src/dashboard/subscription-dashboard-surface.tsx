@@ -1,18 +1,12 @@
 "use client";
-import { SubscriptionQrButton } from "@subboost/ui/product/subscription/subscription-qr-code";
+import { SubscriptionLinkMenu } from "@subboost/ui/product/subscription/subscription-link-menu";
 
-import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
 import { readJsonResponse } from "@subboost/ui/product/client-response";
-import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
-import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
 import * as React from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
-  Check,
   Clock,
-  Copy,
-  Download,
   ExternalLink,
   FileCode,
   Pencil,
@@ -38,7 +32,6 @@ import {
 import { DashboardStatsCards } from "@subboost/ui/dashboard/dashboard-stats-cards";
 import { formatDashboardDate, formatIntervalLabel } from "@subboost/ui/dashboard/dashboard-format";
 import { buildRefreshSubscriptionSuccessToast } from "@subboost/ui/dashboard/dashboard-refresh-toast";
-import { copyTextToClipboard } from "@subboost/ui/lib/clipboard";
 import {
   buildAutoUpdateDisabledNotice,
   buildNodeQuotaWarning,
@@ -107,7 +100,6 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
   const [subscriptions, setSubscriptions] = React.useState<Subscription[]>([]);
   const autoUpdateNoticeRef = React.useRef<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
-  const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [refreshingId, setRefreshingId] = React.useState<string | null>(null);
 
   const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -179,16 +171,6 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
       variant: "warning",
     });
   }, [subscriptions, user]);
-
-  const copyToClipboard = async (subscriptionUrl: string, id: string) => {
-    const copied = await copyTextToClipboard(subscriptionUrl);
-    if (!copied) {
-      toast({ title: "复制失败，请手动复制订阅链接", variant: "destructive" });
-      return;
-    }
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
 
   const downloadSubscription = async (subscription: Subscription) => {
     const filename = buildYamlDownloadFilename(subscription.name);
@@ -330,7 +312,6 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
       const link = await adapter.resetSubscriptionLink(settingsSub.id, settingsSub.token);
       setSubscriptions((items) => items.map((item) => item.id === link.id ? { ...item, ...link } : item));
       setSettingsSub((item) => item?.id === link.id ? { ...item, ...link } : item);
-      setCopiedId(null);
       toast({ title: "订阅链接已重置", description: "请重新复制链接并更新代理软件中的订阅。" });
     } catch (error) {
       toast({ title: error instanceof Error ? error.message : "重置失败，请稍后重试", variant: "destructive" });
@@ -399,10 +380,8 @@ export function SubscriptionDashboardSurface({ adapter }: Props) {
                 <SubscriptionRow
                   key={sub.id}
                   sub={sub}
-                  copiedId={copiedId}
                   refreshingId={refreshingId}
                   editHref={editSubscriptionHref(sub)}
-                  onCopy={copyToClipboard}
                   onDelete={deleteSubscription}
                   onDownload={downloadSubscription}
                   onRefresh={refreshSubscription}
@@ -493,28 +472,21 @@ function LoginPrompt({ loginHref }: { loginHref: string }) {
 
 function SubscriptionRow({
   sub,
-  copiedId,
   refreshingId,
   editHref,
-  onCopy,
   onDelete,
   onDownload,
   onRefresh,
   onSettings,
 }: {
   sub: Subscription;
-  copiedId: string | null;
   refreshingId: string | null;
   editHref: string;
-  onCopy: (subscriptionUrl: string, id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onDownload: (sub: Subscription) => Promise<void>;
   onRefresh: (id: string) => Promise<void>;
   onSettings: (sub: Subscription) => void;
 }) {
-  const [format, setFormat] = React.useState<ConfigFormat>("clash");
-  const selectedUrl = subscriptionFormatUrl(sub.subscriptionUrl, format);
-  const copyId = format === "clash" ? sub.id : `${sub.id}:loon`;
   const quotaWarning = buildNodeQuotaWarning(sub.autoUpdateState);
   const quotaDisabled = isNodeQuotaAutoUpdateDisabled(sub.autoUpdateState);
   return (
@@ -558,10 +530,8 @@ function SubscriptionRow({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
-        <ConfigFormatSelect value={format} onChange={setFormat} />
-        {format === "loon" && <LoonSubscriptionActions key={`${selectedUrl}:${sub.updatedAt ?? sub.lastUpdatedAt}`} url={selectedUrl} />}
-        <Button asChild variant="ghost" size="sm" className="gap-0 sm:gap-2" title="回到首页编辑该订阅（更新后链接不变）">
+      <div className="flex flex-wrap items-center gap-1 sm:shrink-0 sm:justify-end sm:gap-2">
+        <Button asChild variant="ghost" size="sm" className="gap-0 px-2 sm:gap-2 sm:px-3" title="回到首页编辑该订阅（更新后链接不变）">
           <Link href={editHref}>
             <Pencil className="h-4 w-4" />
             <span className="hidden sm:inline">编辑</span>
@@ -571,7 +541,7 @@ function SubscriptionRow({
           variant="ghost"
           size="sm"
           onClick={() => onSettings(sub)}
-          className="gap-0 sm:gap-2"
+          className="gap-0 px-2 sm:gap-2 sm:px-3"
           title="订阅设置（改名 / 自动更新）"
         >
           <Settings className="h-4 w-4" />
@@ -582,47 +552,18 @@ function SubscriptionRow({
           size="sm"
           onClick={() => void onRefresh(sub.id)}
           disabled={refreshingId === sub.id}
-          className="gap-0 sm:gap-2"
+          className="gap-0 px-2 sm:gap-2 sm:px-3"
           title="重新生成配置并刷新缓存"
         >
           <RefreshCw className={`h-4 w-4 ${refreshingId === sub.id ? "animate-spin" : ""}`} />
           <span className="hidden sm:inline">刷新</span>
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void onCopy(selectedUrl, copyId)}
-          className="gap-0 sm:gap-2"
-          title="复制订阅链接"
-        >
-          {copiedId === copyId ? (
-            <>
-              <Check className="h-4 w-4 text-green-500" />
-              <span className="hidden sm:inline text-green-500">已复制</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4" />
-              <span className="hidden sm:inline">链接</span>
-            </>
-          )}
-        </Button>
-        <SubscriptionQrButton url={selectedUrl} />
-        {format === "clash" && <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onDownload(sub)}
-          className="gap-0 sm:gap-2"
-          title="下载订阅配置"
-        >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">下载</span>
-        </Button>}
+        <SubscriptionLinkMenu key={sub.subscriptionUrl} url={sub.subscriptionUrl} onDownloadClash={() => void onDownload(sub)} />
         <Button
           variant="ghost"
           size="sm"
           onClick={() => void onDelete(sub.id)}
-          className="gap-0 text-red-400 hover:text-red-300 hover:bg-red-500/10 sm:gap-2"
+          className="gap-0 px-2 sm:px-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 sm:gap-2"
           title="删除订阅"
         >
           <Trash2 className="h-4 w-4" />

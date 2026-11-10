@@ -101,6 +101,12 @@ vi.mock("@subboost/ui/dashboard/subscription-settings-dialog", () => ({
   SubscriptionSettingsDialog: () => null,
 }));
 
+vi.mock("@subboost/ui/product/subscription/subscription-link-menu", () => ({
+  SubscriptionLinkMenu: ({ onDownloadClash }: { onDownloadClash: () => void }) => {
+    mocks.buttons.push({ title: "下载订阅配置", onClick: onDownloadClash });
+    return null;
+  },
+}));
 import {
   SubscriptionDashboardSurface,
   type DashboardSurfaceAdapter,
@@ -197,28 +203,6 @@ describe("dashboard action failures and notice deduplication", () => {
     expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
 
-  it("reports clipboard failure after both browser copy mechanisms fail", async () => {
-    const textarea = {
-      setAttribute: vi.fn(),
-      style: {},
-      select: vi.fn(),
-      remove: vi.fn(),
-      value: "",
-    };
-    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(async () => { throw new Error("denied"); }) } });
-    vi.stubGlobal("document", {
-      createElement: vi.fn(() => textarea),
-      body: { appendChild: vi.fn() },
-      execCommand: vi.fn(() => false),
-    });
-    renderDashboard([subscription]);
-    findButtons("复制订阅链接")[0].onClick();
-    await flushPromises();
-    expect(mocks.toast).toHaveBeenCalledWith({
-      title: "复制失败，请手动复制订阅链接",
-      variant: "destructive",
-    });
-  });
 
   it("uses safe fallback filenames and reports non-successful download responses", async () => {
     const invalidName = { ...subscription, id: "sub-invalid", name: "<>:*?" } satisfies Subscription;
@@ -227,6 +211,7 @@ describe("dashboard action failures and notice deduplication", () => {
     renderDashboard([subscription, invalidName]);
 
     for (const button of findButtons("下载订阅配置")) await button.onClick();
+    await flushPromises();
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
       title: "下载失败",
@@ -239,6 +224,6 @@ describe("dashboard action failures and notice deduplication", () => {
   it("opens settings with a finite interval without using the default-hours fallback", () => {
     const result = renderDashboard([{ ...subscription, name: "Regular" }]);
     findButtons("订阅设置（改名 / 自动更新）")[0].onClick();
-    expect(result.setters[9]).toHaveBeenCalledWith(24);
+    expect(result.setters[8]).toHaveBeenCalledWith(24);
   });
 });
