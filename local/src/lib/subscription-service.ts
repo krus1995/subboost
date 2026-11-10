@@ -382,6 +382,7 @@ async function persistRefreshSuccess(params: {
       },
     });
     if (updated.count !== 1) return false;
+    if (params.snapshot.failedSources?.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN")) return true;
     await tx.subscriptionAutoUpdateState.upsert({
       where: { subscriptionId: params.subscriptionId },
       create: { subscriptionId: params.subscriptionId },

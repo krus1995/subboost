@@ -16,7 +16,7 @@ describe("persistent subscription request cooldown", () => {
       return {name};
     });
     mocks.execute.mockResolvedValue(0);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(content, {headers: {"subscription-userinfo": "total=100"}})));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(content, {headers: {"subscription-userinfo": "total=10000"}})));
   });
   it("shares six-minute occupancy across imports, fragments and standalone metadata", async () => {
     const results = await Promise.all([importSourceUrlDirect({url: "https://example.com/sub?q=a"}), importSourceUrlDirect({url: "https://example.com/sub?q=a#again"})]);
@@ -40,7 +40,7 @@ describe("persistent subscription request cooldown", () => {
   it("uses an already fetched content URL for metadata without HEAD", async () => {
     const responses: SourceTransportResponses = new Map();
     await importSourceUrlDirect({url: "https://example.com/sub"}, responses);
-    expect(await fetchSourceUserInfoHeadersDirect({userinfoUrl: "https://example.com/sub#info"}, responses)).toEqual({"content-type": "text/plain;charset=UTF-8", "subscription-userinfo": "total=100"});
+    expect(await fetchSourceUserInfoHeadersDirect({userinfoUrl: "https://example.com/sub#info"}, responses)).toEqual({"content-type": "text/plain;charset=UTF-8", "subscription-userinfo": "total=10000"});
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("does not repeat requests after a failed response or redirect loop", async () => {
@@ -64,8 +64,17 @@ describe("persistent subscription request cooldown", () => {
     });
     expect(snapshot.refreshedUrlSourceCount).toBe(2);
     expect(snapshot.failedSources).toEqual([]);
+    expect(snapshot.subscriptionInfo.total).toBe(30000);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(vi.mocked(fetch).mock.calls.every(([, options]) => options?.method === "GET")).toBe(true);
+  });
+  it.each(["total=20000", ""])('counts the final traffic for each source once with supplemental value "%s"', async supplemental => {
+    const snapshot = await refreshNodeSnapshot({config: {sources: [{id: "a", type: "url", content: "https://example.com/sub", userinfoUrl: "https://example.com/info"}]}, urls: [], storedNodes: [],
+      fetchUrlNodes: async () => ({ok: true, nodes: [{name: "a", type: "trojan", server: "example.com", port: 443, password: "secret"}], headers: {"subscription-userinfo": "total=10000"}}),
+      fetchUrlUserInfo: async () => ({"subscription-userinfo": supplemental}),
+    });
+    expect(snapshot.subscriptionInfo.total).toBe(supplemental ? 20000 : 10000);
+    expect(snapshot.savedSources[0].subscriptionUserInfo?.total).toBe(supplemental ? 20000 : 10000);
   });
   it("leaves public rule updates outside subscription occupancy", async () => {
     await fetchRuleContentDirect("https://example.com/rule");

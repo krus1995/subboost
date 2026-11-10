@@ -193,14 +193,6 @@ export async function refreshNodeSnapshot(
     });
   };
 
-  const mergeSourceSubscriptionInfo = (sourceId: string, info: SubscriptionUserInfo | undefined) => {
-    updateSourceSubscriptionInfo(sourceId, info);
-    const normalized = normalizeSubscriptionUserInfo(info);
-    if (hasSubscriptionUserInfo(normalized)) {
-      mergeSubscriptionUserInfo(subscriptionInfo, normalized);
-    }
-  };
-
   const shouldFetchSupplementalUserInfoForSource = (source: SavedSource): boolean => {
     return Boolean(source.userinfoUrl || source.userinfoUserAgent);
   };
@@ -227,9 +219,6 @@ export async function refreshNodeSnapshot(
         rawUserInfo,
         fetched.ok ? fetched.nodes : []
       );
-      if (hasSubscriptionUserInfo(resolvedUserInfo)) {
-        mergeSubscriptionUserInfo(subscriptionInfo, resolvedUserInfo);
-      }
 
       if (!fetched.ok || fetched.nodes.length === 0) {
         const errorInfo = fetched.errorInfo ?? null;
@@ -283,9 +272,6 @@ export async function refreshNodeSnapshot(
     try {
       const parsed = parseSubscription(source.content);
       const resolvedUserInfo = resolveSubscriptionUserInfo(undefined, parsed.nodes);
-      if (hasSubscriptionUserInfo(resolvedUserInfo)) {
-        mergeSubscriptionUserInfo(subscriptionInfo, resolvedUserInfo);
-      }
       if (parsed.nodes.length === 0) {
         recordFailedSource(source, "未解析到可用节点", { errorCategory: "parse" });
         continue;
@@ -332,11 +318,14 @@ export async function refreshNodeSnapshot(
       if (!headers) continue;
       mergeResponseMetadata(headers);
       const header = headers["subscription-userinfo"];
-      mergeSourceSubscriptionInfo(
-        source.id,
-        header ? resolveSubscriptionUserInfo(parseSubscriptionUserInfo(header)) : undefined
-      );
+      const info = header ? resolveSubscriptionUserInfo(parseSubscriptionUserInfo(header)) : undefined;
+      if (hasSubscriptionUserInfo(info)) updateSourceSubscriptionInfo(source.id, info);
     }
+  }
+
+  for (const source of refreshedSavedSources) {
+    const info = normalizeSubscriptionUserInfo(source.subscriptionUserInfo);
+    if (hasSubscriptionUserInfo(info)) mergeSubscriptionUserInfo(subscriptionInfo, info);
   }
 
   if (!profileWebPageUrlState.conflicted && profileWebPageUrlState.value) {
