@@ -176,7 +176,7 @@ describe("SubscriptionLinkDialog", () => {
     expect(html).toContain("订阅链接已更新");
     expect(html).toContain("选择 Clash 或 Loon");
     expect(html).toContain("复制链接");
-    expect(html).toContain(url.replace("&", "&amp;"));
+    expect(html).toContain("https://example.test/subboost/api/subscriptions/secret/config.yaml?download=1");
     expect(html).not.toContain("可在仪表盘管理订阅");
     expect(html).not.toContain("检查 Loon 配置");
     expect(captures.inputs).toHaveLength(0);

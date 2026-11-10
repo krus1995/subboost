@@ -488,7 +488,6 @@ describe("SubscriptionDashboardSurface", () => {
       0: [crossOriginSubscription],
       1: false,
       2: null,
-      2: null,
     });
     await mocks.captures.buttons.find((props: any) => props.title === "下载订阅配置").onClick();
     await flushPromises();
