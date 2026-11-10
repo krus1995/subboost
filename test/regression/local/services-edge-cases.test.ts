@@ -159,7 +159,7 @@ describe("public local services remaining branch coverage", () => {
     mocks.readSubscriptionSecrets.mockReturnValue({ config: {}, urls: ["https://airport.example/sub"], nodes: [] });
     mocks.extractHostsFromSubscriptionUrls.mockReturnValue(["airport.example"]);
     mocks.buildSubscriptionFetchCallbacks.mockReturnValue({ fetchSubscription: vi.fn() });
-    mocks.refreshNodeSnapshot.mockResolvedValue({ savedSources: [] });
+    mocks.refreshNodeSnapshot.mockResolvedValue({ savedSources: [], failedSources: [] });
     mocks.resolveAutomaticRefreshFailureAnalysis.mockReturnValue({
       failureState: { externalFailureCount: 0 },
       failureReason: "",
