@@ -6,7 +6,12 @@ const mocks = vi.hoisted(() => ({
   lookup: vi.fn(),
   importSubscriptionFromUrl: vi.fn(),
   requestPinnedText: vi.fn(),
+  acquireLocalJobLease: vi.fn(),
+  executeRaw: vi.fn(),
 }));
+
+vi.mock("./job-lease", () => ({ acquireLocalJobLease: mocks.acquireLocalJobLease }));
+vi.mock("./prisma", () => ({ prisma: { $executeRaw: mocks.executeRaw } }));
 
 vi.mock("node:dns/promises", () => ({
   lookup: mocks.lookup,
@@ -70,6 +75,8 @@ async function runTransport(url: string, overrides: Record<string, unknown> = {}
 describe("local source import transport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.acquireLocalJobLease.mockResolvedValue({name: "lease"});
+    mocks.executeRaw.mockResolvedValue(0);
     mocks.getAllowUnsafeSubscriptionSources.mockResolvedValue(false);
     mocks.lookup.mockRejectedValue(new Error("dns unavailable"));
     mocks.requestPinnedText.mockResolvedValue({ status: 200, headers: {}, content: "ss://node" });

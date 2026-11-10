@@ -24,6 +24,7 @@ function parseResult(nodes = [node("one")], errors: string[] = []) {
 describe("server-core source import branch coverage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.parseSubscription.mockReset();
     mocks.parseSubscription.mockReturnValue(parseResult());
   });
 
@@ -67,7 +68,7 @@ describe("server-core source import branch coverage", () => {
     expect(result.responseStatus).toBe(599);
   });
 
-  it("keeps an earlier usable attempt over later transport and smaller-result attempts", async () => {
+  it("keeps the first partial response without additional requests", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.userAgent === "two-nodes") {
         return { ok: true, content: "two-node-yaml", headers: { "content-type": "text/yaml" } };
@@ -89,10 +90,10 @@ describe("server-core source import branch coverage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.parsedNodes.map((node) => node.name)).toEqual(["two-a", "two-b"]);
-    expect(fetchText).toHaveBeenCalledTimes(3);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
-  it("prefers a later successful parse over an earlier transport failure", async () => {
+  it("returns the first transport failure without another profile request", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.userAgent === "failed") {
         return { ok: false, error: "HTTP 500", responseStatus: 500 };
@@ -106,12 +107,11 @@ describe("server-core source import branch coverage", () => {
       { fetchText, userAgents: ["failed", "success"] }
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.parsedNodes[0]?.name).toBe("recovered");
+    expect(result).toMatchObject({ok: false, responseStatus: 500});
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the first successful attempt when node counts tie and the later attempt has more errors", async () => {
+  it("keeps the first response and its parse warnings", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => ({
       ok: true,
       content: request.userAgent === "clean" ? "clean-yaml" : "warning-yaml",
@@ -129,10 +129,10 @@ describe("server-core source import branch coverage", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.parsedNodes[0]?.name).toBe("one");
-    expect(fetchText).toHaveBeenCalledTimes(2);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
-  it("prefers a later equally-sized parse when it has fewer parse errors", async () => {
+  it("preserves the first parse warnings without fetching cleaner alternatives", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => ({
       ok: true,
       content: request.userAgent === "noisy" ? "noisy-yaml" : "cleaner-yaml",
@@ -149,8 +149,9 @@ describe("server-core source import branch coverage", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.parsedNodes[0]?.name).toBe("cleaner");
-    expect(result.parseErrors).toEqual(["a"]);
+    expect(result.parsedNodes[0]?.name).toBe("noisy");
+    expect(result.parseErrors).toEqual(["a", "b"]);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
   it("returns the client-update placeholder message for unusable parsed attempts", async () => {

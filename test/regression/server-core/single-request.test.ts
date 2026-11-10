@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { importSubscriptionFromUrl } from "./source-import";
+import { importSubscriptionFromUrl } from "../../../packages/server-core/src/subscription/source-import";
 const content = "proxies:\n  - {name: test, type: trojan, server: example.com, port: 443, password: secret}";
 describe("single subscription request", () => {
   it.each([200, 429, 500])("requests a profile once for HTTP %s", async (status) => {

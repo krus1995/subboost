@@ -88,6 +88,7 @@ function openPinnedRequest(params: {
 export async function requestPinnedText(params: {
   url: string;
   addresses: readonly string[];
+  retryAddresses?: boolean;
   method: "GET" | "HEAD";
   userAgent: string;
   maxBytes: number;
@@ -96,7 +97,7 @@ export async function requestPinnedText(params: {
   const parsed = new URL(params.url);
   let lastError: unknown = new Error("No validated address is available");
   let response: IncomingMessage | null = null;
-  for (const address of params.addresses) {
+  for (const address of params.retryAddresses === false ? params.addresses.slice(0, 1) : params.addresses) {
     try {
       response = await openPinnedRequest({ ...params, parsed, address });
       break;

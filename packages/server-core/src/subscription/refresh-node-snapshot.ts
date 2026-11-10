@@ -38,6 +38,7 @@ type UrlNodeFetchResult = {
     message?: string;
     detail?: string;
     httpStatus?: number;
+    networkCode?: string;
   } | null;
   publicReason?: string | null;
   responseStatus?: number;
@@ -51,6 +52,7 @@ export type RefreshNodeSnapshotFailedSource = {
   errorCategory?: SubscriptionImportErrorCategory;
   httpStatus?: number;
   publicReason?: string | null;
+  networkCode?: string;
 };
 
 export type RefreshNodeSnapshotOptions = {
@@ -152,6 +154,7 @@ export async function refreshNodeSnapshot(
       errorCategory?: SubscriptionImportErrorCategory;
       httpStatus?: number;
       publicReason?: string | null;
+      networkCode?: string;
     } = {}
   ) => {
     failedSourceCount += 1;
@@ -210,20 +213,6 @@ export async function refreshNodeSnapshot(
         refreshedSourceCount += 1;
       }
       currentNodes = detached.nodes;
-      if (
-        typeof options.fetchUrlUserInfo === "function" &&
-        shouldFetchSupplementalUserInfoForSource(source)
-      ) {
-        const headers = await options.fetchUrlUserInfo(source);
-        if (headers) {
-          mergeResponseMetadata(headers);
-          const header = headers["subscription-userinfo"];
-          mergeSourceSubscriptionInfo(
-            source.id,
-            header ? resolveSubscriptionUserInfo(parseSubscriptionUserInfo(header)) : undefined
-          );
-        }
-      }
       continue;
     }
 
@@ -258,6 +247,7 @@ export async function refreshNodeSnapshot(
           errorCategory: errorInfo?.category ?? (firstParseError ? "parse" : undefined),
           httpStatus: errorInfo?.httpStatus ?? fetched.responseStatus,
           publicReason: fetched.publicReason ?? null,
+          networkCode: errorInfo?.networkCode,
         });
         continue;
       }
@@ -330,15 +320,14 @@ export async function refreshNodeSnapshot(
 
   if (
     typeof options.fetchUrlUserInfo === "function" &&
-    usedUrlFetch &&
     (
       !hasSubscriptionUserInfo(subscriptionInfo) ||
       savedSources.some((source) => source.type === "url" && shouldFetchSupplementalUserInfoForSource(source))
     )
   ) {
     for (const source of savedSources) {
-      if (source.type !== "url" || source.useProxyProviders) continue;
-      if (!shouldFetchSupplementalUserInfoForSource(source) && hasSubscriptionUserInfo(subscriptionInfo)) continue;
+      if (source.type !== "url") continue;
+      if (!shouldFetchSupplementalUserInfoForSource(source)) continue;
       const headers = await options.fetchUrlUserInfo(source);
       if (!headers) continue;
       mergeResponseMetadata(headers);

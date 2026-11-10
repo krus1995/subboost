@@ -1,3 +1,7 @@
+import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
+import { createHash } from "node:crypto";
+import { acquireLocalJobLease } from "./job-lease";
+import { prisma } from "./prisma";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import {
@@ -184,7 +188,8 @@ async function requestUnpinnedText(params: {
 
 async function fetchTextDirect(
   request: SourceImportTransportRequest,
-  allowUnsafeSubscriptionSources: boolean
+  allowUnsafeSubscriptionSources: boolean,
+  subscriptionRequest = true
 ): Promise<SourceImportTransportResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.timeoutMs);
@@ -196,11 +201,28 @@ async function fetchTextDirect(
       const validation = await validatePublicFetchTarget(currentUrl, allowUnsafeSubscriptionSources);
       if (!validation.ok) return validation.failure;
 
+      if (subscriptionRequest) {
+        const target = new URL(currentUrl);
+        target.hash = "";
+        const now = new Date();
+        await prisma.$executeRaw`DELETE FROM "JobLeaseLock" WHERE "name" LIKE 'subscription-request:%' AND "expiresAt" <= ${now}`;
+        const lease = await acquireLocalJobLease({
+          name: "subscription-request:" + createHash("sha256").update(target.href).digest("hex"),
+          leaseMs: 6 * 60 * 1000,
+          now,
+        });
+        if (!lease) {
+          const failure = toFailure("此订阅地址在 6 分钟内已请求，请稍后刷新", 429);
+          if (failure.errorInfo) failure.errorInfo.networkCode = "LOCAL_SUBSCRIPTION_COOLDOWN";
+          return failure;
+        }
+      }
       const method = request.purpose === "userinfo" ? "HEAD" : "GET";
       response = validation.addresses
         ? await requestPinnedText({
             url: currentUrl,
             addresses: validation.addresses,
+            retryAddresses: !subscriptionRequest,
             method,
             userAgent: request.userAgent,
             maxBytes: request.maxBytes,
@@ -245,25 +267,40 @@ async function fetchTextDirect(
 export async function fetchRuleContentDirect(url: string): Promise<SourceImportTransportResult> {
   const allowUnsafeSubscriptionSources = await getAllowUnsafeSubscriptionSources();
   return fetchTextDirect({ url, userAgent: SUBSCRIPTION_IMPORT_USER_AGENTS[0], purpose: "content",
-    timeoutMs: 15000, maxBytes: 10 * 1024 * 1024 }, allowUnsafeSubscriptionSources);
+    timeoutMs: 15000, maxBytes: 10 * 1024 * 1024 }, allowUnsafeSubscriptionSources, false);
 }
 
-export async function importSourceUrlDirect(request: SourceImportRequest): Promise<SourceImportResult> {
+export type SourceTransportResponses = Map<string, Promise<SourceImportTransportResult>>;
+
+function fetchSubscriptionTransport(request: SourceImportTransportRequest, allowUnsafe: boolean, responses?: SourceTransportResponses): Promise<SourceImportTransportResult> {
+  const normalized = tryNormalizeSubscriptionUrlInput(request.url);
+  if (!normalized) return Promise.resolve(toSecurityFailure("无效的订阅 URL"));
+  const target = new URL(normalized);
+  target.hash = "";
+  const key = target.href;
+  const cached = responses?.get(key);
+  if (cached) return cached;
+  const pending = fetchTextDirect({...request, url: key}, allowUnsafe);
+  responses?.set(key, pending);
+  return pending;
+}
+
+export async function importSourceUrlDirect(request: SourceImportRequest, responses?: SourceTransportResponses): Promise<SourceImportResult> {
   const allowUnsafeSubscriptionSources = await getAllowUnsafeSubscriptionSources();
   return importSubscriptionFromUrl(request, {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBytes: DEFAULT_MAX_BYTES,
-    fetchText: (transportRequest) => fetchTextDirect(transportRequest, allowUnsafeSubscriptionSources),
+    fetchText: (transportRequest) => fetchSubscriptionTransport(transportRequest, allowUnsafeSubscriptionSources, responses),
   });
 }
 
 export async function fetchSourceUserInfoHeadersDirect(source: {
   userinfoUrl?: string;
   userinfoUserAgent?: string;
-}): Promise<Record<string, string> | undefined> {
+}, responses?: SourceTransportResponses): Promise<Record<string, string> | undefined> {
   if (!source.userinfoUrl) return undefined;
   const allowUnsafeSubscriptionSources = await getAllowUnsafeSubscriptionSources();
-  const response = await fetchTextDirect(
+  const response = await fetchSubscriptionTransport(
     {
       url: source.userinfoUrl,
       userAgent: source.userinfoUserAgent?.trim() || SUBSCRIPTION_IMPORT_USER_AGENTS[0],
@@ -271,7 +308,7 @@ export async function fetchSourceUserInfoHeadersDirect(source: {
       timeoutMs: USERINFO_TIMEOUT_MS,
       maxBytes: USERINFO_MAX_BYTES,
     },
-    allowUnsafeSubscriptionSources
+    allowUnsafeSubscriptionSources, responses
   );
   return response.ok ? response.headers : undefined;
 }

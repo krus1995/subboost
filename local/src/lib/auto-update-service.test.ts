@@ -97,7 +97,7 @@ describe("local subscription auto update service", () => {
     mocks.readSubscriptionSecrets.mockReturnValue({ config: { rules: [] }, urls: ["https://airport.example/sub"], nodes: [] });
     mocks.extractHostsFromSubscriptionUrls.mockReturnValue(["airport.example"]);
     mocks.buildSubscriptionFetchCallbacks.mockReturnValue({ fetchSubscription: vi.fn() });
-    mocks.refreshNodeSnapshot.mockResolvedValue({ savedSources: [{ url: "https://airport.example/sub" }] });
+    mocks.refreshNodeSnapshot.mockResolvedValue({ failedSources: [], savedSources: [{ url: "https://airport.example/sub" }] });
     mocks.resolveAutomaticRefreshFailureAnalysis.mockReturnValue({
       failureState: { externalFailureCount: 1 },
       failureReason: "all sources failed",
@@ -123,6 +123,23 @@ describe("local subscription auto update service", () => {
     });
     mocks.encryptJson.mockImplementation((value) => ({ encrypted: value }));
     mocks.buildSubscriptionCacheExpiry.mockReturnValue(new Date("2026-06-07T00:00:00.000Z"));
+  });
+
+  it("skips local cooldown without recording failures or rewriting the previous snapshot", async () => {
+    mocks.refreshNodeSnapshot.mockResolvedValueOnce({savedSources: [], failedSources: [{networkCode: "LOCAL_SUBSCRIPTION_COOLDOWN"}]});
+    mocks.prepareRefreshCacheResult.mockReturnValueOnce({ok: false, reason: "all_sources_failed"});
+    await expect(runLocalSubscriptionAutoUpdateCron(now)).resolves.toMatchObject({outcomes: [{status: "skipped", recordHosts: false}]});
+    expect(mocks.prisma.subscription.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.subscriptionAutoUpdateState.upsert).not.toHaveBeenCalled();
+  });
+
+  it("preserves existing failure facts when another source succeeds during cooldown", async () => {
+    const previousState = {lastAttemptedAt: null, externalFailureCount: 2, failureSourceState: {previous: true}};
+    mocks.resolveSubscriptionAutoUpdateState.mockReturnValue(previousState);
+    mocks.refreshNodeSnapshot.mockResolvedValueOnce({savedSources: [], failedSources: [{networkCode: "LOCAL_SUBSCRIPTION_COOLDOWN"}]});
+    await runLocalSubscriptionAutoUpdateCron(now);
+    expect(mocks.prisma.subscriptionAutoUpdateState.upsert).toHaveBeenCalledWith(expect.objectContaining({update: previousState}));
+    expect(mocks.prisma.subscription.updateMany).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({encryptedNodes: expect.anything()})}));
   });
 
   it("uses the local six-minute minimum interval when saved values are lower", async () => {
