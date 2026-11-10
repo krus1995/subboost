@@ -7,7 +7,7 @@ const appUrl = "http://127.0.0.1:3000";
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await db.connect();
 const counts = new Map();
-const node = { name: "Retained node", type: "ss", server: "node.example", port: 443, cipher: "aes-128-gcm", password: "acceptance-only" };
+const node = { name: "Updated upstream node", type: "ss", server: "node.example", port: 443, cipher: "aes-128-gcm", password: "acceptance-only" };
 const upstream = createServer((request, response) => {
   const key = request.url;
   const requests = counts.get(key) ?? [];
@@ -41,7 +41,7 @@ const importSource = (path, status = 200) => api("/api/source-import", { method:
 const expectRequests = (path, expected) => assert.deepEqual(counts.get(path) ?? [], expected, `upstream requests for ${path}`);
 async function createSample(path) {
   const { subscription } = await api("/api/subscriptions", { method: "POST", status: 201, body: {
-    name: "Single request acceptance", nodes: [node], urls: [sourceUrl(path)], autoUpdateInterval: 360,
+    name: "Single request acceptance", nodes: [{ ...node, name: "Stored old node" }], urls: [sourceUrl(path)], autoUpdateInterval: 360,
     config: { enabledGroups: [] },
   } });
   sampleIds.push(subscription.id);
