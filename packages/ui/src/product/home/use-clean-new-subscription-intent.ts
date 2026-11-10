@@ -10,7 +10,6 @@ type Options = {
   setEditingSubscription: (subscription: null) => void;
   setSubscriptionName: (name: string) => void;
   setSubscriptionUrl: (url: string) => void;
-  setCopied: (copied: boolean) => void;
 };
 
 export function useCleanNewSubscriptionIntent({
@@ -19,7 +18,6 @@ export function useCleanNewSubscriptionIntent({
   setEditingSubscription,
   setSubscriptionName,
   setSubscriptionUrl,
-  setCopied,
 }: Options) {
   const shouldStartCleanNewSubscription = isCleanNewSubscriptionIntent(searchParams);
   const handledNewSubscriptionIntentRef = React.useRef(false);
@@ -37,10 +35,8 @@ export function useCleanNewSubscriptionIntent({
     setEditingSubscription(null);
     setSubscriptionName("");
     setSubscriptionUrl("");
-    setCopied(false);
   }, [
     authChecked,
-    setCopied,
     setEditingSubscription,
     setSubscriptionName,
     setSubscriptionUrl,

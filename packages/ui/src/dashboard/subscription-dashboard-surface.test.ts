@@ -108,8 +108,12 @@ vi.mock("@subboost/ui/dashboard/subscription-settings-dialog", () => ({
   },
 }));
 
-vi.mock("@subboost/ui/product/subscription/subscription-qr-code", () => ({
-  SubscriptionQrButton: (props: { url: string }) => { mocks.captures.qrUrl = props.url; return null; },
+vi.mock("@subboost/ui/product/subscription/subscription-link-menu", () => ({
+  SubscriptionLinkMenu: (props: { url: string; onDownloadClash: () => void }) => {
+    mocks.captures.linkMenu = props;
+    mocks.captures.buttons.push({ title: "下载订阅配置", onClick: props.onDownloadClash });
+    return React.createElement("button", null, "复制链接");
+  },
 }));
 
 import { SubscriptionDashboardSurface, type DashboardSurfaceAdapter } from "./subscription-dashboard-surface";
@@ -366,14 +370,8 @@ describe("SubscriptionDashboardSurface", () => {
     expect(notice.description).toContain("订阅源失败：当前可用配置仍会保留；请检查订阅 URL");
   });
 
-  it("copies, deletes, refreshes, and opens settings for subscriptions", async () => {
-    const { setters, adapter } = renderSurface(createAdapter(), { 0: [subscription, disabledSubscription], 1: false, 2: null, 3: null });
-
-    await mocks.captures.buttons.find((props: any) => props.title === "复制订阅链接").onClick();
-    await flushPromises();
-    expect(mocks.clipboardWriteText).toHaveBeenCalledWith("https://example.com/sub");
-    expect(setters[2]).toHaveBeenCalledWith("sub-1");
-    expect(setters[2]).toHaveBeenCalledWith(null);
+  it("deletes, refreshes, and opens settings for subscriptions", async () => {
+    const { setters, adapter } = renderSurface(createAdapter(), { 0: [subscription, disabledSubscription], 1: false, 2: null });
 
     mocks.captures.buttons.find((props: any) => props.className?.includes("text-red-400")).onClick();
     await flushPromises();
@@ -383,43 +381,26 @@ describe("SubscriptionDashboardSurface", () => {
 
     mocks.captures.buttons.find((props: any) => props.title === "重新生成配置并刷新缓存").onClick();
     await flushPromises();
-    expect(setters[3]).toHaveBeenCalledWith("sub-1");
+    expect(setters[2]).toHaveBeenCalledWith("sub-1");
     expect(adapter.refreshSubscription).toHaveBeenCalledWith("sub-1");
     expect(adapter.fetchSubscriptions).toHaveBeenCalled();
     expect(mocks.toast).toHaveBeenCalledWith({ title: "刷新成功", variant: "success" });
 
     mocks.captures.buttons.find((props: any) => props.title === "订阅设置（改名 / 自动更新）").onClick();
-    expect(setters[5]).toHaveBeenCalledWith(subscription);
-    expect(setters[6]).toHaveBeenCalledWith("Primary");
+    expect(setters[4]).toHaveBeenCalledWith(subscription);
+    expect(setters[5]).toHaveBeenCalledWith("Primary");
+    expect(setters[6]).toHaveBeenCalledWith(true);
     expect(setters[7]).toHaveBeenCalledWith(true);
-    expect(setters[8]).toHaveBeenCalledWith(true);
-    expect(setters[9]).toHaveBeenCalledWith(24);
-    expect(setters[4]).toHaveBeenCalledWith(true);
+    expect(setters[8]).toHaveBeenCalledWith(24);
+    expect(setters[3]).toHaveBeenCalledWith(true);
 
     const settingsButtons = mocks.captures.buttons.filter((props: any) => props.title === "订阅设置（改名 / 自动更新）");
     settingsButtons[1].onClick();
-    expect(setters[5]).toHaveBeenCalledWith(disabledSubscription);
-    expect(setters[8]).toHaveBeenCalledWith(false);
-    expect(setters[9]).toHaveBeenCalledWith(24);
+    expect(setters[4]).toHaveBeenCalledWith(disabledSubscription);
+    expect(setters[7]).toHaveBeenCalledWith(false);
+    expect(setters[8]).toHaveBeenCalledWith(24);
   });
 
-  it("falls back to legacy copy for non-secure self-host origins", async () => {
-    const dom = stubDocumentActions();
-    vi.stubGlobal("navigator", {});
-    const { setters } = renderSurface(createAdapter(), { 0: [subscription], 1: false, 2: null, 3: null });
-
-    await mocks.captures.buttons.find((props: any) => props.title === "复制订阅链接").onClick();
-    await flushPromises();
-
-    expect(dom.createElement).toHaveBeenCalledWith("textarea");
-    expect(dom.textarea.value).toBe("https://example.com/sub");
-    expect(dom.textarea.select).toHaveBeenCalled();
-    expect(dom.textarea.setSelectionRange).toHaveBeenCalledWith(0, dom.textarea.value.length);
-    expect(dom.execCommand).toHaveBeenCalledWith("copy");
-    expect(dom.textarea.remove).toHaveBeenCalled();
-    expect(setters[2]).toHaveBeenCalledWith("sub-1");
-    expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" }));
-  });
 
   it("downloads subscription YAML with a yaml filename instead of opening a new tab", async () => {
     const dom = stubDocumentActions();
@@ -433,7 +414,7 @@ describe("SubscriptionDashboardSurface", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("URL", TestURL);
 
-    renderSurface(createAdapter(), { 0: [subscription], 1: false, 2: null, 3: null });
+    renderSurface(createAdapter(), { 0: [subscription], 1: false, 2: null });
     await mocks.captures.buttons.find((props: any) => props.title === "下载订阅配置").onClick();
     await flushPromises();
 
@@ -448,28 +429,23 @@ describe("SubscriptionDashboardSurface", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:subboost-config");
   });
 
-  it("keeps the Loon URL consistent and checks compatibility only on request", async () => {
-    const configUrl = "https://example.test/subboost/api/subscriptions/token-1/config.yaml?download=1";
-    const loonUrl = "https://example.test/subboost/api/subscriptions/token-1/loon.conf?download=1";
+  it("passes the current saved URL to the format copy menu without fetching configurations", () => {
+    const url = "https://example.test/subboost/api/subscriptions/token-1/config.yaml?download=1";
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    renderSurface(createAdapter(), { 0: [{ ...subscription, subscriptionUrl: configUrl }], 1: false, 12: "loon" });
-    expect(mocks.captures.qrUrl).toBe(loonUrl);
-    expect(mocks.captures.buttons.some((props: { children?: unknown }) => props.children === "检查 Loon 配置")).toBe(true);
-    expect(mocks.captures.buttons.some((props: { title?: string }) => props.title === "打开 Loon")).toBe(false);
+    const { html } = renderSurface(createAdapter(), { 0: [{ ...subscription, subscriptionUrl: url }], 1: false });
+    expect(mocks.captures.linkMenu.url).toBe(url);
+    expect(html).toContain("复制链接");
+    expect(html).not.toContain("检查 Loon 配置");
     expect(fetchMock).not.toHaveBeenCalled();
-    await mocks.captures.buttons.find((props: { title?: string }) => props.title === "复制订阅链接").onClick();
-    await flushPromises();
-    expect(mocks.clipboardWriteText).toHaveBeenCalledWith(loonUrl);
-  });
-  it("reports download failures without opening the subscription URL", async () => {
+  });  it("reports download failures without opening the subscription URL", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const dom = stubDocumentActions();
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new Error("cors");
     }));
 
-    renderSurface(createAdapter(), { 0: [subscription], 1: false, 2: null, 3: null });
+    renderSurface(createAdapter(), { 0: [subscription], 1: false, 2: null });
     await mocks.captures.buttons.find((props: any) => props.title === "下载订阅配置").onClick();
     await flushPromises();
 
@@ -512,7 +488,7 @@ describe("SubscriptionDashboardSurface", () => {
       0: [crossOriginSubscription],
       1: false,
       2: null,
-      3: null,
+      2: null,
     });
     await mocks.captures.buttons.find((props: any) => props.title === "下载订阅配置").onClick();
     await flushPromises();
@@ -525,12 +501,12 @@ describe("SubscriptionDashboardSurface", () => {
   it("guards cancelled delete and in-flight refresh failures", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const adapter = createAdapter({ refreshSubscription: vi.fn(async () => { throw new Error("refresh failed"); }) });
-    renderSurface(adapter, { 0: [subscription], 1: false, 2: null, 3: "sub-1" });
+    renderSurface(adapter, { 0: [subscription], 1: false, 2: "sub-1" });
     mocks.captures.buttons.find((props: any) => props.title === "重新生成配置并刷新缓存").onClick();
     await flushPromises();
     expect(adapter.refreshSubscription).not.toHaveBeenCalled();
 
-    renderSurface(adapter, { 0: [subscription], 1: false, 2: null, 3: null });
+    renderSurface(adapter, { 0: [subscription], 1: false, 2: null });
     mocks.captures.buttons.find((props: any) => props.title === "重新生成配置并刷新缓存").onClick();
     await flushPromises();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "refresh failed", variant: "destructive" }));
@@ -541,13 +517,13 @@ describe("SubscriptionDashboardSurface", () => {
     expect(adapter.deleteSubscription).not.toHaveBeenCalled();
 
     const badRefreshAdapter = createAdapter({ refreshSubscription: vi.fn(async () => { throw "bad"; }) });
-    renderSurface(badRefreshAdapter, { 0: [subscription], 1: false, 2: null, 3: null });
+    renderSurface(badRefreshAdapter, { 0: [subscription], 1: false, 2: null });
     mocks.captures.buttons.find((props: any) => props.title === "重新生成配置并刷新缓存").onClick();
     await flushPromises();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "刷新失败，请稍后重试", variant: "destructive" }));
 
     const deleteFailAdapter = createAdapter({ deleteSubscription: vi.fn(async () => { throw new Error("delete failed"); }) });
-    renderSurface(deleteFailAdapter, { 0: [subscription], 1: false, 2: null, 3: null });
+    renderSurface(deleteFailAdapter, { 0: [subscription], 1: false, 2: null });
     mocks.captures.buttons.find((props: any) => props.className?.includes("text-red-400")).onClick();
     await flushPromises();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "删除失败，请稍后重试", variant: "destructive" }));
@@ -565,7 +541,7 @@ describe("SubscriptionDashboardSurface", () => {
   it("confirms link rotation, guards duplicate clicks and preserves unsaved settings", async () => {
     const link = { id: subscription.id, token: "rotated", subscriptionUrl: "https://local.subboost.test/new" };
     const adapter = createAdapter({ resetSubscriptionLink: vi.fn(async () => link) });
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Unsaved name" });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Unsaved name" });
     mocks.confirmDialog.mockResolvedValueOnce(false);
     await mocks.captures.settingsDialog.onResetLink();
     expect(adapter.resetSubscriptionLink).not.toHaveBeenCalled();
@@ -575,13 +551,13 @@ describe("SubscriptionDashboardSurface", () => {
     await first;
     expect(adapter.resetSubscriptionLink).toHaveBeenCalledExactlyOnceWith(subscription.id, subscription.token);
     expect((stateMock.setters[0] as any).lastValue[0]).toEqual({ ...subscription, ...link });
-    expect((stateMock.setters[5] as any).lastValue).toEqual({ ...subscription, ...link });
-    expect(stateMock.setters[6]).not.toHaveBeenCalled();
+    expect((stateMock.setters[4] as any).lastValue).toEqual({ ...subscription, ...link });
+    expect(stateMock.setters[5]).not.toHaveBeenCalled();
   });
 
   it("retains the current link when reset fails", async () => {
     const adapter = createAdapter({ resetSubscriptionLink: vi.fn(async () => { throw new Error("reset failed"); }) });
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription });
     mocks.confirmDialog.mockResolvedValueOnce(true);
     await mocks.captures.settingsDialog.onResetLink();
     expect(stateMock.setters[0]).not.toHaveBeenCalled();
@@ -591,23 +567,23 @@ describe("SubscriptionDashboardSurface", () => {
   it("validates and saves subscription settings", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const adapter = createAdapter();
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "  ", 7: true, 8: true, 9: 24, 10: false });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "  ", 6: true, 7: true, 8: 24, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "订阅名称不能为空且长度不能超过 100 字符", variant: "warning" }));
 
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Renamed", 7: false, 8: true, 9: 5, 10: false });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Renamed", 6: false, 7: true, 8: 5, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "自动更新最小间隔为 6 小时", variant: "warning" }));
 
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Renamed", 7: false, 8: true, 9: Number.NaN, 10: false });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Renamed", 6: false, 7: true, 8: Number.NaN, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "自动更新间隔必须是有效小时数", variant: "warning" }));
 
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Renamed", 7: false, 8: true, 9: 6.5, 10: false });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Renamed", 6: false, 7: true, 8: 6.5, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "自动更新间隔必须是整数小时", variant: "warning" }));
 
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Renamed", 7: false, 8: true, 9: 6, 10: false });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Renamed", 6: false, 7: true, 8: 6, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(adapter.updateSubscriptionSettings).toHaveBeenCalledWith("sub-1", {
       name: "Renamed",
@@ -615,18 +591,18 @@ describe("SubscriptionDashboardSurface", () => {
       autoUpdateInterval: 21600,
     });
     expect(stateMock.setters[0]).toHaveBeenCalledWith(expect.any(Function));
-    expect(stateMock.setters[4]).toHaveBeenCalledWith(false);
+    expect(stateMock.setters[3]).toHaveBeenCalledWith(false);
 
     renderSurface(adapter, {
       0: [quotaWarningSubscription],
       1: false,
-      4: true,
-      5: quotaWarningSubscription,
-      6: "Quota warning",
+      3: true,
+      4: quotaWarningSubscription,
+      5: "Quota warning",
+      6: true,
       7: true,
-      8: true,
-      9: 24,
-      10: false,
+      8: 24,
+      9: false,
     });
     await mocks.captures.settingsDialog.onSave();
     expect((stateMock.setters[0] as any).lastValue[0].autoUpdateState).toEqual(
@@ -636,18 +612,18 @@ describe("SubscriptionDashboardSurface", () => {
     renderSurface(adapter, {
       0: [disabledSubscription],
       1: false,
-      4: true,
-      5: disabledSubscription,
-      6: "Re-enabled",
+      3: true,
+      4: disabledSubscription,
+      5: "Re-enabled",
+      6: true,
       7: true,
-      8: true,
-      9: 24,
-      10: false,
+      8: 24,
+      9: false,
     });
     await mocks.captures.settingsDialog.onSave();
     expect((stateMock.setters[0] as any).lastValue[0].autoUpdateState).toEqual(subscription.autoUpdateState);
 
-    renderSurface(adapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Manual", 7: true, 8: false, 9: 24, 10: false });
+    renderSurface(adapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Manual", 6: true, 7: false, 8: 24, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(adapter.updateSubscriptionSettings).toHaveBeenCalledWith("sub-1", {
       name: "Manual",
@@ -656,14 +632,14 @@ describe("SubscriptionDashboardSurface", () => {
     });
 
     const guardedAdapter = createAdapter();
-    renderSurface(guardedAdapter, { 0: [subscription], 1: false, 4: true, 5: null, 6: "No sub", 7: true, 8: false, 9: 24, 10: false });
+    renderSurface(guardedAdapter, { 0: [subscription], 1: false, 3: true, 4: null, 5: "No sub", 6: true, 7: false, 8: 24, 9: false });
     await mocks.captures.settingsDialog.onSave();
-    renderSurface(guardedAdapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Saving", 7: true, 8: false, 9: 24, 10: true });
+    renderSurface(guardedAdapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Saving", 6: true, 7: false, 8: 24, 9: true });
     await mocks.captures.settingsDialog.onSave();
     expect(guardedAdapter.updateSubscriptionSettings).not.toHaveBeenCalled();
 
     const failingAdapter = createAdapter({ updateSubscriptionSettings: vi.fn(async () => { throw new Error("save failed"); }) });
-    renderSurface(failingAdapter, { 0: [subscription], 1: false, 4: true, 5: subscription, 6: "Renamed", 7: true, 8: false, 9: 24, 10: false });
+    renderSurface(failingAdapter, { 0: [subscription], 1: false, 3: true, 4: subscription, 5: "Renamed", 6: true, 7: false, 8: 24, 9: false });
     await mocks.captures.settingsDialog.onSave();
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "save failed", variant: "destructive" }));
     expect(errorSpy).toHaveBeenCalledWith(

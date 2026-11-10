@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   loadSubscription: vi.fn(),
   parseMultipleSources: vi.fn(),
   setConfigDraftUserScope: vi.fn(),
-  setCopied: vi.fn(),
   setEditingSubscription: vi.fn(),
   setSaveRequirementDialog: vi.fn(),
   setSources: vi.fn(),
@@ -110,7 +109,6 @@ vi.mock("@subboost/ui/product/home/use-subscription-link", () => ({
     handleAcceptSaveRequirement: mocks.handleAcceptSaveRequirement,
     setSubscriptionName: mocks.setSubscriptionName,
     setSubscriptionUrl: mocks.setSubscriptionUrl,
-    setCopied: mocks.setCopied,
   })),
 }));
 
@@ -206,7 +204,6 @@ describe("HomeSurface", () => {
     });
     expect(mocks.captures.cleanIntent).toMatchObject({
       authChecked: false,
-      setCopied: mocks.setCopied,
       setEditingSubscription: mocks.setEditingSubscription,
     });
     expect(mocks.captures.editingLoader).toMatchObject({

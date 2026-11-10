@@ -68,6 +68,10 @@ vi.mock("@subboost/ui/components/ui/dialog", () => ({
   DialogTitle: (props: any) => React.createElement("h2", props, props.children),
 }));
 
+vi.mock("@subboost/ui/product/subscription/subscription-link-menu", () => ({
+  SubscriptionLinkMenu: ({ url }: { url: string }) => React.createElement("button", { "data-url": url }, "复制链接"),
+}));
+
 import { SubscriptionLinkDialog } from "./subscription-link-dialog";
 
 const baseUser: User = {
@@ -117,7 +121,7 @@ const baseProps = {
   copied: false,
   isEditingExistingSubscription: false,
   user: baseUser,
-  handleCopyUrl: vi.fn(),
+  onLinkCopied: vi.fn(),
   handleCreateSubscription: vi.fn(),
 };
 
@@ -166,56 +170,19 @@ describe("SubscriptionLinkDialog", () => {
     expect(baseProps.handleCreateSubscription).toHaveBeenCalled();
   });
 
-  it("offers the native Loon URL and an explicit compatibility check", () => {
-    captures.format = "loon";
+  it("offers the shared format copy menu for saved subscriptions", () => {
     const url = "https://example.test/subboost/api/subscriptions/secret/config.yaml?download=1";
-    const loonUrl = "https://example.test/subboost/api/subscriptions/secret/loon.conf?download=1";
-    const html = renderToStaticMarkup(React.createElement(SubscriptionLinkDialog, { ...baseProps, subscriptionUrl: url }));
-    expect(html).toContain("Loon 客户端导入使用");
-    expect(captures.inputs.some((input: { value?: string }) => input.value === loonUrl)).toBe(true);
-    expect(html).toContain("检查 Loon 配置");
-    expect(html).not.toContain("loon://import");
-    expect(html).toContain("订阅链接二维码");
-    expect(baseProps.handleCopyUrl).not.toHaveBeenCalled();
-  });
-  it("unmounts the previous Loon check when saving the same subscription again", () => {
-    captures.format = "loon";
-    const html = renderToStaticMarkup(React.createElement(SubscriptionLinkDialog, {
-      ...baseProps,
-      subscriptionUrl: "https://example.test/subscriptions/token/config.yaml",
-      isEditingExistingSubscription: true,
-      isCreatingSubscription: true,
-    }));
-    expect(html).not.toContain("检查 Loon 配置");
-  });
-  it("renders generated links and copy/finish actions", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(SubscriptionLinkDialog, {
-        ...baseProps,
-        subscriptionUrl: "https://sub.example.com/sub/token",
-        copied: true,
-        isEditingExistingSubscription: true,
-      })
-    );
-
+    const html = renderToStaticMarkup(React.createElement(SubscriptionLinkDialog, { ...baseProps, subscriptionUrl: url, isEditingExistingSubscription: true }));
     expect(html).toContain("订阅链接已更新");
-    expect(html).toContain("复制下方链接到 Clash 客户端导入使用");
-    expect(html).toContain("更新成功");
-    expect(html).toContain("<svg");
-    expect(html).toContain("订阅链接二维码");
-    expect(html).toContain("check-icon");
-    expect(captures.inputs[0]).toMatchObject({
-      value: "https://sub.example.com/sub/token",
-      readOnly: true,
-    });
-
-    captures.buttons[0].onClick();
-    captures.buttons[1].onClick();
-
-    expect(baseProps.handleCopyUrl).toHaveBeenCalled();
+    expect(html).toContain("选择 Clash 或 Loon");
+    expect(html).toContain("复制链接");
+    expect(html).toContain(url.replace("&", "&amp;"));
+    expect(html).not.toContain("可在仪表盘管理订阅");
+    expect(html).not.toContain("检查 Loon 配置");
+    expect(captures.inputs).toHaveLength(0);
+    captures.buttons.at(-1).onClick();
     expect(baseProps.onOpenChange).toHaveBeenCalledWith(false);
   });
-
   it("disables link creation while name is empty or a request is running", () => {
     renderToStaticMarkup(
       React.createElement(SubscriptionLinkDialog, {

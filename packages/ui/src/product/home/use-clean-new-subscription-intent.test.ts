@@ -43,7 +43,6 @@ function useCleanIntentHook(overrides: Partial<Parameters<typeof useCleanNewSubs
     setEditingSubscription: vi.fn(),
     setSubscriptionName: vi.fn(),
     setSubscriptionUrl: vi.fn(),
-    setCopied: vi.fn(),
     ...overrides,
   };
   useCleanNewSubscriptionIntent(params);
@@ -65,7 +64,6 @@ describe("useCleanNewSubscriptionIntent", () => {
     expect(params.setEditingSubscription).toHaveBeenCalledWith(null);
     expect(params.setSubscriptionName).toHaveBeenCalledWith("");
     expect(params.setSubscriptionUrl).toHaveBeenCalledWith("");
-    expect(params.setCopied).toHaveBeenCalledWith(false);
 
     useCleanIntentHook();
     expect(mocks.reset).toHaveBeenCalledTimes(1);

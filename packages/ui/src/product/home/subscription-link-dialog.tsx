@@ -1,20 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { LoonSubscriptionActions } from "@subboost/ui/product/subscription/loon-subscription-actions";
-import { ConfigFormatSelect } from "@subboost/ui/product/subscription/config-format-select";
-import { subscriptionFormatUrl, type ConfigFormat } from "@subboost/ui/product/subscription/config-format";
-import { copyTextToClipboard } from "@subboost/ui/lib/clipboard";
-import { toast } from "@subboost/ui/components/ui/toaster";
-import { Check, Copy, Link as LinkIcon, Loader2 } from "lucide-react";
+import { SubscriptionLinkMenu } from "@subboost/ui/product/subscription/subscription-link-menu";
+import { Link as LinkIcon, Loader2 } from "lucide-react";
 import { Button } from "@subboost/ui/components/ui/button";
 import { FormField } from "@subboost/ui/components/ui/form-field";
-import { IconButton } from "@subboost/ui/components/ui/icon-button";
 import { Input } from "@subboost/ui/components/ui/input";
 import { Switch } from "@subboost/ui/components/ui/switch";
 import { SwitchField } from "@subboost/ui/components/ui/switch-field";
 import { SmartNodeMatchingHelp } from "@subboost/ui/components/subscription/smart-node-matching-help";
-import { SubscriptionQrCode } from "@subboost/ui/product/subscription/subscription-qr-code";
 import {
   Dialog,
   DialogContent,
@@ -42,10 +36,9 @@ type Props = {
   smartNodeMatchingEnabled: boolean;
   setSmartNodeMatchingEnabled: (value: boolean) => void;
   isCreatingSubscription: boolean;
-  copied: boolean;
   isEditingExistingSubscription: boolean;
-  handleCopyUrl: () => void;
   handleCreateSubscription: () => void;
+  onLinkCopied: () => void;
 };
 
 export function SubscriptionLinkDialog({
@@ -62,20 +55,10 @@ export function SubscriptionLinkDialog({
   smartNodeMatchingEnabled,
   setSmartNodeMatchingEnabled,
   isCreatingSubscription,
-  copied,
   isEditingExistingSubscription,
-  handleCopyUrl,
   handleCreateSubscription,
+  onLinkCopied,
 }: Props) {
-  const [format, setFormat] = React.useState<ConfigFormat>("clash");
-  const [copiedLoonUrl, setCopiedLoonUrl] = React.useState("");
-  const selectedUrl = subscriptionFormatUrl(subscriptionUrl, format);
-  const selectedCopied = format === "clash" ? copied : copiedLoonUrl === selectedUrl;
-  const copySelectedUrl = async () => {
-    if (format === "clash") { handleCopyUrl(); return; }
-    if (await copyTextToClipboard(selectedUrl)) setCopiedLoonUrl(selectedUrl);
-    else toast({ title: "复制失败，请手动复制订阅链接", variant: "destructive" });
-  };
   const close = () => onOpenChange(false);
   const minAutoUpdateLabel = getAutoUpdateIntervalPolicyMinLabel(autoUpdatePolicy);
 
@@ -91,14 +74,14 @@ export function SubscriptionLinkDialog({
           </DialogTitle>
           <DialogDescription>
             {subscriptionUrl
-              ? `复制下方链接到 ${format === "loon" ? "Loon" : "Clash"} 客户端导入使用`
+              ? "点击复制链接，选择 Clash 或 Loon 后导入客户端"
               : isEditingExistingSubscription
                 ? "将覆盖该订阅的配置与订阅源，链接保持不变"
                 : "生成持久化的订阅链接，支持在 Clash 客户端中自动更新"}
           </DialogDescription>
         </DialogHeader>
 
-        {!subscriptionUrl ? (
+        {!subscriptionUrl && (
           <div className="space-y-4 py-4">
             <FormField label="订阅名称">
               <Input
@@ -167,39 +150,6 @@ export function SubscriptionLinkDialog({
               </ul>
             </div>
           </div>
-        ) : (
-          <div className="space-y-4 py-4">
-            <ConfigFormatSelect value={format} onChange={setFormat} />
-            <SubscriptionQrCode url={selectedUrl} />
-            {format === "loon" && !isCreatingSubscription && <LoonSubscriptionActions key={selectedUrl} url={selectedUrl} />}
-            <div className="space-y-2">
-              <p className="text-sm font-medium">订阅链接</p>
-              <div className="flex gap-2">
-                <Input value={selectedUrl} readOnly className="font-mono text-xs" />
-                <IconButton
-                  label={selectedCopied ? "已复制订阅链接" : "复制订阅链接"}
-                  variant="outline"
-                  onClick={() => void copySelectedUrl()}
-                  className="flex-shrink-0"
-                >
-                  {selectedCopied ? (
-                    <Check className="h-4 w-4 text-green-400" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </IconButton>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-sm">
-              <p className="text-green-200 font-medium mb-1">
-                ✅ {isEditingExistingSubscription ? "更新成功" : "创建成功"}
-              </p>
-              <p className="text-xs text-success-muted-fg">
-                {isEditingExistingSubscription ? "订阅链接保持不变，可在仪表盘查看" : "您可以在仪表盘中管理所有订阅"}
-              </p>
-            </div>
-          </div>
         )}
 
         <DialogFooter>
@@ -221,7 +171,10 @@ export function SubscriptionLinkDialog({
               </Button>
             </>
           ) : (
-            <Button onClick={close}>完成</Button>
+            <>
+              <Button variant="outline" onClick={close}>完成</Button>
+              <SubscriptionLinkMenu key={subscriptionUrl} url={subscriptionUrl} variant="default" onCopied={onLinkCopied} />
+            </>
           )}
         </DialogFooter>
       </DialogContent>

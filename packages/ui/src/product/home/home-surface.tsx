@@ -126,7 +126,7 @@ function HomeSurfaceInner({ adapter }: Props) {
     cnIpNoResolve,
     experimentalCnUseCnRuleSet,
   });
-  const { setSubscriptionName, setSubscriptionUrl, setCopied } = subscription;
+  const { setSubscriptionName, setSubscriptionUrl } = subscription;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -168,7 +168,6 @@ function HomeSurfaceInner({ adapter }: Props) {
   useCleanNewSubscriptionIntent({
     authChecked,
     searchParams,
-    setCopied,
     setEditingSubscription,
     setSubscriptionName,
     setSubscriptionUrl,
@@ -180,7 +179,6 @@ function HomeSurfaceInner({ adapter }: Props) {
     authChecked,
     loadSubscription: adapter?.loadSubscription,
     loginHref: adapter?.loginHref ?? adapter?.subscription?.loginHref,
-    setCopied,
     setEditingSubscription,
     setStoreSources,
     setSubscriptionName,

@@ -95,7 +95,6 @@ function makeOptions(overrides: Record<string, unknown> = {}) {
     editSubscriptionId: "sub-1",
     loadSubscription: vi.fn(),
     loginHref: "/login",
-    setCopied: vi.fn(),
     setEditingSubscription: vi.fn(),
     setStoreSources: vi.fn(),
     setSubscriptionName: vi.fn(),
@@ -330,7 +329,6 @@ describe("useEditingSubscriptionLoader", () => {
     });
     expect(options.setSubscriptionName).toHaveBeenCalledWith("Saved");
     expect(options.setSubscriptionUrl).toHaveBeenCalledWith("");
-    expect(options.setCopied).toHaveBeenCalledWith(false);
   });
 
   it("falls back to URL sources when config sources are absent", async () => {

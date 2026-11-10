@@ -36,7 +36,6 @@ import {
   type ProductInteractionResult,
   type ProductMode,
 } from "@subboost/ui/product/interactions";
-import { copyTextToClipboard } from "@subboost/ui/lib/clipboard";
 
 type EditingSubscription = {
   id: string;
@@ -143,7 +142,6 @@ export function useSubscriptionLink({
   const [autoUpdateHours, setAutoUpdateHours] = React.useState(autoUpdatePolicy.defaultHours);
   const [smartNodeMatchingEnabled, setSmartNodeMatchingEnabled] = React.useState(true);
   const [isCreatingSubscription, setIsCreatingSubscription] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
   const [saveRequirementDialog, setSaveRequirementDialog] = React.useState(false);
   const [subscriptionFlowMode, setSubscriptionFlowMode] = React.useState<ProductMode>("quick");
   const interactions = useProductInteractionAdapter();
@@ -504,24 +502,12 @@ export function useSubscriptionLink({
     trackSubscriptionMutation,
   ]);
 
-  // 复制订阅链接
-  const handleCopyUrl = React.useCallback(async () => {
-    if (!subscriptionUrl) return;
-
-    const copied = await copyTextToClipboard(subscriptionUrl);
-    if (!copied) {
-      toast({ title: "复制失败，请手动复制订阅链接", variant: "destructive" });
-      return;
-    }
-
-    setCopied(true);
+  const handleLinkCopied = React.useCallback(() => {
     interactions.subscriptionLinkCopied?.({
       mode: subscriptionFlowMode,
       flow: isEditingExistingSubscription ? "update" : "create",
     });
-    setTimeout(() => setCopied(false), 2000);
-  }, [interactions, isEditingExistingSubscription, subscriptionFlowMode, subscriptionUrl]);
-
+  }, [interactions, isEditingExistingSubscription, subscriptionFlowMode]);
   return {
     // state
     subscriptionDialog,
@@ -538,8 +524,6 @@ export function useSubscriptionLink({
     smartNodeMatchingEnabled,
     setSmartNodeMatchingEnabled,
     isCreatingSubscription,
-    copied,
-    setCopied,
     saveRequirementDialog,
     setSaveRequirementDialog,
     isEditingExistingSubscription,
@@ -548,6 +532,6 @@ export function useSubscriptionLink({
     handleGenerateSubscription,
     handleAcceptSaveRequirement,
     handleCreateSubscription,
-    handleCopyUrl,
+    handleLinkCopied,
   };
 }
