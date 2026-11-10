@@ -41,8 +41,8 @@ const importSource = (path, status = 200) => api("/api/source-import", { method:
 const expectRequests = (path, expected) => assert.deepEqual(counts.get(path) ?? [], expected, `upstream requests for ${path}`);
 async function createSample(path) {
   const { subscription } = await api("/api/subscriptions", { method: "POST", status: 201, body: {
-    name: "Single request acceptance", nodes: [{ ...node, name: "Stored old node" }], urls: [sourceUrl(path)], autoUpdateInterval: 360,
-    config: { enabledGroups: [] },
+    name: "Single request acceptance", smartNodeMatchingEnabled: false, nodes: [{ ...node, name: "Stored old node", _sourceIds: ["acceptance-source"] }], urls: [sourceUrl(path)], autoUpdateInterval: 360,
+    config: { enabledGroups: [], sources: [{ id: "acceptance-source", type: "url", content: sourceUrl(path), lastParsedContent: sourceUrl(path) }] },
   } });
   sampleIds.push(subscription.id);
   return "/api/subscriptions/" + subscription.id;
