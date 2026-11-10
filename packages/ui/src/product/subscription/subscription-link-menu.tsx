@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy } from "lucide-react";
+import { Copy, MoreHorizontal } from "lucide-react";
 import { Button } from "@subboost/ui/components/ui/button";
 import { Input } from "@subboost/ui/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@subboost/ui/components/ui/dialog";
@@ -76,10 +76,34 @@ export function SubscriptionLinkMenu({ url, onDownloadClash, onCopied, context =
           <span className={isDashboard ? "hidden sm:inline" : undefined}>复制链接</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-36 border-ink/10 bg-surface-raised text-fg">
-        {formats.map((format) => <DropdownMenuItem key={format.value} className="focus:bg-ink/5 focus:text-fg" onSelect={() => void copy(format.value)}>{format.label}</DropdownMenuItem>)}
-        <DropdownMenuSeparator className="bg-ink/10" />
-        <DropdownMenuItem className="focus:bg-ink/5 focus:text-fg" onSelect={() => setDialog({ kind: "more", format: "clash", url })}>更多方式</DropdownMenuItem>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-0 w-[min(var(--radix-dropdown-menu-content-available-width),max(12rem,var(--radix-dropdown-menu-trigger-width)))] border-ink/10 bg-surface-raised p-0 text-fg"
+      >
+        <div className="py-1">
+          {formats.map((format) => (
+            <DropdownMenuItem
+              key={format.value}
+              aria-label={format.label}
+              textValue={format.label}
+              className="gap-3 rounded-none px-4 py-2 text-fg-60 focus:bg-ink/5 focus:text-fg"
+              onSelect={() => void copy(format.value)}
+            >
+              <Copy className="h-4 w-4" aria-hidden="true" />
+              <span>{format.label}</span>
+            </DropdownMenuItem>
+          ))}
+        </div>
+        <DropdownMenuSeparator className="m-0 bg-ink/10" />
+        <DropdownMenuItem
+          aria-label="更多方式"
+          textValue="更多方式"
+          className="gap-3 rounded-none px-4 py-2 text-fg-60 focus:bg-ink/5 focus:text-fg"
+          onSelect={() => setDialog({ kind: "more", format: "clash", url })}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          <span>更多方式</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
     <Dialog open={currentDialog.kind !== "closed"} onOpenChange={(open) => { if (!open) setDialog({ kind: "closed" }); }}>

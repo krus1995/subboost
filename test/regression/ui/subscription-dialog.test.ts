@@ -11,6 +11,7 @@ const captures = vi.hoisted(() => ({
 }));
 
 vi.mock("lucide-react", () => ({
+  MoreHorizontal: () => null,
   ChevronDown: () => null,
   Check: () => React.createElement("span", null, "check-icon"),
   Copy: () => React.createElement("span", null, "copy-icon"),

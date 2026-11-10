@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Item = {
+  "aria-label": string;
   children?: React.ReactNode;
   onSelect?: () => unknown
 };
@@ -104,7 +105,9 @@ function render(nextUrl = url, withCallbacks = true) {
   return renderToStaticMarkup(React.createElement(SubscriptionLinkMenu, { url: nextUrl, ...(withCallbacks ? { onCopied, onDownloadClash } : {}) }));
 }
 async function select(label: string) {
-  await mocks.items.find((item) => item.children === label)?.onSelect?.();
+  const item = mocks.items.find((candidate) => candidate["aria-label"] === label);
+  expect(item, `Menu item ${label} must be available`).toBeDefined();
+  await item?.onSelect?.();
   await Promise.resolve();
 }
 describe("SubscriptionLinkMenu", () => {
@@ -123,7 +126,7 @@ describe("SubscriptionLinkMenu", () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     const html = render();
-    expect(mocks.items.map((item) => item.children)).toEqual(["Clash", "Loon", "更多方式"]);
+    expect(mocks.items.map((item) => item["aria-label"])).toEqual(["Clash", "Loon", "更多方式"]);
     expect(html).toContain("复制链接");
     await select("Clash");
     await select("Loon");

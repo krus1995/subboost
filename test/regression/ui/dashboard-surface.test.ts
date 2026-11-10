@@ -50,6 +50,7 @@ vi.mock("../../../node_modules/react/index.js", async (importOriginal) =>
 
 vi.mock("next/link", () => ({ default: (props: any) => props.children }));
 vi.mock("lucide-react", () => ({
+  MoreHorizontal: () => null,
   ChevronDown: () => null,
   QrCode: () => null,
   X: () => null,
