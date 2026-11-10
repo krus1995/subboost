@@ -21,7 +21,7 @@ function ssLink(name = "SS Node"): string {
 }
 
 describe("importSubscriptionFromUrl", () => {
-  it("tries client user agents and keeps supplemental userinfo headers", async () => {
+  it("uses one configured user agent and keeps separate userinfo headers", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.purpose === "userinfo") {
         return {
@@ -42,7 +42,7 @@ describe("importSubscriptionFromUrl", () => {
         userinfoUrl: "https://example.com/userinfo",
         userinfoUserAgent: "mihomo/1.19.24",
       },
-      { fetchText }
+      { fetchText, userAgents: ["mihomo/1.19.24"] }
     );
 
     expect(result.ok).toBe(true);
@@ -56,11 +56,11 @@ describe("importSubscriptionFromUrl", () => {
       totalParsed: 1,
       totalFailed: 0,
     });
-    expect(fetchText).toHaveBeenCalledWith(expect.objectContaining({ userAgent: "v2rayN/7.20.4" }));
+    expect(fetchText).toHaveBeenCalledTimes(2);
     expect(fetchText).toHaveBeenCalledWith(expect.objectContaining({ userAgent: "mihomo/1.19.24" }));
   });
 
-  it("continues to Mihomo when the v2rayN response is link-only and may be incomplete", async () => {
+  it("keeps the first response without probing another client", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.userAgent.startsWith("v2rayN/")) {
         return { ok: true, content: ssLink("v2rayn"), headers: { "content-type": "text/plain" } };
@@ -88,9 +88,8 @@ describe("importSubscriptionFromUrl", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.parsedNodes.map((node) => node.name)).toEqual(["clash-a", "clash-b"]);
-    expect(fetchText).toHaveBeenCalledWith(expect.objectContaining({ userAgent: "v2rayN/7.20.4" }));
-    expect(fetchText).toHaveBeenCalledWith(expect.objectContaining({ userAgent: "mihomo/1.19.24" }));
+    expect(result.parsedNodes.map((node) => node.name)).toEqual(["v2rayn"]);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
   it("returns structured network failures", async () => {
@@ -153,7 +152,7 @@ describe("importSubscriptionFromUrl", () => {
     expect(result.errorInfo.category).toBe("parse");
   });
 
-  it("keeps the better parsed attempt and uses fallback URL for userinfo headers", async () => {
+  it("keeps the first response and does not HEAD a fallback content URL", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.purpose === "userinfo") {
         return {
@@ -201,15 +200,8 @@ describe("importSubscriptionFromUrl", () => {
     if (!result.ok) return;
     expect(result.parsedNodes[0]?.name).toBe("first");
     expect(result.headers["content-type"]).toBe("text/yaml");
-    expect(result.headers["subscription-userinfo"]).toContain("total=30");
-    expect(fetchText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        purpose: "userinfo",
-        url: "https://example.com/sub.yaml",
-        userAgent: "userinfo-agent",
-        timeoutMs: 8000,
-      })
-    );
+    expect(result.headers).not.toHaveProperty("subscription-userinfo");
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
   it("ignores invalid supplemental userinfo URLs", async () => {
@@ -227,10 +219,10 @@ describe("importSubscriptionFromUrl", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(fetchText).toHaveBeenCalledTimes(4);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
-  it("prefers later usable attempts over failed transport attempts", async () => {
+  it("returns the first transport failure without retrying", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.userAgent === "bad") {
         return { ok: false, error: "HTTP 500", responseStatus: 500, publicReason: null };
@@ -243,13 +235,12 @@ describe("importSubscriptionFromUrl", () => {
       { fetchText, userAgents: ["bad", "good"] }
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.parsedNodes[0]?.name).toBe("node-a");
-    expect(result.headers).toEqual({ "content-type": "text/yaml" });
+    expect(result.ok).toBe(false);
+    expect(fetchText).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({responseStatus: 500});
   });
 
-  it("prefers attempts with more nodes and fewer parse errors", async () => {
+  it("does not probe another profile after an unusable response", async () => {
     const oneNodeWithError = [
       "proxies:",
       "  - name: first",
@@ -283,9 +274,8 @@ describe("importSubscriptionFromUrl", () => {
       { fetchText, userAgents: ["first", "second"] }
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.parsedNodes.map((node) => node.name)).toEqual(["second-a", "second-b"]);
+    expect(result.ok).toBe(false);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 
   it("returns fallback parse failures for empty parsed content and missing content", async () => {

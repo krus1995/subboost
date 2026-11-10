@@ -177,6 +177,7 @@ async function completeSuccess(params: {
   const refreshResult = params.prepared.refreshResult;
   if (!refreshResult.ok) throw new Error(`Unexpected refresh failure reason: ${refreshResult.reason}`);
 
+  const hasCooldown = params.prepared.snapshot.failedSources.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN");
   const cachedAt = new Date();
   const decision = resolveAutomaticRefreshCompletionDecision({
     target: toCompletionTarget(params.subscription),
@@ -190,14 +191,16 @@ async function completeSuccess(params: {
   const persisted = await writeAutoUpdateState(
     params.subscription.id,
     params.subscription.updatedAt,
-    decision.nextAutoUpdateState.state,
+    hasCooldown
+      ? resolveSubscriptionAutoUpdateState(params.subscription)
+      : decision.nextAutoUpdateState.state,
     {
       encryptedNodes: encryptJson(refreshResult.cacheEntry.nodes),
       encryptedConfig: encryptJson(refreshResult.refreshedConfig),
       encryptedSubscriptionInfo: encryptJson(refreshResult.cacheEntry.subscriptionInfo),
       lastUpdatedAt: cachedAt,
       cacheExpiresAt: buildSubscriptionCacheExpiry(cachedAt),
-      ...(decision.nextAutoUpdateState.shouldDisableAutoUpdate ? { autoUpdateInterval: null } : {}),
+      ...(!hasCooldown && decision.nextAutoUpdateState.shouldDisableAutoUpdate ? { autoUpdateInterval: null } : {}),
     },
     params.assertLease
   );
@@ -207,8 +210,10 @@ async function completeSuccess(params: {
     subscriptionId: params.subscription.id,
     nodeCount: refreshResult.nodeCount,
     intervalSeconds: params.intervalSeconds,
-    externalFailureCount: decision.nextAutoUpdateState.externalFailureCount,
-    autoUpdateDisabled: decision.nextAutoUpdateState.shouldDisableAutoUpdate,
+    externalFailureCount: hasCooldown
+      ? resolveSubscriptionAutoUpdateState(params.subscription).externalFailureCount
+      : decision.nextAutoUpdateState.externalFailureCount,
+    autoUpdateDisabled: !hasCooldown && decision.nextAutoUpdateState.shouldDisableAutoUpdate,
   });
 
   return decision.outcome;
@@ -223,6 +228,9 @@ async function completeLocalRefresh(params: {
   assertLease?: () => Promise<void>;
 }): Promise<CronUpdateOutcome> {
   const refreshResult = params.prepared.refreshResult;
+  if (params.prepared.snapshot.failedSources.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN") && !refreshResult.ok) {
+    return staleOutcome(params.prepared.requestedHosts);
+  }
 
   if (!refreshResult.ok) {
     const decision = resolveAutomaticRefreshCompletionDecision({

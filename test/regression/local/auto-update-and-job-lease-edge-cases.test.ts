@@ -101,7 +101,7 @@ describe("local automatic update completion edge behavior", () => {
     });
     mocks.extractHostsFromSubscriptionUrls.mockReturnValue(["example.test"]);
     mocks.buildSubscriptionFetchCallbacks.mockReturnValue({ fetchSubscription: vi.fn() });
-    mocks.refreshNodeSnapshot.mockResolvedValue({ savedSources: [] });
+    mocks.refreshNodeSnapshot.mockResolvedValue({ savedSources: [], failedSources: [] });
     mocks.resolveAutomaticRefreshFailureAnalysis.mockReturnValue({
       failureState: { externalFailureCount: 1 },
       failureReason: "upstream failed",

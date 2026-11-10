@@ -581,14 +581,14 @@ describe("local subscription service", () => {
     });
 
     await callbacks.fetchUrlNodes({ id: "source-2", type: "url", content: "https://example.com/sub" } as any);
-    expect(mocks.importSourceUrlDirect).toHaveBeenLastCalledWith({ url: "https://example.com/sub" });
+    expect(mocks.importSourceUrlDirect).toHaveBeenCalledTimes(3);
 
     mocks.importSourceUrlDirect.mockResolvedValueOnce({
       ok: false,
       error: "network",
       errorInfo: { category: "network" },
     });
-    await expect(callbacks.fetchUrlNodes({ id: "bad-2", type: "url", content: "https://bad.example" } as any)).resolves.toEqual({
+    await expect(callbacks.fetchUrlNodes({ id: "bad-2", type: "url", content: "https://other-bad.example" } as any)).resolves.toEqual({
       ok: false,
       nodes: [],
       responseStatus: undefined,

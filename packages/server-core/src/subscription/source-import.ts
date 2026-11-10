@@ -11,7 +11,7 @@ import {
 } from "@subboost/core/subscription/import-error";
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
 import type { ParseResult, ParsedNode } from "@subboost/core/types/node";
-import { compareSubscriptionSnapshots, createSubscriptionRequestBudget, hasUsableSubscriptionSnapshot, SUBSCRIPTION_MAX_PROFILE_REQUESTS,
+import { createSubscriptionRequestBudget, hasUsableSubscriptionSnapshot,
   type SubscriptionSnapshotComparison } from "./snapshot-comparison";
 import { SUBSCRIPTION_IMPORT_USER_AGENTS } from "./user-agents";
 
@@ -139,18 +139,6 @@ function toFailure(attempt: ParsedAttempt | null, fallback = "获取 url 失败"
   };
 }
 
-function pickBetterAttempt(current: ParsedAttempt | null, next: ParsedAttempt, diagnostics: SubscriptionSnapshotComparison[]): ParsedAttempt {
-  if (!current) return next;
-  const comparison = current.ok && next.ok ? compareSubscriptionSnapshots(current.parsed, next.parsed) : null;
-  if (comparison) diagnostics.push(comparison);
-  const currentUsable = isUsableParsedAttempt(current);
-  const nextUsable = isUsableParsedAttempt(next);
-  if (currentUsable !== nextUsable) return nextUsable ? next : current;
-  if (current.ok !== next.ok) return next.ok ? next : current;
-  if (!current.ok || !next.ok) return current;
-  return comparison?.selected === "next" ? next : current;
-}
-
 function normalizeHeaders(headers: Record<string, string> | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers || {})) {
@@ -212,10 +200,15 @@ async function fetchSupplementalUserInfoHeaders(
   },
   fallbackUrl: string
 ): Promise<Record<string, string>> {
-  if (!request.userinfoUrl && !request.userinfoUserAgent) return {};
+  if (!request.userinfoUrl) return {};
   const rawUrl = request.userinfoUrl || fallbackUrl;
   const url = tryNormalizeSubscriptionUrlInput(rawUrl);
   if (!url) return {};
+  const contentUrl = new URL(fallbackUrl);
+  const metadataUrl = new URL(url);
+  contentUrl.hash = "";
+  metadataUrl.hash = "";
+  if (contentUrl.href === metadataUrl.href) return {};
   const response = await options.fetchText({
     url,
     userAgent: request.userinfoUserAgent?.trim() || SUBSCRIPTION_IMPORT_USER_AGENTS[0],
@@ -260,22 +253,13 @@ export async function importSubscriptionFromUrl(
 
   const timeoutMs = options.timeoutMs ?? 15000;
   const maxBytes = options.maxBytes ?? 10 * 1024 * 1024;
-  const userAgents = [...new Set(options.userAgents?.length ? options.userAgents : SUBSCRIPTION_IMPORT_USER_AGENTS)].slice(0, SUBSCRIPTION_MAX_PROFILE_REQUESTS);
+  const userAgent = options.userAgents?.[0] || SUBSCRIPTION_IMPORT_USER_AGENTS[0];
   const budget = createSubscriptionRequestBudget(timeoutMs);
-  const diagnostics: SubscriptionSnapshotComparison[] = [];
-  let best: ParsedAttempt | null = null;
-
-  for (let index = 0; index < userAgents.length; index += 1) {
-    const userAgent = userAgents[index];
-    const remainingTimeout = budget.remainingTimeout();
-    if (remainingTimeout === 0) break;
-    const attempt = await fetchAndParseWithUserAgent(url, userAgent, {
-      timeoutMs: remainingTimeout,
-      maxBytes,
-      fetchText: options.fetchText,
-    });
-    best = pickBetterAttempt(best, attempt, diagnostics);
-  }
+  const remainingTimeout = budget.remainingTimeout();
+  if (remainingTimeout === 0) return toFailure(null);
+  const best = await fetchAndParseWithUserAgent(url, userAgent, {
+    timeoutMs: remainingTimeout, maxBytes, fetchText: options.fetchText,
+  });
 
   if (!best || !best.ok || !isUsableParsedAttempt(best)) {
     return toFailure(best);
@@ -293,6 +277,6 @@ export async function importSubscriptionFromUrl(
     headers: { ...best.headers, ...supplementalHeaders },
     parsedNodes: best.parsed.nodes,
     parseErrors: best.parsed.errors,
-    diagnostics,
+    diagnostics: [],
   };
 }

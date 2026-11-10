@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   inferSubscriptionImportErrorCategory: vi.fn(() => "network"),
   isPrivateOrReservedIp: vi.fn(() => false),
   lookup: vi.fn(),
+  acquireLocalJobLease: vi.fn(),
+  executeRaw: vi.fn(),
   normalizeResolvedIpAddresses: vi.fn((addresses: string[]) => addresses),
   requestPinnedText: vi.fn(),
   resolveHostnameByDoh: vi.fn(),
@@ -15,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   shouldRecheckFakeIpDnsAnswers: vi.fn(() => false),
 }));
 
+vi.mock("../../../local/src/lib/job-lease", () => ({acquireLocalJobLease: mocks.acquireLocalJobLease}));
+vi.mock("../../../local/src/lib/prisma", () => ({prisma: {$executeRaw: mocks.executeRaw}}));
 vi.mock("node:dns/promises", () => ({ lookup: mocks.lookup }));
 vi.mock("@subboost/core/subscription/import-error", () => ({
   createSubscriptionImportErrorInfo: mocks.createSubscriptionImportErrorInfo,
@@ -71,6 +75,8 @@ function mockedResponse(params: {
 describe("local source-import transport edge behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.acquireLocalJobLease.mockResolvedValue({name: "lease"});
+    mocks.executeRaw.mockResolvedValue(0);
     vi.useRealTimers();
     mocks.getAllowUnsafeSubscriptionSources.mockResolvedValue(false);
     mocks.lookup.mockRejectedValue(new Error("dns unavailable"));

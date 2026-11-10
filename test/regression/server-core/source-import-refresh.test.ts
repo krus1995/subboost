@@ -26,11 +26,11 @@ const oneCleanNode = [
 ].join("\n");
 
 describe("subscription import attempt selection", () => {
-  it("keeps equally useful attempts stable, ignores a placeholder, then prefers the clean result", async () => {
+  it("imports only the first configured profile without comparing alternatives", async () => {
     const fetchText = vi.fn(
       async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
         if (request.userAgent === "first") {
-          return { ok: true, content: oneNodeWithParseError, headers: {} };
+          return { ok: true, content: oneCleanNode.replace("name: clean", "name: first"), headers: {} };
         }
         if (request.userAgent === "same-quality") {
           return {
@@ -53,9 +53,9 @@ describe("subscription import attempt selection", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.parsedNodes.map((node) => node.name)).toEqual(["clean"]);
+    expect(result.parsedNodes.map((node) => node.name)).toEqual(["first"]);
     expect(result.parseErrors).toEqual([]);
-    expect(fetchText).toHaveBeenCalledTimes(4);
+    expect(fetchText).toHaveBeenCalledTimes(1);
   });
 });
 
