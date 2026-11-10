@@ -173,7 +173,7 @@ export function SubscriptionLinkDialog({
           ) : (
             <>
               <Button variant="outline" onClick={close}>完成</Button>
-              <SubscriptionLinkMenu key={subscriptionUrl} url={subscriptionUrl} variant="default" onCopied={onLinkCopied} />
+              <SubscriptionLinkMenu key={subscriptionUrl} url={subscriptionUrl} context="dialog" onCopied={onLinkCopied} />
             </>
           )}
         </DialogFooter>

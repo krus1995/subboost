@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, ChevronDown } from "lucide-react";
+import { Copy } from "lucide-react";
 import { Button } from "@subboost/ui/components/ui/button";
 import { Input } from "@subboost/ui/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@subboost/ui/components/ui/dialog";
@@ -20,10 +20,11 @@ type Props = {
   url: string;
   onDownloadClash?: () => void;
   onCopied?: () => void;
-  variant?: "ghost" | "outline" | "default";
+  context?: "dashboard" | "dialog";
 };
 
-export function SubscriptionLinkMenu({ url, onDownloadClash, onCopied, variant = "outline" }: Props) {
+export function SubscriptionLinkMenu({ url, onDownloadClash, onCopied, context = "dashboard" }: Props) {
+  const isDashboard = context === "dashboard";
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = React.useState<LinkDialog>({ kind: "closed" });
   const currentDialog = dialog.kind !== "closed" && subscriptionFormatUrl(url, dialog.format) === dialog.url ? dialog : { kind: "closed" } as const;
@@ -62,14 +63,23 @@ export function SubscriptionLinkMenu({ url, onDownloadClash, onCopied, variant =
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button ref={triggerRef} variant={variant} size="sm" className="gap-2 px-2 max-[360px]:w-full sm:px-3" title="复制订阅链接" aria-label="复制链接" disabled={!url}>
-          <Copy className="h-4 w-4" /><span>复制链接</span><ChevronDown className="h-3 w-3" />
+        <Button
+          ref={triggerRef}
+          variant={isDashboard ? "ghost" : "default"}
+          size={isDashboard ? "sm" : "default"}
+          className={isDashboard ? "gap-0 px-2 sm:gap-2 sm:px-3" : undefined}
+          title="复制订阅链接"
+          aria-label="复制链接"
+          disabled={!url}
+        >
+          <Copy className="h-4 w-4" />
+          <span className={isDashboard ? "hidden sm:inline" : undefined}>复制链接</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        {formats.map((format) => <DropdownMenuItem key={format.value} onSelect={() => void copy(format.value)}>{format.label}</DropdownMenuItem>)}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => setDialog({ kind: "more", format: "clash", url })}>更多方式</DropdownMenuItem>
+      <DropdownMenuContent align="end" className="w-36 border-ink/10 bg-surface-raised text-fg">
+        {formats.map((format) => <DropdownMenuItem key={format.value} className="focus:bg-ink/5 focus:text-fg" onSelect={() => void copy(format.value)}>{format.label}</DropdownMenuItem>)}
+        <DropdownMenuSeparator className="bg-ink/10" />
+        <DropdownMenuItem className="focus:bg-ink/5 focus:text-fg" onSelect={() => setDialog({ kind: "more", format: "clash", url })}>更多方式</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
     <Dialog open={currentDialog.kind !== "closed"} onOpenChange={(open) => { if (!open) setDialog({ kind: "closed" }); }}>

@@ -530,7 +530,7 @@ function SubscriptionRow({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1 max-[360px]:grid max-[360px]:grid-cols-4 sm:shrink-0 sm:justify-end sm:gap-2">
+      <div className="flex flex-wrap items-center gap-1 sm:shrink-0 sm:justify-end sm:gap-2">
         <Button asChild variant="ghost" size="sm" className="gap-0 px-2 sm:gap-2 sm:px-3" title="回到首页编辑该订阅（更新后链接不变）">
           <Link href={editHref}>
             <Pencil className="h-4 w-4" />
@@ -558,9 +558,7 @@ function SubscriptionRow({
           <RefreshCw className={`h-4 w-4 ${refreshingId === sub.id ? "animate-spin" : ""}`} />
           <span className="hidden sm:inline">刷新</span>
         </Button>
-        <div className="max-[360px]:order-first max-[360px]:col-span-4">
-          <SubscriptionLinkMenu key={sub.subscriptionUrl} url={sub.subscriptionUrl} onDownloadClash={() => void onDownload(sub)} />
-        </div>
+        <SubscriptionLinkMenu key={sub.subscriptionUrl} url={sub.subscriptionUrl} onDownloadClash={() => void onDownload(sub)} />
         <Button
           variant="ghost"
           size="sm"
