@@ -228,7 +228,7 @@ async function completeLocalRefresh(params: {
   assertLease?: () => Promise<void>;
 }): Promise<CronUpdateOutcome> {
   const refreshResult = params.prepared.refreshResult;
-  if (!refreshResult.ok && params.prepared.snapshot.failedSources.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN")) {
+  if (params.prepared.snapshot.failedSources.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN") && !refreshResult.ok) {
     return staleOutcome(params.prepared.requestedHosts);
   }
 
