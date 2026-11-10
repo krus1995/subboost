@@ -4,6 +4,16 @@ vi.mock("@local/lib/source-import-settings", () => ({
   getAllowUnsafeSubscriptionSources: vi.fn(async () => false),
 }));
 
+vi.mock("@local/lib/job-lease", () => ({
+  acquireLocalJobLease: vi.fn(),
+}));
+
+vi.mock("@local/lib/prisma", () => ({
+  prisma: { $executeRaw: vi.fn() },
+}));
+
+import { acquireLocalJobLease } from "@local/lib/job-lease";
+import { prisma } from "@local/lib/prisma";
 import { importSourceUrlDirect } from "@local/lib/source-import";
 
 beforeEach(() => {
@@ -22,5 +32,7 @@ describe("local source import network guard", () => {
       expect(result.error).toContain("禁止访问");
     }
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(acquireLocalJobLease).not.toHaveBeenCalled();
   });
 });
