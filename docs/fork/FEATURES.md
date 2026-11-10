@@ -29,3 +29,11 @@ Loon 的远程配置导入和两类规则的优先级见[官方 URL Scheme](http
 同源对照可运行 `npm run test:unit -- loon-policy-parity.test.ts subscription-service.test.ts loon-node.test.ts yaml.test.ts`。`bash ops/fork/check.sh image` 会通过真实订阅地址核对组成员、分流目标和链接重置。
 
 Loon 导出会将节点名里影响配置解析的标点换成全角字符。例如，`[Airport] Tokyo, 01` 显示为 `［Airport］ Tokyo， 01`。转换后如有重名，会追加编号。节点筛选与排序仍按保存的原名执行，Loon 策略组和规则引用导出后的名称。回归检查见 `loon-names.test.ts` 和 `bash ops/fork/check.sh image`。
+
+## 订阅源只请求一次
+
+首页导入、管理页手动刷新和定时刷新共用同一条限制：SubBoost 服务端对同一订阅地址在 6 分钟内最多发一次 HTTP 请求。这个时长沿用项目已有的最短自动刷新间隔。正文只用一种客户端标识请求；上游按标识返回不同节点时，导入本次响应中包含的节点。成功、拒绝、超时或正文解析失败都会占用本次访问机会。
+
+同一地址的流量信息从正文响应头读取。单独配置的流量地址和重定向目标也受访问间隔限制。访问记录复用 PostgreSQL 的 JobLeaseLock 表，按地址摘要区分，重启后继续生效。遇到本地访问间隔限制时保留已保存的节点。这项限制适用于 SubBoost 服务端；使用 Clash 的 proxy-provider 配置时，由客户端自行下载原始订阅。
+
+与上游共享的入口包括 server-core 的订阅导入与节点刷新、local 的 HTTP 传输和自动更新任务。回归命令为 `npm run test:unit -- source-import refresh-node-snapshot subscription-service auto-update-service`。运行 `bash ops/fork/check.sh image` 会在隔离数据库中，通过模拟上游的实际 HTTP 计数核对请求次数。
