@@ -70,6 +70,7 @@ for database in empty upgraded; do
     exit 1
   fi
   if [[ $database == upgraded ]]; then
+    "$engine" exec -i "$app" node --input-type=module - < ops/fork/check-subscription-requests.mjs
     # Change one encrypted field in this disposable database to prove a
     # decryption regression fails the same HTTP check required of the PR.
     sql=("$engine" exec "$db" psql -XAt -v ON_ERROR_STOP=1 -U postgres -d upgraded)
