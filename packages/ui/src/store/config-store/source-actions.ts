@@ -117,7 +117,11 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
       const removed = new Set(Array.from(prevIds).filter((id) => !nextIds.has(id)));
 
       if (removed.size === 0) {
-        set({ sources });
+        const labelsChanged = sources.some((source) =>
+          (source.source?.trim() ?? "") !== (prev.find((item) => item.id === source.id)?.source?.trim() ?? "")
+        );
+        if (labelsChanged) setAndGenerateConfig(() => ({ sources }));
+        else set({ sources });
         return;
       }
 

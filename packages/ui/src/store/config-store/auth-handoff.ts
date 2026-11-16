@@ -62,6 +62,7 @@ function sourceArray(value: unknown): SubscriptionSource[] | undefined {
     sources.push({
       id: item.id,
       type: item.type,
+      ...(typeof item.source === "string" && item.source.trim() ? { source: item.source.trim() } : {}),
       content: item.content,
       ...(typeof item.name === "string" ? { name: item.name } : {}),
       ...(typeof item.lastParsedContent === "string" ? { lastParsedContent: item.lastParsedContent } : {}),

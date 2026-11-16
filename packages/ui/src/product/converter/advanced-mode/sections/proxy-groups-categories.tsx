@@ -1,5 +1,6 @@
 "use client";
 
+import { buildSourceLabelsById } from "@subboost/core/proxy-group-advanced";
 import * as React from "react";
 import { ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import { Badge } from "@subboost/ui/components/ui/badge";
@@ -47,6 +48,7 @@ export function ProxyGroupsCategories() {
   const {
     ruleProviderBaseUrl,
     nodes = [],
+    sources,
     nodeNameFilter,
     testUrl,
     testInterval,
@@ -180,6 +182,7 @@ export function ProxyGroupsCategories() {
     if (effectiveNodes.length === 0) return new Map<string, number>();
     const generated = generateProxyGroups({
       nodes: effectiveNodes,
+      sourceLabelsById: buildSourceLabelsById(sources),
       enabledModules: enabledProxyGroups,
       ruleProviderBaseUrl,
       testUrl,
@@ -206,6 +209,7 @@ export function ProxyGroupsCategories() {
     );
   }, [
     effectiveNodes,
+    sources,
     enabledProxyGroups,
     ruleProviderBaseUrl,
     testUrl,

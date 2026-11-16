@@ -213,6 +213,7 @@ describe("useEditingSubscriptionLoader", () => {
                   type: "url",
                   content: " https://example.com/sub ",
                   tag: "TAG",
+                  source: " 公益 ",
                   nameTemplate: "{tag}-{name}",
                   useProxyProviders: true,
                   userinfoUrl: " https://example.com/userinfo ",
@@ -272,6 +273,7 @@ describe("useEditingSubscriptionLoader", () => {
     expect(options.setStoreSources).toHaveBeenCalledWith([
       expect.objectContaining({
         id: "source-url",
+        source: "公益",
         type: "url",
         content: "https://example.com/sub",
         parsed: true,

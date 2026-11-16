@@ -65,6 +65,7 @@ export interface SubscriptionSource {
   type: SourceType;
   content: string;
   name?: string;
+  source?: string;
   // 上一次成功导入时的输入内容（用于判断是否更换 url 等）
   lastParsedContent?: string;
   // 上一次成功导入时使用的标签/模板（用于判断是否为“用户手动改名”）

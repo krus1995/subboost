@@ -231,11 +231,11 @@ describe("useSubscriptionLink", () => {
 
   it("saves a normalized subscription payload and tracks success", async () => {
     const adapter = makeAdapter();
-    let hook = useRenderedHook({ subscriptionAdapter: adapter });
+    let hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 " }] });
     hook.setSubscriptionName(" My Sub ");
     hook.setAutoUpdateEnabled(true);
     hook.setAutoUpdateHours(24);
-    hook = useRenderedHook({ subscriptionAdapter: adapter });
+    hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 " }] });
 
     await hook.handleCreateSubscription();
     hook = useRenderedHook({ subscriptionAdapter: adapter });
@@ -254,6 +254,7 @@ describe("useSubscriptionLink", () => {
             sources: [
               expect.objectContaining({
                 content: "https://airport.example/sub",
+                source: "公益",
                 userinfoUrl: "https://airport.example/userinfo",
                 userinfoUserAgent: "Clash.Meta",
                 subscriptionUserInfo: { upload: 2_048, download: 1_024, total: 4_096 },

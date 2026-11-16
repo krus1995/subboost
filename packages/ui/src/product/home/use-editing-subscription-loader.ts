@@ -164,6 +164,7 @@ export function useEditingSubscriptionLoader({
               if (typeof t !== "string" || !validTypes.has(t)) return null;
               if (typeof c !== "string" || !c.trim()) return null;
               const lastParsedContent = (item as any).lastParsedContent;
+              const sourceLabel = "source" in item ? item.source : undefined;
               const tag = (item as any).tag;
               const nameTemplate = (item as any).nameTemplate;
               const useProxyProviders = (item as any).useProxyProviders;
@@ -190,6 +191,7 @@ export function useEditingSubscriptionLoader({
                           : lastParsedContent.trim()
                       )
                     : undefined,
+                source: typeof sourceLabel === "string" ? sourceLabel.trim() || undefined : undefined,
                 tag: typeof tag === "string" && tag.trim() ? tag.trim() : undefined,
                 nameTemplate: typeof nameTemplate === "string" && nameTemplate.trim() ? nameTemplate.trim() : undefined,
                 subscriptionUserInfo: hasSubscriptionUserInfo(subscriptionUserInfo) ? subscriptionUserInfo : undefined,
@@ -212,6 +214,7 @@ export function useEditingSubscriptionLoader({
               content: string;
               lastParsedContent?: string;
               tag?: string;
+              source?: string;
               nameTemplate?: string;
               subscriptionUserInfo?: SubscriptionUserInfo;
               useProxyProviders?: boolean;
@@ -275,6 +278,7 @@ export function useEditingSubscriptionLoader({
             return {
               id: finalId,
               type: s.type,
+              ...(s.source ? { source: s.source } : {}),
               content: s.type === "url" ? (tryNormalizeSubscriptionUrlInput(s.content) ?? s.content.trim()) : s.content,
               ...(lastParsedContent ? { lastParsedContent } : {}),
               ...(typeof s.tag === "string" && s.tag.trim() ? { tag: s.tag.trim() } : {}),

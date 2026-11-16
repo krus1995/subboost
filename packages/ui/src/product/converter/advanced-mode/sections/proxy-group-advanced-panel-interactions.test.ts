@@ -182,6 +182,19 @@ describe("ProxyGroupAdvancedPanel interactions", () => {
     ]);
   });
 
+  it("selects one logical label independently of exact subscription ids", () => {
+    mocks.store.sources = [
+      { id: "a", type: "url", content: "https://one.invalid", source: "公益" },
+      { id: "b", type: "url", content: "https://two.invalid", source: "公益" },
+      { id: "c", type: "yaml", content: "proxies: []", source: "主机场" },
+    ];
+    const onChange = vi.fn();
+    const elements = flattenElements(ProxyGroupAdvancedPanel({ target: { kind: "custom", id: "media", name: "Media" }, advanced: {}, onChange, rulesCount: 0, rulesContent: null }));
+    const choice = elements.find((element) => element.props["aria-label"] === "来源标签 公益");
+    choice?.props.onChange();
+    expect(onChange).toHaveBeenCalledWith({ sourceLabels: ["公益"] });
+  });
+
   it("fires native source, region, member, and drag callbacks", () => {
     const onChange = vi.fn();
     const tree = ProxyGroupAdvancedPanel({
