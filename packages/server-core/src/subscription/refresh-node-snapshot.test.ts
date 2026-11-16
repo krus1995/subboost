@@ -23,6 +23,49 @@ rules:
   - MATCH,${target}
 `;
 
+  it("refreshes a local YAML source's rules and nodes without requesting its former URL", async () => {
+    const content = ruleYaml("new.example.com").replace("DOMAIN,example.com", "DOMAIN,updated.example.com");
+    const fetchUrlNodes = vi.fn();
+    const result = await refreshNodeSnapshot({ config: { sources: [{ id: "local", type: "yaml", content, includeRules: true,
+      ruleSnapshot: parseSourceRuleSnapshot(ruleYaml()) }] }, urls: [],
+      storedNodes: [{ ...node, _sourceIds: ["local"], _originName: "node-a" }], fetchUrlNodes });
+    expect(fetchUrlNodes).not.toHaveBeenCalled();
+    expect(result.nodes).toEqual([expect.objectContaining({ server: "new.example.com", _sourceIds: ["local"] })]);
+    expect(result.savedSources[0].ruleSnapshot?.rules[0]).toBe("DOMAIN,updated.example.com,Original");
+    expect(result.refreshedStaticSourceCount).toBe(1);
+  });
+
+  it("retains a legacy rules source snapshot when it is still configured as a remote provider", async () => {
+    const ruleSnapshot = parseSourceRuleSnapshot(ruleYaml());
+    const stored = { ...node, _sourceIds: ["remote"], _originName: "node-a" };
+    const fetchUrlNodes = vi.fn();
+    const result = await refreshNodeSnapshot({ config: { sources: [{ id: "remote", type: "url", content: "https://remote.example/sub",
+      useProxyProviders: true, includeRules: true, ruleSnapshot }] }, urls: [], storedNodes: [stored], fetchUrlNodes });
+    expect(fetchUrlNodes).not.toHaveBeenCalled();
+    expect(result.nodes).toEqual([stored]);
+    expect(result.savedSources[0].ruleSnapshot).toEqual(ruleSnapshot);
+    expect(result.failedSources).toEqual([expect.objectContaining({ id: "remote", errorCategory: "parse", errorMessage: expect.stringContaining("关闭客户端直连") })]);
+  });
+
+  it("does not replace an enabled source's usable snapshot when a transport omits its body", async () => {
+    const ruleSnapshot = parseSourceRuleSnapshot(ruleYaml());
+    const stored = { ...node, _sourceIds: ["rules"], _originName: "node-a" };
+    const result = await refreshNodeSnapshot({ config: { sources: [{ id: "rules", type: "url", content: "https://source.example/sub", includeRules: true, ruleSnapshot }] },
+      urls: [], storedNodes: [stored], fetchUrlNodes: vi.fn(async () => ({ ok: true, nodes: [{ ...node, server: "not-committed.example.com" }] })) });
+    expect(result.nodes).toEqual([stored]);
+    expect(result.savedSources[0].ruleSnapshot).toEqual(ruleSnapshot);
+    expect(result.failedSourceCount).toBe(1);
+  });
+
+  it("clears stale usage after a valid source response no longer supplies usage metadata", async () => {
+    const result = await refreshNodeSnapshot({ config: { sources: [{ id: "source", type: "url", content: "https://source.example/sub",
+      subscriptionUserInfo: { total: 1000, download: 100 } }] }, urls: [], storedNodes: [],
+      fetchUrlNodes: vi.fn(async () => ({ ok: true, nodes: [node], headers: {} })) });
+    expect(result.refreshedSourceCount).toBe(1);
+    expect(result.savedSources[0]).not.toHaveProperty("subscriptionUserInfo");
+    expect(result.subscriptionInfo).toEqual({});
+  });
+
   it("requests a complete rules response before another source sharing its URL", async () => {
     const ruleSnapshot = parseSourceRuleSnapshot(ruleYaml());
     const fetchUrlNodes = vi.fn(async () => ({ ok: true, nodes: [node], content: ruleYaml() }));

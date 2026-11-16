@@ -17,6 +17,74 @@ rules:
 `;
 
 describe("source rule snapshots", () => {
+  it.each([
+    ["IP-CIDR,192.0.2.0/24,DIRECT,no-resolve", "IP-CIDR", "192.0.2.0/24", true],
+    ["IP-CIDR6,2001:db8::/32,REJECT,no-resolve", "IP-CIDR6", "2001:db8::/32", true],
+    ["GEOIP,US,DIRECT", "GEOIP", "US", false],
+    ["DOMAIN-SUFFIX,example.com,Proxy", "DOMAIN-SUFFIX", "example.com", false],
+    ["PROCESS-PATH,/usr/bin/curl,Proxy", "PROCESS-PATH", "/usr/bin/curl", false],
+  ] as const)("preserves supported inline rule parameters: %s", (rule, type, value, noResolve) => {
+    expect(parseSourceRule(rule)).toEqual({ type, value, target: rule.split(",")[2], noResolve });
+  });
+
+  it.each([
+    "IP-CIDR,192.0.2.0,DIRECT", "IP-CIDR,192.0.2.0/24/1,DIRECT", "IP-CIDR6,broken::address/64,DIRECT",
+    "GEOIP,INVALID,DIRECT", "DOMAIN,*.example.com,DIRECT", "MATCH", "FINAL,", "MATCH,DIRECT,unexpected",
+  ])("rejects ambiguous or malformed inline rules: %s", rule => {
+    expect(() => parseSourceRule(rule)).toThrow();
+  });
+
+  it("retains supported health-check, load-balance and decoration settings", () => {
+    const group = { name: "Check", type: "load-balance", proxies: ["DIRECT"], url: "https://probe.example.com/204",
+      interval: 300, tolerance: 0, timeout: 5000, "max-failed-times": 2, lazy: false, hidden: true,
+      icon: "https://icons.example.com/proxy.png", "expected-status": "204", strategy: "round-robin" };
+    expect(normalizeSourceRuleSnapshot({ groups: [group], rules: ["MATCH,Check"] })).toEqual({ groups: [group], rules: ["MATCH,Check"] });
+  });
+
+  it.each([
+    null,
+    { name: "Repeated", type: "select", proxies: ["DIRECT"], interval: -1 },
+    { name: "Repeated", type: "select", proxies: ["DIRECT"], timeout: 1.5 },
+    { name: "Repeated", type: "select", proxies: ["DIRECT"], lazy: "false" },
+    { name: "Repeated", type: "select", proxies: ["DIRECT"], hidden: 1 },
+    { name: "Repeated", type: "select", proxies: ["DIRECT"], url: 1 },
+    { name: "Repeated", type: "select", proxies: ["DIRECT"], icon: "bad\nicon" },
+    { name: "Repeated", type: "load-balance", proxies: ["DIRECT"], strategy: "unsupported" },
+  ])("rejects invalid imported strategy-group parameters", group => {
+    expect(normalizeSourceRuleSnapshot({ groups: [group], rules: ["MATCH,DIRECT"] })).toBeUndefined();
+  });
+
+  it("rejects non-string rule entries and duplicate native group names", () => {
+    expect(normalizeSourceRuleSnapshot({ groups: [], rules: [42, "MATCH,DIRECT"] })).toBeUndefined();
+    const group = { name: "Repeated", type: "select", proxies: ["DIRECT"] };
+    expect(normalizeSourceRuleSnapshot({ groups: [group, group], rules: ["MATCH,Repeated"] })).toBeUndefined();
+  });
+
+  it("accepts shared nested groups without treating repeated references as cycles", () => {
+    const groups = [
+      { name: "Shared", type: "select", proxies: ["DIRECT"] },
+      { name: "A", type: "select", proxies: ["Shared"] },
+      { name: "B", type: "select", proxies: ["Shared", "A"] },
+    ];
+    expect(normalizeSourceRuleSnapshot({ groups, rules: ["MATCH,B"] })).toEqual({ groups, rules: ["MATCH,B"] });
+  });
+
+  it("rejects a scalar configuration and ambiguous native node names", () => {
+    expect(() => parseSourceRuleSnapshot("plain text")).toThrow("完整 Clash 配置");
+    const duplicateNodes = nodes.replace("proxies:\n", "proxies:\n  - {name: Node JP, type: trojan, server: another.example.com, port: 443, password: other}\n");
+    expect(() => parseSourceRuleSnapshot(duplicateNodes + 'rules: ["MATCH,DIRECT"]')).toThrow("来源节点名称重复");
+    expect(() => parseSourceRuleSnapshot(nodes + 'proxy-groups: [{name: Node JP, type: select, proxies: [DIRECT]}]\nrules: ["MATCH,DIRECT"]')).toThrow("来源节点和策略组名称重复");
+  });
+
+  it("omits absent target bindings while rejecting enabled remote-provider rules", () => {
+    expect(normalizeSourceRuleTargets(null)).toBeUndefined();
+    expect(normalizeSourceRuleTargets({ " ": "DIRECT", Original: null })).toBeUndefined();
+    expect(buildSourceRuleInputs(null)).toEqual([]);
+    const ruleSnapshot = { groups: [], rules: ["MATCH,DIRECT"] };
+    expect(buildSourceRuleInputs([null, { id: "local", includeRules: true, ruleSnapshot }])).toEqual([{ id: "local", snapshot: ruleSnapshot }]);
+    expect(() => buildSourceRuleInputs([{ id: "remote", includeRules: true, useProxyProviders: true, ruleSnapshot }])).toThrow("关闭客户端直连");
+  });
+
   it("reads groups and ordered inline rules from the same complete response", () => {
     const snapshot = parseSourceRuleSnapshot(content);
     expect(snapshot.groups).toEqual([{ name: "Proxies", type: "select", proxies: ["Node JP", "DIRECT"] }]);
