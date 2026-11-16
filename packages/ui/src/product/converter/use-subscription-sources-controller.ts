@@ -13,6 +13,8 @@ import { moveSubscriptionSource } from "@subboost/ui/product/subscription/source
 
 import { createLocalSourceFileReader } from "./local-source-file";
 
+const loadSourceFile = createLocalSourceFileReader(() => useConfigStore.getState());
+
 export type SubscriptionSourcesMode = "quick" | "advanced";
 
 type ExpandedSourceSnapshot = {
@@ -69,7 +71,6 @@ export function useSubscriptionSourcesController({ mode }: Options) {
   const { nodes, parseErrors, sources, setSources, applySourceNaming, parseSingleSource } = useConfigStore();
   const { user } = useUserStore();
   const interactions = useProductInteractionAdapter();
-  const loadSourceFile = React.useMemo(() => createLocalSourceFileReader(() => useConfigStore.getState()), []);
 
   const [showAddMenu, setShowAddMenu] = React.useState(false);
   const [expandedSourceId, setExpandedSourceId] = React.useState<string | null>(null);

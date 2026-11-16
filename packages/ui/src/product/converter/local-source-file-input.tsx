@@ -28,11 +28,11 @@ export function LocalSourceFileInput({ sourceId, onLoadFile }: {
           void onLoadFile(sourceId, file).then((result) => {
             if (result === "loaded") toast({ title: "文件已读取，请点击「导入此源」或在高级编辑中点「完成」。" });
           }).catch(() => {
-            toast({ title: "读取失败，请选择含可用节点的订阅文件；使用来源规则时需提供完整 Clash YAML。原来源已保留。", variant: "destructive" });
+            toast({ title: "读取失败，原来源已保留。请重新选择含可用节点的订阅文件。使用来源规则时，请选择完整 Clash YAML。", variant: "destructive" });
           });
         }}
       />
-      <p className="text-[11px] text-fg-40">支持 YAML、节点链接和 Base64 文本。上传后保存快照，不自动更新；可重新选文件替换，也可在高级编辑中使用文件内的策略组和规则。</p>
+      <p className="text-[11px] text-fg-40">支持 YAML、节点链接和 Base64 文本。上传后保存快照，不自动更新。可重新选文件替换，也可在高级编辑中使用文件内的策略组和规则。</p>
     </div>
   );
 }
