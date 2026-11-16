@@ -11,6 +11,8 @@ import { useProductInteractionAdapter, type ProductInteractionResult } from "@su
 import { markSourceAsPendingImport } from "@subboost/ui/product/subscription/source-import-state";
 import { moveSubscriptionSource } from "@subboost/ui/product/subscription/source-order";
 
+import { createLocalSourceFileReader } from "./local-source-file";
+
 export type SubscriptionSourcesMode = "quick" | "advanced";
 
 type ExpandedSourceSnapshot = {
@@ -46,11 +48,11 @@ function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: E
   return (
     next.content !== snapshot.content ||
     (source.readOnce && snapshot.useProxyProviders && !next.useProxyProviders) ||
-    (!source.readOnce && (
-    next.useProxyProviders !== snapshot.useProxyProviders ||
-    (next.includeRules && !snapshot.includeRules) ||
-    next.userinfoUrl !== snapshot.userinfoUrl ||
-    next.userinfoUserAgent !== snapshot.userinfoUserAgent))
+    (!(source.type === "url" && source.readOnce) && (
+      next.useProxyProviders !== snapshot.useProxyProviders ||
+      (next.includeRules && !snapshot.includeRules) ||
+      next.userinfoUrl !== snapshot.userinfoUrl ||
+      next.userinfoUserAgent !== snapshot.userinfoUserAgent))
   );
 }
 
@@ -67,6 +69,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
   const { nodes, parseErrors, sources, setSources, applySourceNaming, parseSingleSource } = useConfigStore();
   const { user } = useUserStore();
   const interactions = useProductInteractionAdapter();
+  const loadSourceFile = React.useMemo(() => createLocalSourceFileReader(() => useConfigStore.getState()), []);
 
   const [showAddMenu, setShowAddMenu] = React.useState(false);
   const [expandedSourceId, setExpandedSourceId] = React.useState<string | null>(null);
@@ -200,7 +203,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
           const changed = (Object.keys(patch) as Array<keyof SubscriptionSource>).some((key) => source[key] !== next[key]);
           if (!changed) return source;
 
-          if (next.readOnce && source.parsed && !source.useProxyProviders) return { ...next, readOnceAttemptedUrls: [...new Set([...(source.readOnceAttemptedUrls ?? []), source.content.trim()])] };
+          if (source.type === "url" && next.readOnce && source.parsed && !source.useProxyProviders) return { ...next, readOnceAttemptedUrls: [...new Set([...(source.readOnceAttemptedUrls ?? []), source.content.trim()])] };
           return sourceMetaNeedsReimport(patch) ? markSourceAsPendingImport(next) : next;
         })
       );
@@ -241,6 +244,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
             content: "",
             useProxyProviders: type === "url" ? Boolean(source.useProxyProviders) : undefined,
             readOnce: type === "url" ? source.readOnce : undefined,
+            readOnceAttemptedUrls: type === "url" ? source.readOnceAttemptedUrls : undefined,
             includeRules: type === "nodes" ? false : source.includeRules,
             userinfoUrl: type === "url" ? source.userinfoUrl : undefined,
             userinfoUserAgent: type === "url" ? source.userinfoUserAgent : undefined,
@@ -281,6 +285,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
   );
 
   return {
+    loadSourceFile,
     addSource,
     closeExpandedSourceEditor,
     error,

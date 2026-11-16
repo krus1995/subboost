@@ -127,6 +127,12 @@ describe("auth config handoff", () => {
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 
+  it("keeps the uploaded file's freeze flag through login", () => {
+    const storage = createStorage();
+    installStorage(storage);
+    captureAuthConfigHandoff(meaningfulState({ sources: [{ id: "uploaded", type: "yaml", content: "proxies: []", readOnce: true }] }));
+    expect(consumeAuthConfigHandoff()?.sources).toEqual([expect.objectContaining({ id: "uploaded", type: "yaml", readOnce: true })]);
+  });
   it("captures and consumes a meaningful config snapshot", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const storage = createStorage();

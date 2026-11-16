@@ -545,7 +545,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
       for (const source of sources) {
         if (!source.content.trim()) continue;
-        if (source.type === "url" && source.readOnce) continue;
+        if (source.readOnce && (source.type === "url" || (source.parsed && source.lastParsedContent?.trim() === source.content.trim() && (!source.includeRules || source.ruleSnapshot)))) continue;
 
         try {
           let contentToParse = source.content;

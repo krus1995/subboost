@@ -134,6 +134,15 @@ describe("useSubscriptionLink", () => {
     });
   });
 
+  it("saves an uploaded subscription as a local frozen source without URLs", async () => {
+    const adapter = makeAdapter();
+    const overrides = { subscriptionAdapter: adapter, storeSources: [{ id: "source-url", type: "yaml", content: "proxies: []", readOnce: true, includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] } }] };
+    let hook = useRenderedHook(overrides);
+    hook.setSubscriptionName("Uploaded");
+    hook = useRenderedHook(overrides);
+    await hook.handleCreateSubscription();
+    expect(adapter.saveSubscription).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ urls: [], config: expect.objectContaining({ sources: [expect.objectContaining({ type: "yaml", readOnce: true, includeRules: true })] }) }) }));
+  });
   it("blocks subscription generation until auth and config are ready", () => {
     useRenderedHook({ authChecked: false }).handleGenerateSubscription("quick");
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "正在确认登录状态，请稍后再试" }));

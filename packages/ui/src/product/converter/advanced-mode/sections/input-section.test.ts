@@ -269,6 +269,13 @@ describe("advanced mode InputSection", () => {
     mocks.userStore = { user: { isAdmin: false, quota: { maxImportSourcesPerType: 2 } } };
   });
 
+  it("shows the shared local upload control and keeps the expanded editor connected", () => {
+    mocks.store.sources = [{ ...urlSource, type: "yaml" }];
+    const { html } = renderSection({ 1: "s1" });
+    expect(html).toContain("本地上传");
+    expect(mocks.captures.inputs.some((props: any) => props.type === "file")).toBe(true);
+    expect(mocks.captures.editor.onLoadFile).toBeTypeOf("function");
+  });
   it("renders source summaries, errors, add controls, and the expanded editor", () => {
     renderSection({ 0: true, 1: "s1" });
 

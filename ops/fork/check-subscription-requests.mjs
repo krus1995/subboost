@@ -133,22 +133,30 @@ async function checkReadOnceSources() {
   const imported = await api("/api/source-import", { method: "POST", body: { url: sourceUrl(frozenPath), includeRules: true } });
   const ruleSnapshot = { groups: original["proxy-groups"], rules: original.rules };
   const sources = [
+    { id: "uploaded", type: "yaml", content: dump(original), lastParsedContent: dump(original).trim(), readOnce: true,
+      includeRules: true, ruleSnapshot },
     { id: "frozen", type: "url", content: sourceUrl(frozenPath), readOnce: true, readOnceAttemptedUrls: [sourceUrl(frozenPath)],
       includeRules: true, ruleSnapshot, userinfoUrl: sourceUrl(usagePath), userinfoUserAgent: "never-request", subscriptionUserInfo: { upload: 10, download: 20, total: 1000000 }, lastParsedContent: sourceUrl(frozenPath) },
     { id: "normal", type: "url", content: sourceUrl(normalPath), lastParsedContent: sourceUrl(normalPath) },
   ];
   const { subscription } = await api("/api/subscriptions", { method: "POST", status: 201, body: {
-    name: "read-once acceptance", nodes: imported.parseResult.nodes.map(item => ({ ...item, _sourceIds: ["frozen", "normal"], _originName: item.name })),
-    urls: sources.map(source => source.content), config: { sources, enabledGroups: [] }, autoUpdateInterval: 360,
+    name: "read-once acceptance", nodes: imported.parseResult.nodes.map(item => ({ ...item, _sourceIds: ["uploaded", "frozen", "normal"], _originName: item.name })),
+    urls: sources.filter(source => source.type === "url").map(source => source.content), config: { sources, enabledGroups: [] }, autoUpdateInterval: 360,
   } });
   sampleIds.push(subscription.id);
   const item = "/api/subscriptions/" + subscription.id;
+  const reopened = (await api(item)).subscription;
+  assert.equal(reopened.config.sources.find(source => source.id === "uploaded").readOnce, true);
+  assert.equal(reopened.config.sources.find(source => source.id === "uploaded").content, dump(original).trim());
   profiles.set(frozenPath, fixtureProfile("Never read", 5501));
   profiles.set(normalPath, fixtureProfile("Renewed", 6601));
   await api(item + "/refresh", { method: "POST" });
   const saved = (await api(item)).subscription;
+  assert.deepEqual(saved.config.sources.find(source => source.id === "uploaded").ruleSnapshot, ruleSnapshot);
+  assert.equal(saved.config.sources.find(source => source.id === "uploaded").readOnce, true);
+  assert.ok(saved.nodes.some(node => node.name === "JP Frozen" && node._sourceIds.includes("uploaded")));
   assert.deepEqual(saved.config.sources.find(source => source.id === "frozen").ruleSnapshot, ruleSnapshot);
-  assert.deepEqual(saved.config.sources.find(source => source.id === "frozen").subscriptionUserInfo, sources[0].subscriptionUserInfo);
+  assert.deepEqual(saved.config.sources.find(source => source.id === "frozen").subscriptionUserInfo, sources.find(source => source.id === "frozen").subscriptionUserInfo);
   assert.ok(saved.nodes.some(node => node.name === "JP Frozen" && node._sourceIds.includes("frozen")));
   assert.ok(saved.nodes.some(node => node.name === "JP Renewed" && node._sourceIds.includes("normal")));
   await db.query(`UPDATE "Subscription" SET "createdAt" = NOW() - INTERVAL '1 day 3 minutes', "lastUpdatedAt" = NOW() - INTERVAL '1 day' WHERE id = $1`, [subscription.id]);
@@ -161,11 +169,28 @@ async function checkReadOnceSources() {
     assert.ok(body.includes("JP Renewed"));
     assert.ok(!body.includes("Never read"));
     assert.ok(!body.includes(sourceUrl(frozenPath)), "read-once URL must not appear in a provider");
+    if (file === "config.yaml") {
+      const clash = load(body);
+      const groups = clash["proxy-groups"];
+      assert.equal(new Set(groups.map(group => group.name)).size, groups.length);
+      for (const name of ["来源 1 Media", "来源 2 Media"]) {
+        assert.deepEqual(groups.find(group => group.name === name)?.proxies, ["JP Frozen", "HK Frozen"]);
+      }
+      assert.deepEqual(clash.rules.filter(rule => rule.startsWith("DOMAIN,video.example,")), ["DOMAIN,video.example,来源 1 Media", "DOMAIN,video.example,来源 2 Media"]);
+    } else {
+      for (const name of ["来源 1 Media", "来源 2 Media"]) {
+        assert.ok(body.includes(name + " = select, JP Frozen, HK Frozen"));
+      }
+      assert.deepEqual(body.split(/\r?\n/).filter(rule => rule.startsWith("DOMAIN,video.example,")), ["DOMAIN,video.example,来源 1 Media", "DOMAIN,video.example,来源 2 Media"]);
+    }
   }
+  const afterCron = (await api(item)).subscription;
+  assert.deepEqual(afterCron.config.sources.find(source => source.id === "uploaded"), saved.config.sources.find(source => source.id === "uploaded"));
+  assert.ok(afterCron.nodes.some(node => node.name === "JP Frozen" && node._sourceIds.includes("uploaded")));
   expectRequests(frozenPath, ["GET"]);
   expectRequests(usagePath, []);
   expectRequests(normalPath, ["GET", "GET"]);
-  console.log("read-once HTTP acceptance passed: frozen body, usage and rules, shared nodes, manual and scheduled refresh, both exports");
+  console.log("read-once and local upload HTTP acceptance passed: frozen body, usage and rules, shared nodes, manual and scheduled refresh, both exports");
 }
 try {
   const response = await fetch(appUrl + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
