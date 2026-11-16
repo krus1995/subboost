@@ -1,5 +1,6 @@
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
 import { createHash } from "node:crypto";
+import { LOCAL_AUTO_UPDATE_MIN_SECONDS } from "./auto-update-policy";
 import { acquireLocalJobLease } from "./job-lease";
 import { prisma } from "./prisma";
 import { lookup } from "node:dns/promises";
@@ -76,19 +77,12 @@ function normalizeHostname(hostname: string): string {
 }
 
 async function validatePublicFetchTarget(
-  url: string,
+  parsed: URL,
   allowUnsafeSubscriptionSources: boolean
 ): Promise<
   | { ok: true; addresses: string[] | null }
   | { ok: false; failure: SourceImportTransportResult }
 > {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { ok: false, failure: toSecurityFailure("无效的订阅 URL") };
-  }
-
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { ok: false, failure: toSecurityFailure("只支持 HTTP 或 HTTPS 订阅 URL") };
   }
@@ -186,75 +180,87 @@ async function requestUnpinnedText(params: {
   return { status: response.status, headers, content };
 }
 
+type TargetResponse = DirectHttpResponse | SourceImportTransportResult;
+
+export type SourceRequestContext = {
+  trigger: "manual" | "automatic";
+  responses: Map<string, Promise<TargetResponse>>;
+};
+
+async function requestTarget(
+  target: URL,
+  request: SourceImportTransportRequest,
+  allowUnsafe: boolean,
+  signal: AbortSignal,
+  context?: SourceRequestContext
+): Promise<TargetResponse> {
+  const validation = await validatePublicFetchTarget(target, allowUnsafe);
+  if (!validation.ok) return validation.failure;
+
+  if (context?.trigger === "automatic") {
+    const now = new Date();
+    await prisma.$executeRaw`DELETE FROM "JobLeaseLock" WHERE "name" LIKE 'subscription-request:%' AND "expiresAt" <= ${now}`;
+    const lease = await acquireLocalJobLease({
+      name: "subscription-request:" + createHash("sha256").update(target.href).digest("hex"),
+      leaseMs: LOCAL_AUTO_UPDATE_MIN_SECONDS * 1000,
+      now,
+    });
+    if (!lease) {
+      const failure = toFailure("此订阅地址在 6 分钟内已请求，请稍后刷新", 429);
+      if (failure.errorInfo) failure.errorInfo.networkCode = "LOCAL_SUBSCRIPTION_COOLDOWN";
+      return failure;
+    }
+  }
+  const method: "HEAD" | "GET" = request.purpose === "userinfo" ? "HEAD" : "GET";
+  const options = {
+    url: target.href,
+    method,
+    userAgent: request.userAgent,
+    maxBytes: request.maxBytes,
+    signal,
+  };
+  return validation.addresses
+    ? requestPinnedText({ ...options, addresses: validation.addresses, retryAddresses: !context })
+    : requestUnpinnedText(options);
+}
+
 async function fetchTextDirect(
   request: SourceImportTransportRequest,
-  allowUnsafeSubscriptionSources: boolean,
-  subscriptionRequest = true
+  allowUnsafe: boolean,
+  context?: SourceRequestContext
 ): Promise<SourceImportTransportResult> {
+  const targetUrl = context ? tryNormalizeSubscriptionUrlInput(request.url) : request.url;
+  if (!targetUrl || !URL.canParse(targetUrl)) return toSecurityFailure("无效的订阅 URL");
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.timeoutMs);
-
   try {
-    let currentUrl = request.url;
-    let response: DirectHttpResponse | null = null;
-    for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
-      const validation = await validatePublicFetchTarget(currentUrl, allowUnsafeSubscriptionSources);
-      if (!validation.ok) return validation.failure;
+    const visited = new Set<string>();
+    let target = new URL(targetUrl);
+    for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+      target.hash = "";
+      if (visited.has(target.href)) return toFailure("订阅重定向循环", 310);
+      visited.add(target.href);
 
-      if (subscriptionRequest) {
-        const target = new URL(currentUrl);
-        target.hash = "";
-        const now = new Date();
-        await prisma.$executeRaw`DELETE FROM "JobLeaseLock" WHERE "name" LIKE 'subscription-request:%' AND "expiresAt" <= ${now}`;
-        const lease = await acquireLocalJobLease({
-          name: "subscription-request:" + createHash("sha256").update(target.href).digest("hex"),
-          leaseMs: 6 * 60 * 1000,
-          now,
-        });
-        if (!lease) {
-          const failure = toFailure("此订阅地址在 6 分钟内已请求，请稍后刷新", 429);
-          if (failure.errorInfo) failure.errorInfo.networkCode = "LOCAL_SUBSCRIPTION_COOLDOWN";
-          return failure;
-        }
+      // A body provides traffic headers too. A HEAD response cannot supply a body.
+      const getKey = "GET " + target.href;
+      const key = request.purpose === "content" ? getKey : "HEAD " + target.href;
+      let pending = context?.responses.get(getKey) ?? context?.responses.get(key);
+      if (!pending) {
+        pending = requestTarget(target, request, allowUnsafe, controller.signal, context);
+        context?.responses.set(key, pending);
       }
-      const method = request.purpose === "userinfo" ? "HEAD" : "GET";
-      response = validation.addresses
-        ? await requestPinnedText({
-            url: currentUrl,
-            addresses: validation.addresses,
-            retryAddresses: !subscriptionRequest,
-            method,
-            userAgent: request.userAgent,
-            maxBytes: request.maxBytes,
-            signal: controller.signal,
-          })
-        : await requestUnpinnedText({
-            url: currentUrl,
-            method,
-            userAgent: request.userAgent,
-            maxBytes: request.maxBytes,
-            signal: controller.signal,
-          });
-
-      if (response.status < 300 || response.status >= 400) break;
-      const location = response.headers.location;
-      if (!location) break;
-      currentUrl = new URL(location, currentUrl).toString();
-      response = null;
+      const response = await pending;
+      if (!("status" in response)) return response;
+      const { status, headers, content } = response;
+      if (status >= 300 && status < 400 && headers.location) {
+        target = new URL(headers.location, target);
+        continue;
+      }
+      if (status < 200 || status >= 300) return toFailure(`HTTP ${status}`, status);
+      return { ok: true, content, headers, responseStatus: status };
     }
-
-    if (!response) return toFailure("订阅重定向次数过多", 310);
-    const { headers, content } = response;
-    if (response.status < 200 || response.status >= 300) {
-      return toFailure(`HTTP ${response.status}`, response.status);
-    }
-
-    return {
-      ok: true,
-      content,
-      headers,
-      responseStatus: response.status,
-    };
+    return toFailure("订阅重定向次数过多", 310);
   } catch (error) {
     if (error instanceof ResponseTooLargeError) return toFailure("订阅响应过大", 413);
     const message = error instanceof Error ? error.message : String(error);
@@ -265,42 +271,32 @@ async function fetchTextDirect(
 }
 
 export async function fetchRuleContentDirect(url: string): Promise<SourceImportTransportResult> {
-  const allowUnsafeSubscriptionSources = await getAllowUnsafeSubscriptionSources();
-  return fetchTextDirect({ url, userAgent: SUBSCRIPTION_IMPORT_USER_AGENTS[0], purpose: "content",
-    timeoutMs: 15000, maxBytes: 10 * 1024 * 1024 }, allowUnsafeSubscriptionSources, false);
+  const allowUnsafe = await getAllowUnsafeSubscriptionSources();
+  return fetchTextDirect({
+    url, userAgent: SUBSCRIPTION_IMPORT_USER_AGENTS[0], purpose: "content",
+    timeoutMs: DEFAULT_TIMEOUT_MS, maxBytes: DEFAULT_MAX_BYTES,
+  }, allowUnsafe);
 }
 
-export type SourceTransportResponses = Map<string, Promise<SourceImportTransportResult>>;
-
-function fetchSubscriptionTransport(request: SourceImportTransportRequest, allowUnsafe: boolean, responses?: SourceTransportResponses): Promise<SourceImportTransportResult> {
-  const normalized = tryNormalizeSubscriptionUrlInput(request.url);
-  if (!normalized) return Promise.resolve(toSecurityFailure("无效的订阅 URL"));
-  const target = new URL(normalized);
-  target.hash = "";
-  const key = target.href;
-  const cached = responses?.get(key);
-  if (cached) return cached;
-  const pending = fetchTextDirect({...request, url: key}, allowUnsafe);
-  responses?.set(key, pending);
-  return pending;
-}
-
-export async function importSourceUrlDirect(request: SourceImportRequest, responses?: SourceTransportResponses): Promise<SourceImportResult> {
+export async function importSourceUrlDirect(
+  request: SourceImportRequest,
+  context: SourceRequestContext = { trigger: "manual", responses: new Map() }
+): Promise<SourceImportResult> {
   const allowUnsafeSubscriptionSources = await getAllowUnsafeSubscriptionSources();
   return importSubscriptionFromUrl(request, {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBytes: DEFAULT_MAX_BYTES,
-    fetchText: (transportRequest) => fetchSubscriptionTransport(transportRequest, allowUnsafeSubscriptionSources, responses),
+    fetchText: (transportRequest) => fetchTextDirect(transportRequest, allowUnsafeSubscriptionSources, context),
   });
 }
 
 export async function fetchSourceUserInfoHeadersDirect(source: {
   userinfoUrl?: string;
   userinfoUserAgent?: string;
-}, responses?: SourceTransportResponses): Promise<Record<string, string> | undefined> {
+}, context: SourceRequestContext = { trigger: "manual", responses: new Map() }): Promise<Record<string, string> | undefined> {
   if (!source.userinfoUrl) return undefined;
   const allowUnsafeSubscriptionSources = await getAllowUnsafeSubscriptionSources();
-  const response = await fetchSubscriptionTransport(
+  const response = await fetchTextDirect(
     {
       url: source.userinfoUrl,
       userAgent: source.userinfoUserAgent?.trim() || SUBSCRIPTION_IMPORT_USER_AGENTS[0],
@@ -308,7 +304,7 @@ export async function fetchSourceUserInfoHeadersDirect(source: {
       timeoutMs: USERINFO_TIMEOUT_MS,
       maxBytes: USERINFO_MAX_BYTES,
     },
-    allowUnsafeSubscriptionSources, responses
+    allowUnsafeSubscriptionSources, context
   );
   return response.ok ? response.headers : undefined;
 }

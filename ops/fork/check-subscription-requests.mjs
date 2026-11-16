@@ -13,9 +13,9 @@ const upstream = createServer((request, response) => {
   const requests = counts.get(key) ?? [];
   requests.push(request.method);
   counts.set(key, requests);
-  if (key === "/limited") {
-    response.writeHead(429, { "retry-after": "360" });
-    response.end("upstream rate limited");
+  if (key === "/limited" || key === "/forbidden") {
+    response.writeHead(key === "/limited" ? 429 : 403, { "retry-after": "360" });
+    response.end("upstream refused");
   } else {
     response.writeHead(200, { "content-type": "text/yaml", "subscription-userinfo": "upload=1; download=2; total=1000" });
     response.end("proxies: " + JSON.stringify([node]));
@@ -60,46 +60,54 @@ try {
   originalSettings = await api("/api/settings/source-import");
   await api("/api/settings/source-import", { method: "PATCH", body: { allowUnsafeSubscriptionSources: true } });
 
-  // All assertions count requests received by the real HTTP server, including HEAD.
-  const responses = await Promise.all([0, 1].map(() => fetch(appUrl + "/api/source-import", {
-    method: "POST", headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ url: sourceUrl("/concurrent") }), signal: AbortSignal.timeout(30_000),
-  })));
-  assert.deepEqual(responses.map(response => response.status).sort(), [200, 429]);
-  await Promise.all(responses.map(response => response.text()));
-  expectRequests("/concurrent", ["GET"]);
-  await importSource("/concurrent", 429);
-  expectRequests("/concurrent", ["GET"]);
+  // Count upstream HTTP requests, including any extra HEAD or retry.
+  await Promise.all([importSource("/repeat"), importSource("/repeat")]);
+  await importSource("/repeat");
+  expectRequests("/repeat", ["GET", "GET", "GET"]);
 
-  await importSource("/limited", 429);
-  await importSource("/limited", 429);
-  expectRequests("/limited", ["GET"]);
+  for (const [path, status] of [["/limited", 429], ["/forbidden", 403]]) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await importSource(path, status);
+      assert.equal(result.errorInfo.httpStatus, status);
+    }
+    expectRequests(path, ["GET", "GET"]);
+  }
 
   await importSource("/shared");
-  const item = await createSample("/shared");
-  const sampleId = sampleIds.at(-1);
-  await db.query('UPDATE "Subscription" SET "createdAt" = NOW() - INTERVAL \'1 day\', "lastUpdatedAt" = NOW() - INTERVAL \'1 day\' WHERE id = $1', [sampleId]);
-  const before = (await api(item)).subscription;
-  await api(item + "/refresh", { method: "POST", status: 429 });
-  const cron = await api("/api/cron/update-subscriptions", { method: "POST", cron: true });
-  assert.equal(cron.success, true);
-  assert.ok(cron.results.skipped >= 1, "due source in cooldown is skipped by cron");
-  expectRequests("/shared", ["GET"]);
-  const after = (await api(item)).subscription;
-  assert.deepEqual(after.nodes, before.nodes, "cooldown preserves stored nodes");
-  assert.equal(after.lastUpdatedAt, before.lastUpdatedAt, "cooldown preserves last successful update");
-  assert.equal(after.autoUpdateInterval, before.autoUpdateInterval, "cooldown keeps automatic updates enabled");
-  assert.equal(after.autoUpdateState.externalFailureCount, before.autoUpdateState.externalFailureCount, "cooldown is not an upstream failure");
-
-  await expireSource("/shared");
-  await api(item + "/refresh", { method: "POST" });
-  expectRequests("/shared", ["GET", "GET"]);
-  const refreshed = (await api(item)).subscription;
+  const first = await createSample("/shared");
+  const second = await createSample("/shared");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await api(first + "/refresh", { method: "POST" });
+  }
+  expectRequests("/shared", ["GET", "GET", "GET"]);
+  const refreshed = (await api(first)).subscription;
   assert.deepEqual(refreshed.nodes.map(({ name, type }) => ({ name, type })), [{ name: node.name, type: node.type }]);
-  assert.notEqual(refreshed.lastUpdatedAt, before.lastUpdatedAt);
-  await api(item + "/refresh", { method: "POST", status: 429 });
-  expectRequests("/shared", ["GET", "GET"]);
-  console.log("single-source HTTP acceptance passed: concurrent/sequential import, upstream 429, shared manual/cron cooldown, expiry, retained data");
+
+  // Put the two samples halfway through a due scheduling interval.
+  await db.query(`UPDATE "Subscription" SET "createdAt" = NOW() - INTERVAL '1 day 3 minutes',
+    "lastUpdatedAt" = NOW() - INTERVAL '1 day' WHERE id = ANY($1)`, [sampleIds]);
+  const runCron = () => api("/api/cron/update-subscriptions", { method: "POST", cron: true });
+  const beforeCron = await Promise.all([first, second].map(async path => (await api(path)).subscription));
+  const cron = await runCron();
+  assert.equal(cron.success, true);
+  const updatedSamples = cron.updatedSubscriptions.filter(row => sampleIds.includes(row.subscriptionId));
+  assert.equal(updatedSamples.length, 1, "one automatic GET for a shared address");
+  expectRequests("/shared", ["GET", "GET", "GET", "GET"]);
+  const updatedId = updatedSamples[0].subscriptionId;
+  const skipped = beforeCron.find(row => row.id !== updatedId);
+  const skippedAfter = (await api("/api/subscriptions/" + skipped.id)).subscription;
+  assert.deepEqual(skippedAfter.nodes, skipped.nodes);
+  assert.equal(skippedAfter.lastUpdatedAt, skipped.lastUpdatedAt);
+  assert.equal(skippedAfter.autoUpdateState.externalFailureCount, skipped.autoUpdateState.externalFailureCount);
+
+  await api("/api/subscriptions/" + updatedId + "/refresh", { method: "POST" });
+  await runCron();
+  expectRequests("/shared", ["GET", "GET", "GET", "GET", "GET"]);
+  await expireSource("/shared");
+  const nextCron = await runCron();
+  assert.ok(nextCron.updatedSubscriptions.some(row => row.subscriptionId === skipped.id));
+  expectRequests("/shared", ["GET", "GET", "GET", "GET", "GET", "GET"]);
+  console.log("subscription HTTP counts passed for manual import, refresh, upstream errors and scheduled refresh");
 } finally {
   for (const id of sampleIds) await api("/api/subscriptions/" + id, { method: "DELETE" });
   if (originalSettings) await api("/api/settings/source-import", { method: "PATCH", body: originalSettings });

@@ -39,12 +39,10 @@ function createExpandedSourceSnapshot(source: SubscriptionSource): ExpandedSourc
   };
 }
 
-function changedSinceSnapshot(source: SubscriptionSource, snapshot: ExpandedSourceSnapshot): boolean {
+function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: ExpandedSourceSnapshot): boolean {
   const next = createExpandedSourceSnapshot(source);
   return (
     next.content !== snapshot.content ||
-    next.tag !== snapshot.tag ||
-    next.nameTemplate !== snapshot.nameTemplate ||
     next.useProxyProviders !== snapshot.useProxyProviders ||
     next.userinfoUrl !== snapshot.userinfoUrl ||
     next.userinfoUserAgent !== snapshot.userinfoUserAgent
@@ -53,8 +51,6 @@ function changedSinceSnapshot(source: SubscriptionSource, snapshot: ExpandedSour
 
 function sourceMetaNeedsReimport(patch: Partial<SubscriptionSource>): boolean {
   return (
-    Object.prototype.hasOwnProperty.call(patch, "tag") ||
-    Object.prototype.hasOwnProperty.call(patch, "nameTemplate") ||
     Object.prototype.hasOwnProperty.call(patch, "useProxyProviders") ||
     Object.prototype.hasOwnProperty.call(patch, "userinfoUrl") ||
     Object.prototype.hasOwnProperty.call(patch, "userinfoUserAgent")
@@ -62,7 +58,7 @@ function sourceMetaNeedsReimport(patch: Partial<SubscriptionSource>): boolean {
 }
 
 export function useSubscriptionSourcesController({ mode }: Options) {
-  const { nodes, parseErrors, sources, setSources, parseSingleSource } = useConfigStore();
+  const { nodes, parseErrors, sources, setSources, applySourceNaming, parseSingleSource } = useConfigStore();
   const { user } = useUserStore();
   const interactions = useProductInteractionAdapter();
 
@@ -127,17 +123,18 @@ export function useSubscriptionSourcesController({ mode }: Options) {
   }, [nodes]);
 
   const closeExpandedSourceEditor = React.useCallback(() => {
-    if (
-      expandedSource &&
-      expandedSourceSnapshot?.id === expandedSource.id &&
-      !expandedSource.parsing &&
-      changedSinceSnapshot(expandedSource, expandedSourceSnapshot)
-    ) {
-      void parseSingleSource(expandedSource.id);
+    if (expandedSource && expandedSourceSnapshot?.id === expandedSource.id) {
+      if (importInputChangedSinceSnapshot(expandedSource, expandedSourceSnapshot)) {
+        if (!expandedSource.parsing) void parseSingleSource(expandedSource.id);
+      } else if (
+        (expandedSource.tag ?? "").trim() !== expandedSourceSnapshot.tag ||
+        (expandedSource.nameTemplate ?? "").trim() !== expandedSourceSnapshot.nameTemplate
+      ) {
+        applySourceNaming(expandedSource.id, expandedSourceSnapshot);
+      }
     }
     setExpandedSourceId(null);
-  }, [expandedSource, expandedSourceSnapshot, parseSingleSource]);
-
+  }, [expandedSource, expandedSourceSnapshot, parseSingleSource, applySourceNaming]);
   const addSource = React.useCallback(
     (type: SourceType = "url") => {
       const used = sources.filter((source) => source.type === type).length;

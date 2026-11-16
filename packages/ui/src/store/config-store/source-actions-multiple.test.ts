@@ -412,7 +412,7 @@ describe("createSourceActions parseMultipleSources", () => {
     const running = actions.parseMultipleSources(sources);
     actions.setSources(
       getState().sources.map((item: SubscriptionSource) =>
-        item.id === "s2" ? { ...item, nameTemplate: "{name}-changed" } : item
+        item.id === "s2" ? { ...item, content: "https://example.com/changed" } : item
       )
     );
     first.resolve({ content: "one", headers: {}, parseResult: parseResult([node("One")]) });
@@ -424,7 +424,7 @@ describe("createSourceActions parseMultipleSources", () => {
     expect(getState().nodes.map((item: ParsedNode) => item.name)).toEqual(["Keep"]);
     expect(getState().sources).toEqual([
       expect.objectContaining({ id: "s1" }),
-      expect.objectContaining({ id: "s2", nameTemplate: "{name}-changed" }),
+      expect.objectContaining({ id: "s2", content: "https://example.com/changed" }),
     ]);
     expect(getState().sources[0]).not.toHaveProperty("parsed");
     expect(getState().sources[1]).not.toHaveProperty("parsed");

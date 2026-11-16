@@ -1,3 +1,5 @@
+import { formatNodeNameFromTemplate } from "@subboost/core/node-name-template";
+import { getNodeOriginName, makeUniqueName } from "@subboost/core/subscription/node-source-state";
 import type { ParsedNode, ParseResult } from "@subboost/core/types/node";
 import { parseSubscription } from "@subboost/core/parser";
 import { buildNodeContentKey, buildScopedNodeIdentityKey } from "@subboost/core/node-identity";
@@ -39,7 +41,7 @@ import { SourceImportOperationGuard, type SingleSourceImportOperation } from "./
 
 type SourceActions = Pick<
   ConfigActions,
-  "setSources" | "parseContent" | "parseSingleSource" | "parseMultipleSources"
+  "setSources" | "applySourceNaming" | "parseContent" | "parseSingleSource" | "parseMultipleSources"
 >;
 
 function pickUrlFetchParseResult(fetched: Awaited<ReturnType<typeof fetchUrlContentInBrowser>>): ParseResult | null {
@@ -145,6 +147,62 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
       });
     },
 
+    applySourceNaming: (sourceId, previousNaming) => {
+      const source = get().sources.find((item) => item.id === sourceId);
+      if (!source) return;
+      setAndGenerateConfig((state) => {
+        const ownedNodes = new Set(state.nodes.filter((node) => {
+          const sourceIds = getNodeSourceIds(node);
+          return state.sources.find((item) => sourceIds.includes(item.id))?.id === sourceId;
+        }));
+        const previousUsed = new Set(state.nodes.filter((node) => !ownedNodes.has(node)).map((node) => node.name));
+        const previousNamesByBase = new Map<string, Set<string>>();
+        const previousBaseOf = (node: ParsedNode) => formatNodeNameFromTemplate({
+          originName: getNodeOriginName(node),
+          tag: source.lastParsedTag ?? previousNaming.tag,
+          template: source.lastParsedNameTemplate ?? previousNaming.nameTemplate,
+        });
+        for (const node of ownedNodes) {
+          const base = previousBaseOf(node);
+          const previousName = makeUniqueName(base, previousUsed);
+          previousUsed.add(previousName);
+          const names = previousNamesByBase.get(base) ?? new Set<string>();
+          names.add(previousName);
+          previousNamesByBase.set(base, names);
+        }
+        const automatic = new Map<ParsedNode, string>();
+        for (const node of ownedNodes) {
+          if (!previousNamesByBase.get(previousBaseOf(node))?.has(node.name)) continue;
+          automatic.set(node, formatNodeNameFromTemplate({ originName: getNodeOriginName(node), tag: source.tag, template: source.nameTemplate }));
+        }
+        const used = new Set(state.nodes.filter((node) => !automatic.has(node)).map((node) => node.name));
+        const renameMap = new Map<string, string>();
+        const nodes = state.nodes.map((node) => {
+          const desired = automatic.get(node);
+          if (desired === undefined) return node;
+          const name = makeUniqueName(desired, used);
+          used.add(name);
+          if (name !== node.name) renameMap.set(node.name, name);
+          return name === node.name ? node : { ...node, name };
+        });
+        return {
+          nodes,
+          sources: state.sources.map((item) => item.id === sourceId ? {
+            ...item,
+            lastParsedTag: source.tag?.trim() || undefined,
+            lastParsedNameTemplate: source.nameTemplate?.trim() || undefined,
+          } : item),
+          ...reconcileNodeNameReferences({
+            listenerPorts: state.listenerPorts,
+            dialerProxyGroups: state.dialerProxyGroups,
+            proxyGroupAdvanced: state.proxyGroupAdvanced,
+            customProxyGroups: state.customProxyGroups,
+            enabledGroups: state.enabledProxyGroups,
+            proxyGroupNameOverrides: state.proxyGroupNameOverrides,
+          }, { nodes, renameMap, simultaneousRenames: true }),
+        };
+      });
+    },
     // 解析订阅内容
     parseContent: (content: string) => {
       importOperations.cancelAll();
@@ -213,8 +271,6 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
       const currentTag = typeof source.tag === "string" ? source.tag.trim() : "";
       const currentNameTemplate = typeof source.nameTemplate === "string" ? source.nameTemplate.trim() : "";
-      const lastTag = typeof source.lastParsedTag === "string" ? source.lastParsedTag.trim() : "";
-      const lastNameTemplate = typeof source.lastParsedNameTemplate === "string" ? source.lastParsedNameTemplate.trim() : "";
 
       // 标记为解析中
       set((state) => ({
@@ -316,9 +372,12 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           throw new Error(errorMsg);
         }
 
+        const latestSource = get().sources.find((item) => item.id === sourceId) ?? source;
+        const latestTag = typeof latestSource.tag === "string" ? latestSource.tag.trim() : "";
+        const latestNameTemplate = typeof latestSource.nameTemplate === "string" ? latestSource.nameTemplate.trim() : "";
         const parsedNodes = prepareSourceParsedNodes(result.nodes, {
-          currentTag,
-          currentNameTemplate,
+          currentTag: latestTag,
+          currentNameTemplate: latestNameTemplate,
         });
 
         if (discardStaleSingle(operation)) return;
@@ -327,10 +386,10 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         setAndGenerateConfig((state) => {
           const merged = mergeParsedSourceNodes(state.nodes, parsedNodes, state.deletedNodeNames, {
             sourceId,
-            currentTag,
-            currentNameTemplate,
-            lastTag,
-            lastNameTemplate,
+            currentTag: latestTag,
+            currentNameTemplate: latestNameTemplate,
+            lastTag: latestSource.lastParsedTag,
+            lastNameTemplate: latestSource.lastParsedNameTemplate,
             treatAsNewSource,
             deletedNodes: state.deletedNodes,
           });
@@ -367,8 +426,8 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
                       source.type === "url"
                         ? (tryNormalizeSubscriptionUrlInput(currentSourceContent) ?? currentSourceContent)
                         : currentSourceContent,
-                    lastParsedTag: currentTag || undefined,
-                    lastParsedNameTemplate: currentNameTemplate || undefined,
+                    lastParsedTag: latestTag || undefined,
+                    lastParsedNameTemplate: latestNameTemplate || undefined,
                   }
                 : s
             ),
@@ -572,6 +631,19 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         }
       }
 
+      const latestSourcesById = new Map(get().sources.map((source) => [source.id, source]));
+      for (let index = 0; index < allNodes.length; index += 1) {
+        const node = allNodes[index];
+        const source = latestSourcesById.get(getNodeSourceIds(node)[0]);
+        if (!source) continue;
+        allNodes[index] = { ...node, name: formatNodeNameFromTemplate({ originName: getNodeOriginName(node), tag: source.tag, template: source.nameTemplate }) };
+      }
+      for (const source of get().sources) {
+        const meta = sourceMeta.get(source.id);
+        if (!meta?.parsed) continue;
+        meta.lastParsedTag = typeof source.tag === "string" ? source.tag.trim() || undefined : undefined;
+        meta.lastParsedNameTemplate = typeof source.nameTemplate === "string" ? source.nameTemplate.trim() || undefined : undefined;
+      }
       // 去重节点（基于 originName + 节点内容）
       const uniqueNodeMap = new Map<string, ParsedNode>();
       for (const node of allNodes) {
@@ -679,10 +751,8 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
               ...(typeof meta.lastParsedContent === "string" && meta.lastParsedContent.trim()
                 ? { lastParsedContent: meta.lastParsedContent.trim() }
                 : {}),
-              ...(typeof meta.lastParsedTag === "string" ? { lastParsedTag: meta.lastParsedTag } : {}),
-              ...(typeof meta.lastParsedNameTemplate === "string"
-                ? { lastParsedNameTemplate: meta.lastParsedNameTemplate }
-                : {}),
+              ...(meta.parsed ? { lastParsedTag: meta.lastParsedTag } : {}),
+              ...(meta.parsed ? { lastParsedNameTemplate: meta.lastParsedNameTemplate } : {}),
             };
           }),
         };

@@ -245,6 +245,7 @@ export interface ConfigState {
 export interface ConfigActions {
   // 订阅源操作
   setSources: (sources: SubscriptionSource[]) => void;
+  applySourceNaming: (sourceId: string, previousNaming: Pick<SubscriptionSource, "tag" | "nameTemplate">) => void;
 
   // 节点操作
   parseContent: (content: string) => void;

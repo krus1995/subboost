@@ -305,6 +305,7 @@ describe("public SourcesSection branch coverage", () => {
       parseErrors: [{ message: "top level parse failed" }],
       sources: createSources(),
       setSources: mocks.setSources,
+      applySourceNaming: vi.fn(),
       parseSingleSource: mocks.parseSingleSource,
     };
   });
@@ -382,8 +383,7 @@ describe("public SourcesSection branch coverage", () => {
         expect.objectContaining({
           id: "url-1",
           tag: "Premium",
-          parsed: false,
-          parsing: false,
+          parsed: true,
         }),
       ])
     );

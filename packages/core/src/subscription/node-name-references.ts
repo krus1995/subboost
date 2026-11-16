@@ -7,6 +7,7 @@ export type NodeNameRenameMap = ReadonlyMap<string, string> | Readonly<Record<st
 type ReconcileNodeNameReferencesOptions = {
   nodes: ParsedNode[];
   renameMap?: NodeNameRenameMap;
+  simultaneousRenames?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -60,7 +61,7 @@ export function composeNodeNameRenameMaps(
 
 function remapNameList(
   value: unknown,
-  renameMap: ReadonlyMap<string, string>,
+  renameName: (name: string) => string,
   availableNames: ReadonlySet<string>,
   options: { keepDirect?: boolean; preservedNames?: ReadonlySet<string> } = {}
 ): unknown {
@@ -84,7 +85,7 @@ function remapNameList(
       seenNames.add(name);
       continue;
     }
-    const nextName = resolveRenamedNodeName(name, renameMap);
+    const nextName = renameName(name);
     if (!availableNames.has(nextName) || seenNames.has(nextName)) continue;
     seenNames.add(nextName);
     out.push(nextName);
@@ -94,7 +95,7 @@ function remapNameList(
 
 function remapAdvancedMemberList(
   value: unknown,
-  renameMap: ReadonlyMap<string, string>,
+  renameName: (name: string) => string,
   availableNames: ReadonlySet<string>
 ): unknown {
   if (!Array.isArray(value)) return value;
@@ -105,7 +106,7 @@ function remapAdvancedMemberList(
       out.push(item);
       continue;
     }
-    const nextName = resolveRenamedNodeName(item.name.trim(), renameMap);
+    const nextName = renameName(item.name.trim());
     if (!nextName || !availableNames.has(nextName) || seenNodeNames.has(nextName)) continue;
     seenNodeNames.add(nextName);
     out.push(nextName === item.name ? item : { ...item, name: nextName });
@@ -115,7 +116,7 @@ function remapAdvancedMemberList(
 
 function remapProxyGroupAdvanced(
   value: unknown,
-  renameMap: ReadonlyMap<string, string>,
+  renameName: (name: string) => string,
   availableNames: ReadonlySet<string>
 ): unknown {
   if (!isRecord(value)) return value;
@@ -127,13 +128,13 @@ function remapProxyGroupAdvanced(
         {
           ...rawAdvanced,
           ...(Object.hasOwn(rawAdvanced, "extraMembers")
-            ? { extraMembers: remapAdvancedMemberList(rawAdvanced.extraMembers, renameMap, availableNames) }
+            ? { extraMembers: remapAdvancedMemberList(rawAdvanced.extraMembers, renameName, availableNames) }
             : {}),
           ...(Object.hasOwn(rawAdvanced, "excludedMembers")
-            ? { excludedMembers: remapAdvancedMemberList(rawAdvanced.excludedMembers, renameMap, availableNames) }
+            ? { excludedMembers: remapAdvancedMemberList(rawAdvanced.excludedMembers, renameName, availableNames) }
             : {}),
           ...(Object.hasOwn(rawAdvanced, "memberOrder")
-            ? { memberOrder: remapAdvancedMemberList(rawAdvanced.memberOrder, renameMap, availableNames) }
+            ? { memberOrder: remapAdvancedMemberList(rawAdvanced.memberOrder, renameName, availableNames) }
             : {}),
         },
       ];
@@ -147,6 +148,9 @@ export function reconcileNodeNameReferences<T extends object>(
 ): T {
   const rawConfig = config as Record<string, unknown>;
   const renameMap = toRenameMap(options.renameMap);
+  const renameName = options.simultaneousRenames
+    ? (name: string) => renameMap.get(name) ?? name
+    : (name: string) => resolveRenamedNodeName(name, renameMap);
   const availableNames = new Set(options.nodes.map((node) => node.name.trim()).filter(Boolean));
   const template =
     rawConfig.template === "minimal" || rawConfig.template === "standard" || rawConfig.template === "full"
@@ -159,7 +163,7 @@ export function reconcileNodeNameReferences<T extends object>(
   const listenerPorts = isRecord(rawConfig.listenerPorts)
     ? Object.fromEntries(
         Object.entries(rawConfig.listenerPorts)
-          .map(([name, port]) => [resolveRenamedNodeName(name, renameMap), port] as const)
+          .map(([name, port]) => [renameName(name), port] as const)
           .filter(
             ([name, port]) =>
               availableNames.has(name) &&
@@ -176,11 +180,11 @@ export function reconcileNodeNameReferences<T extends object>(
         if (!isRecord(rawGroup)) return rawGroup;
         return {
           ...rawGroup,
-          relayNodes: remapNameList(rawGroup.relayNodes, renameMap, availableNames, {
+          relayNodes: remapNameList(rawGroup.relayNodes, renameName, availableNames, {
             keepDirect: true,
             preservedNames: validRelayGroupNames,
           }),
-          targetNodes: remapNameList(rawGroup.targetNodes, renameMap, availableNames),
+          targetNodes: remapNameList(rawGroup.targetNodes, renameName, availableNames),
         };
       })
     : rawConfig.dialerProxyGroups;
@@ -190,7 +194,7 @@ export function reconcileNodeNameReferences<T extends object>(
     ...(Object.hasOwn(rawConfig, "listenerPorts") ? { listenerPorts } : {}),
     ...(Object.hasOwn(rawConfig, "dialerProxyGroups") ? { dialerProxyGroups } : {}),
     ...(Object.hasOwn(rawConfig, "proxyGroupAdvanced")
-      ? { proxyGroupAdvanced: remapProxyGroupAdvanced(rawConfig.proxyGroupAdvanced, renameMap, availableNames) }
+      ? { proxyGroupAdvanced: remapProxyGroupAdvanced(rawConfig.proxyGroupAdvanced, renameName, availableNames) }
       : {}),
   } as T;
 }

@@ -93,7 +93,7 @@ async function prepareLocalRefresh(
     config: secrets.config,
     urls: secrets.urls,
     storedNodes: secrets.nodes,
-    ...buildSubscriptionFetchCallbacks(),
+    ...buildSubscriptionFetchCallbacks("automatic"),
   });
   const { failureState, failureReason } = resolveAutomaticRefreshFailureAnalysis({
     currentState: currentAutoUpdateState,

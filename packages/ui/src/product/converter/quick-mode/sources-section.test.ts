@@ -277,6 +277,7 @@ describe("quick mode SourcesSection", () => {
       parseErrors: [{ message: "bad subscription" }],
       sources: [urlSource, textSource],
       setSources: vi.fn(),
+      applySourceNaming: vi.fn(),
       parseSingleSource: vi.fn(),
     };
     mocks.userStore = { user: { isAdmin: false, quota: { maxImportSourcesPerType: 2 } } };
@@ -301,11 +302,12 @@ describe("quick mode SourcesSection", () => {
     mocks.captures.editor.onUpdateContent("s2", "trojan://node");
     expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ content: "trojan://node" }));
 
+    mocks.markSourceAsPendingImport.mockClear();
     mocks.captures.editor.onUpdateMeta("s1", { tag: "JP" });
-    expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ tag: "JP" }));
+    expect(mocks.markSourceAsPendingImport).not.toHaveBeenCalled();
 
     mocks.captures.editor.onUpdateMeta("s1", { nameTemplate: "{tag}-{name}" });
-    expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ nameTemplate: "{tag}-{name}" }));
+    expect(mocks.markSourceAsPendingImport).not.toHaveBeenCalled();
 
     mocks.captures.editor.onUpdateMeta("s1", { useProxyProviders: true });
     expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ useProxyProviders: true }));
@@ -317,6 +319,15 @@ describe("quick mode SourcesSection", () => {
     expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ userinfoUserAgent: "clash.meta/v1.19.16" }));
   });
 
+  it("closes a naming-only edit without importing again", () => {
+    renderSection({
+      1: "s1",
+      2: { ...urlSource, tag: "OLD", nameTemplate: "{name}" },
+    });
+    mocks.captures.editor.onClose();
+    expect(mocks.store.parseSingleSource).not.toHaveBeenCalled();
+    expect(mocks.store.applySourceNaming).toHaveBeenCalledWith("s1", expect.objectContaining({ tag: "OLD", nameTemplate: "{name}" }));
+  });
   it("closes the expanded editor and triggers re-import only when metadata changed", () => {
     renderSection({
       1: "s1",
