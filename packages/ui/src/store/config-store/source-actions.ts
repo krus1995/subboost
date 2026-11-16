@@ -118,14 +118,14 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
       const removed = new Set(Array.from(prevIds).filter((id) => !nextIds.has(id)));
 
       if (removed.size === 0) {
-        const labelsChanged = sources.some((source) =>
-          (source.source?.trim() ?? "") !== (prev.find((item) => item.id === source.id)?.source?.trim() ?? "")
-        );
-        const ruleSettingsChanged = sources.some((source) => {
+        const routingChanged = sources.some((source, index) => {
           const previous = prev.find((item) => item.id === source.id);
-          return source.includeRules !== previous?.includeRules || source.ruleTargets !== previous?.ruleTargets;
+          return (source.source?.trim() ?? "") !== (previous?.source?.trim() ?? "")
+            || source.includeRules !== previous?.includeRules
+            || source.ruleTargets !== previous?.ruleTargets
+            || (source.includeRules && (prev[index]?.id !== source.id || source.ruleSnapshot !== previous?.ruleSnapshot));
         });
-        if (labelsChanged || ruleSettingsChanged) setAndGenerateConfig(() => ({ sources }));
+        if (routingChanged) setAndGenerateConfig(() => ({ sources }));
         else set({ sources });
         return;
       }

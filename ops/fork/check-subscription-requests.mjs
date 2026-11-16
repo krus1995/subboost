@@ -2,18 +2,30 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import pg from "pg";
+import { dump, load } from "js-yaml";
 
 const appUrl = "http://127.0.0.1:3000";
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
 await db.connect();
 const counts = new Map();
 const node = { name: "Updated upstream node", type: "ss", server: "node.example", port: 443, cipher: "aes-128-gcm", password: "acceptance-only" };
+function fixtureProfile(label, firstPort) {
+  const proxies = ["JP", "HK"].map((region, index) => ({
+    ...node, name: region + " " + label, port: firstPort + index,
+  }));
+  return { proxies, "proxy-groups": [{ name: "Media", type: "select", proxies: proxies.map(item => item.name) }],
+    rules: ["DOMAIN,video.example,Media", "MATCH,Media"] };
+}
+const profiles = new Map([["/main", fixtureProfile("Main", 1101)], ["/public", fixtureProfile("Public", 2201)]]);
 const upstream = createServer((request, response) => {
   const key = request.url;
   const requests = counts.get(key) ?? [];
   requests.push(request.method);
   counts.set(key, requests);
-  if (key === "/limited" || key === "/forbidden") {
+  if (profiles.has(key)) {
+    response.writeHead(200, { "content-type": "text/yaml" });
+    response.end(dump(profiles.get(key)));
+  } else if (key === "/limited" || key === "/forbidden") {
     response.writeHead(key === "/limited" ? 429 : 403, { "retry-after": "360" });
     response.end("upstream refused");
   } else {
@@ -51,6 +63,65 @@ async function expireSource(path) {
   const key = "subscription-request:" + createHash("sha256").update(sourceUrl(path)).digest("hex");
   const result = await db.query('UPDATE "JobLeaseLock" SET "expiresAt" = NOW() - INTERVAL \'1 second\' WHERE name = $1', [key]);
   assert.equal(result.rowCount, 1, "expire only the sample source cooldown");
+}
+async function checkSourceRouting() {
+  const sources = [];
+  const nodes = [];
+  const customGroups = [];
+  for (const [index, path] of ["/main", "/public"].entries()) {
+    const id = "sample-" + index;
+    const source = "source" + (index + 1);
+    const result = await api("/api/source-import", {
+      method: "POST", body: { url: sourceUrl(path), includeRules: true },
+    });
+    const profile = load(result.content);
+    const groupId = "jp-" + id;
+    customGroups.push({ id: groupId, name: source + " JP", groupType: "url-test",
+      memberSource: "filtered-nodes", advanced: { sourceLabels: [source], regions: ["jp"] } });
+    sources.push({ id, source, type: "url", content: sourceUrl(path), lastParsedContent: sourceUrl(path),
+      includeRules: true, ruleSnapshot: { groups: profile["proxy-groups"], rules: profile.rules },
+      ruleTargets: { Media: { kind: "custom", id: groupId } } });
+    nodes.push(...result.parseResult.nodes.map(item => ({ ...item, _sourceIds: [id], _originName: item.name })));
+  }
+  const config = { sources, enabledGroups: [], customProxyGroups: customGroups,
+    ruleSourceOrder: ["label:source1", "label:source2", "subboost"] };
+  const { subscription } = await api("/api/subscriptions", { method: "POST", status: 201, body: {
+    name: "source group acceptance", nodes, urls: sources.map(source => source.content), config,
+  } });
+  sampleIds.push(subscription.id);
+  const item = "/api/subscriptions/" + subscription.id;
+  async function assertProfiles(first, second, publicNode) {
+    const results = await Promise.all(["config.yaml", "loon.conf"].map(async file => {
+      const response = await fetch(appUrl + "/api/subscriptions/" + subscription.token + "/" + file);
+      assert.equal(response.status, 200, "read " + file);
+      return response.text();
+    }));
+    const clash = load(results[0]);
+    const loon = results[1].split(/\r?\n/);
+    const rules = ["DOMAIN,video.example," + first, "DOMAIN,video.example," + second];
+    assert.deepEqual(clash.rules.filter(rule => rule.startsWith("DOMAIN,video.example,")), rules);
+    assert.deepEqual(loon.filter(rule => rule.startsWith("DOMAIN,video.example,")), rules);
+    assert.deepEqual(clash.rules.filter(rule => rule.startsWith("MATCH,")), ["MATCH," + first]);
+    assert.deepEqual(loon.filter(rule => rule.startsWith("FINAL,")), ["FINAL," + first]);
+    for (const [group, member] of [["source1 JP", "JP Main"], ["source2 JP", publicNode]]) {
+      assert.deepEqual(clash["proxy-groups"].find(target => target.name === group)?.proxies, [member]);
+      const fields = loon.find(line => line.startsWith(group + " = url-test,"))?.split(/,\s*/);
+      assert.deepEqual(fields?.slice(1).filter(field => !field.includes("=")), [member]);
+    }
+  }
+  await assertProfiles("source1 JP", "source2 JP", "JP Public");
+  config.ruleSourceOrder = ["label:source2", "label:source1", "subboost"];
+  await api(item, { method: "PUT", body: { config } });
+  await assertProfiles("source2 JP", "source1 JP", "JP Public");
+  for (const path of profiles.keys()) expectRequests(path, ["GET"]);
+
+  // An invalid main update cannot publish its nodes against the previous rules.
+  profiles.set("/main", { proxies: fixtureProfile("Wrong", 9901).proxies });
+  profiles.set("/public", fixtureProfile("Renewed", 3301));
+  await api(item + "/refresh", { method: "POST" });
+  await assertProfiles("source2 JP", "source1 JP", "JP Renewed");
+  for (const path of profiles.keys()) expectRequests(path, ["GET", "GET"]);
+  console.log("source routing HTTP acceptance passed: saved labels and region, ordered rules and bindings, atomic refresh");
 }
 try {
   const response = await fetch(appUrl + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
@@ -108,6 +179,7 @@ try {
   assert.ok(nextCron.updatedSubscriptions.some(row => row.subscriptionId === skipped.id));
   expectRequests("/shared", ["GET", "GET", "GET", "GET", "GET", "GET"]);
   console.log("subscription HTTP counts passed for manual import, refresh, upstream errors and scheduled refresh");
+  await checkSourceRouting();
 } finally {
   for (const id of sampleIds) await api("/api/subscriptions/" + id, { method: "DELETE" });
   if (originalSettings) await api("/api/settings/source-import", { method: "PATCH", body: originalSettings });
