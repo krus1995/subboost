@@ -14,6 +14,7 @@ import type { ParsedNode } from "../types/node";
 
 export type SourceRefreshDescriptor = {
   sourceId: string;
+  preserveOtherSourceNodes?: boolean;
   currentTag?: string;
   currentNameTemplate?: string;
   lastTag?: string;
@@ -345,6 +346,13 @@ export function mergeParsedSourceNodes(
       const keepUserName = previousOriginName ? isUserRenamed(node.name, previousOriginName) : false;
       const desiredName = keepUserName ? node.name : fresh.name;
       const extraIds = base ? getNodeSourceIds(base) : sourceIds.filter((id) => id !== sourceId);
+
+      if (descriptor.preserveOtherSourceNodes && base &&
+          (previousOriginName !== originName || buildNodeContentKey(node) !== buildNodeContentKey(fresh))) {
+        pushPlanned(base, base.name, true);
+        pushPlanned(mergeNodeWithFresh({ stored: node, fresh, originName, desiredName, extraSourceIds: [] }), null, false);
+        continue;
+      }
 
       const merged = mergeNodeWithFresh({
         stored: node,
