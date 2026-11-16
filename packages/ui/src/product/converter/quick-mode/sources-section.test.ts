@@ -277,6 +277,7 @@ describe("quick mode SourcesSection", () => {
       parseErrors: [{ message: "bad subscription" }],
       sources: [urlSource, textSource],
       setSources: vi.fn(),
+      applySourceNaming: vi.fn(),
       parseSingleSource: vi.fn(),
     };
     mocks.userStore = { user: { isAdmin: false, quota: { maxImportSourcesPerType: 2 } } };
@@ -592,4 +593,3 @@ describe("quick mode SourcesSection", () => {
     expect(stateMock.setters[1]).toHaveBeenCalledWith(null);
   });
 });
-

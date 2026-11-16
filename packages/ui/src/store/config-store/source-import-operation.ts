@@ -17,8 +17,6 @@ export function buildSourceImportFingerprint(source: SubscriptionSource): string
   return JSON.stringify([
     source.type,
     source.content,
-    typeof source.tag === "string" ? source.tag : null,
-    typeof source.nameTemplate === "string" ? source.nameTemplate : null,
     source.useProxyProviders === true,
     typeof source.userinfoUrl === "string" ? source.userinfoUrl : null,
     typeof source.userinfoUserAgent === "string" ? source.userinfoUserAgent : null,
