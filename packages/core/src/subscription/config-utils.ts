@@ -1,4 +1,5 @@
 import type { GenerateOptions } from "@subboost/core/generator";
+import { buildSourceLabelsById } from "@subboost/core/proxy-group-advanced";
 import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import type { DialerProxyGroup } from "@subboost/core/types/template-config";
 import type { ParsedNode } from "@subboost/core/types/node";
@@ -343,6 +344,7 @@ export function buildGenerateOptionsFromConfig(
 
   return {
     nodes: sanitizedNodes,
+    sourceLabelsById: buildSourceLabelsById(config.sources),
     ...(proxyProviders ? { proxyProviders } : {}),
     template,
     userConfig,

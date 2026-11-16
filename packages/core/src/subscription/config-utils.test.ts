@@ -20,6 +20,21 @@ function node(patch: Partial<ParsedNode> = {}): ParsedNode {
 }
 
 describe("subscription config utils", () => {
+  it("passes persisted logical source labels to both exporters", () => {
+    const config = {
+      sources: [
+        { id: "main", type: "url", content: "https://main.example/sub", source: " airport " },
+        { id: "public-a", type: "url", content: "https://a.example/sub", source: "public" },
+        { id: "public-b", type: "url", content: "https://b.example/sub", source: "public" },
+        { id: "old", type: "url", content: "https://old.example/sub" },
+      ],
+    };
+    expect(buildGenerateOptionsFromConfig(config, { nodes: [node()] }).sourceLabelsById).toEqual({
+      main: "airport", "public-a": "public", "public-b": "public",
+    });
+    expect(buildGenerateOptionsFromConfig({}, { nodes: [node()] }).sourceLabelsById).toEqual({});
+  });
+
   it("normalizes effective test options with guarded fallbacks", () => {
     expect(getEffectiveTestOptions({ testUrl: " https://cp.cloudflare.com ", testInterval: 120 })).toEqual({
       testUrl: "https://cp.cloudflare.com",
