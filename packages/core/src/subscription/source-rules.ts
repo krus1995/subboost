@@ -1,7 +1,7 @@
 import { loadSubscriptionYaml } from "../parser/yaml-scalars";
 import { parseClashYaml } from "../parser/clash-yaml";
 import { normalizeProxyGroupTargetRef } from "../proxy-group-targets";
-import type { ProxyGroup, ProxyGroupRuleTarget } from "../types/config";
+import { isLoadBalanceStrategy, type ProxyGroup, type ProxyGroupRuleTarget } from "../types/config";
 
 export type SourceRuleSnapshot = { groups: ProxyGroup[]; rules: string[] };
 export type SourceRuleInput = {
@@ -24,6 +24,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
+function validName(value: string): boolean {
+  return !/[\x00-\x1f,]/.test(value);
+}
 
 function validIpCidr(value: string, ipv6: boolean): boolean {
   const [address, prefix, extra] = value.split("/");
@@ -35,7 +38,7 @@ function validIpCidr(value: string, ipv6: boolean): boolean {
 }
 
 export function parseSourceRule(rule: string): ParsedSourceRule {
-  if (/[\r\n]/.test(rule)) throw new Error("来源规则包含无效换行");
+  if (/[\x00-\x1f]/.test(rule)) throw new Error("来源规则包含无效控制字符");
   const fields = rule.split(",").map(value => value.trim());
   const type = fields[0]?.toUpperCase();
   if (type === "MATCH" || type === "FINAL") {
@@ -67,10 +70,10 @@ function readSnapshot(value: unknown): SourceRuleSnapshot {
     if (!isRecord(item)) throw new Error(`来源策略组 #${index + 1} 无效`);
     const name = text(item.name);
     const type = text(item.type);
-    if (!name || !type || !GROUP_TYPES.has(type) || names.has(name) || ACTIONS.has(name)) {
+    if (!name || !validName(name) || !type || !GROUP_TYPES.has(type) || names.has(name) || ACTIONS.has(name)) {
       throw new Error(`来源策略组 #${index + 1} 名称或类型无效`);
     }
-    if (!Array.isArray(item.proxies) || item.proxies.length === 0 || item.proxies.some(member => !text(member))) {
+    if (!Array.isArray(item.proxies) || item.proxies.length === 0 || item.proxies.some(member => typeof member !== "string" || !text(member) || !validName(member))) {
       throw new Error(`来源策略组 #${index + 1} 缺少有效成员`);
     }
     if (item.use !== undefined || item["include-all"] || item["include-all-proxies"] || item["include-all-providers"]) {
@@ -83,6 +86,18 @@ function readSnapshot(value: unknown): SourceRuleSnapshot {
       (key !== "proxies" && typeof field !== "string" && typeof field !== "boolean" && !(typeof field === "number" && Number.isFinite(field))))) {
       throw new Error(`来源策略组 #${index + 1} 含暂不支持的设置`);
     }
+    for (const field of ["interval", "tolerance", "timeout", "max-failed-times"]) {
+      if (item[field] !== undefined && !(typeof item[field] === "number" && Number.isInteger(item[field]) && item[field] >= 0)) {
+        throw new Error(`来源策略组 #${index + 1} 的数值设置无效`);
+      }
+    }
+    for (const field of ["lazy", "hidden"]) {
+      if (item[field] !== undefined && typeof item[field] !== "boolean") throw new Error(`来源策略组 #${index + 1} 的开关设置无效`);
+    }
+    for (const field of ["url", "icon", "expected-status"]) {
+      if (item[field] !== undefined && (typeof item[field] !== "string" || /[\x00-\x1f]/.test(item[field]))) throw new Error(`来源策略组 #${index + 1} 的文本设置无效`);
+    }
+    if (item.strategy !== undefined && !isLoadBalanceStrategy(item.strategy)) throw new Error(`来源策略组 #${index + 1} 的负载均衡方式无效`);
     names.add(name);
     return { ...item, name, type, proxies: item.proxies.map(member => String(member).trim()) };
   });

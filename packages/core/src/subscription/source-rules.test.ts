@@ -43,6 +43,9 @@ describe("source rule snapshots", () => {
     [content.replace("type: select", "type: relay"), "类型"],
     [content.replace("name: Proxies,", "name: Proxies, use: [remote],"), "远程"],
     [content.replace("name: Proxies,", "name: Proxies, filter: JP,"), "过滤"],
+    [content.replace("name: Proxies,", "name: Proxies, interval: wrong,"), "数值"],
+    [content.replace("name: Proxies,", "name: Proxies, url: [bad],"), "设置"],
+    [content.replace("name: Proxies,", 'name: "Proxies\\nInjected",'), "名称"],
     [content + "  - MATCH,DIRECT\n", "兜底"],
   ])("rejects unusable snapshots without silently dropping rules", (body, expected) => {
     expect(() => parseSourceRuleSnapshot(body)).toThrow(expected);
@@ -53,7 +56,7 @@ describe("source rule snapshots", () => {
     expect(normalizeSourceRuleSnapshot({ groups: [], rules: ["BROKEN,token,DIRECT"] })).toBeUndefined();
   });
 
-  it.each(["IP-CIDR,999.0.0.1/24,DIRECT", "IP-CIDR6,::/129,DIRECT", "DOMAIN,example.com,DIRECT,no-resolve", "DOMAIN,example.com,DIRECT,unexpected"]) (
+  it.each(["IP-CIDR,999.0.0.1/24,DIRECT", "IP-CIDR6,::/129,DIRECT", "DOMAIN,example.com,DIRECT,no-resolve", "DOMAIN,example.com,DIRECT,unexpected", "MATCH,DIRECT\nInjected"]) (
     "rejects invalid rule values and options", rule => expect(() => parseSourceRule(rule)).toThrow()
   );
 
