@@ -54,3 +54,11 @@ Loon 导出会将节点名里影响配置解析的标点换成全角字符。例
 
 - `npm run test:unit -- source-label-routing source-rules source-actions-rules refresh-node-snapshot` 检查来源筛选、块顺序、目标绑定和刷新失败后的数据。
 - `bash ops/fork/check.sh image` 用两个模拟订阅验证相同域名在来源调序后的目标、两端各自唯一的兜底、同地区的组成员和部分刷新失败后的导出。
+
+## 来源阅后即焚
+
+首页快捷和高级模式在单个 URL 的高级编辑里提供「阅后即焚」开关。首次导入只尝试一次，失败不自动或手动重试同一来源地址。已经成功导入的来源开启后沿用节点；更换为新地址可以导入一次。导入只使用正文响应，不额外访问流量地址或使用流量 User-Agent。保存、重新打开与登录草稿都保留设置及已尝试地址。
+
+手动刷新、定时刷新和客户端读取配置均使用保存的节点、规则及流量快照。普通来源继续更新，共享重名节点仍保留阅后即焚来源的旧连接。此设置关闭客户端 proxy-provider 直连，避免客户端再次请求原始地址。字段保存在现有加密来源配置中，无数据库迁移。
+
+与上游共享的区域包括来源编辑器、导入状态、保存与恢复、节点刷新及两端的 provider 导出。回归命令为 `npm run test:unit -- source-actions-read-once refresh-node-snapshot saved-sources proxy-providers auth-handoff sources-section input-section editing-subscription-loader`。`bash ops/fork/check.sh image` 通过模拟 HTTP 计数核对首次导入后不再访问正文和流量地址、混合来源手动及定时刷新，以及 Clash 和 Loon 的快照导出。

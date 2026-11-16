@@ -128,7 +128,7 @@ export async function refreshNodeSnapshot(
   const deletedNodeNames = getDeletedNodeNames(options.config);
   const deletedNodes = getDeletedNodes(options.config);
   const smartNodeMatchingEnabled = resolveSmartNodeMatchingEnabled(options.config);
-  const preserveOtherSourceNodes = savedSources.some(source => source.includeRules);
+  const preserveOtherSourceNodes = savedSources.some(source => source.includeRules || source.readOnce);
 
   let currentNodes = options.storedNodes
     .map(stripImportedNodeControlFields)
@@ -139,7 +139,7 @@ export async function refreshNodeSnapshot(
   const subscriptionInfo: SubscriptionResponseInfo = {};
   const profileWebPageUrlState: StableMetadataState = { conflicted: false };
   const planNameState: StableMetadataState = { conflicted: false };
-  const attemptedUrlFetch = savedSources.some((source) => source.type === "url" && !source.useProxyProviders);
+  const attemptedUrlFetch = savedSources.some((source) => source.type === "url" && !source.useProxyProviders && !source.readOnce);
   let usedUrlFetch = false;
   let refreshableSourceCount = 0;
   let refreshedSourceCount = 0;
@@ -197,7 +197,7 @@ export async function refreshNodeSnapshot(
   };
 
   const shouldFetchSupplementalUserInfoForSource = (source: SavedSource): boolean => {
-    return Boolean(source.userinfoUrl || source.userinfoUserAgent);
+    return !source.readOnce && Boolean(source.userinfoUrl || source.userinfoUserAgent);
   };
   const updateSourceRules = (source: SavedSource, snapshot: SourceRuleSnapshot | undefined) => {
     if (snapshot) refreshedSavedSources = refreshedSavedSources.map(item => item.id === source.id ? { ...item, ruleSnapshot: snapshot } : item);
@@ -207,6 +207,7 @@ export async function refreshNodeSnapshot(
     ? [...savedSources].sort((a, b) => Number(Boolean(b.includeRules)) - Number(Boolean(a.includeRules)))
     : savedSources;
   for (const source of orderedSources) {
+    if (source.type === "url" && source.readOnce) continue;
     if (source.type === "url" && source.useProxyProviders) {
       if (source.includeRules) {
         refreshableSourceCount += 1;

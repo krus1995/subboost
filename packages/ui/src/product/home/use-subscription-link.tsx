@@ -341,6 +341,8 @@ export function useSubscriptionLink({
                   id: s.id,
                   type: s.type,
                   ...(s.source?.trim() ? { source: s.source.trim() } : {}),
+                  ...(s.type === "url" && s.readOnce ? { readOnce: true } : {}),
+                  ...(s.readOnceAttemptedUrls ? { readOnceAttemptedUrls: s.readOnceAttemptedUrls } : {}),
                   ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
                   content:
                     s.type === "url"
@@ -354,7 +356,7 @@ export function useSubscriptionLink({
                   ...(hasSubscriptionUserInfo(sourceSubscriptionUserInfo)
                     ? { subscriptionUserInfo: sourceSubscriptionUserInfo }
                     : {}),
-                  ...(s.type === "url" && s.useProxyProviders ? { useProxyProviders: true } : {}),
+                  ...(s.type === "url" && !s.readOnce && s.useProxyProviders ? { useProxyProviders: true } : {}),
                   ...(s.type === "url" && typeof s.userinfoUrl === "string" && s.userinfoUrl.trim()
                     ? { userinfoUrl: tryNormalizeSubscriptionUrlInput(s.userinfoUrl) ?? s.userinfoUrl.trim() }
                     : {}),

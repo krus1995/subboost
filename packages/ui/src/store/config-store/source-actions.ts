@@ -38,6 +38,7 @@ import {
   withUniqueNodeNames,
 } from "./definitions";
 import type { GetState, SetAndGenerateConfig, SetState, StoreState } from "./store-types";
+import { isReadOnceSourceConsumed } from "./read-once-source";
 import { SourceImportOperationGuard, type SingleSourceImportOperation } from "./source-import-operation";
 
 type SourceActions = Pick<
@@ -97,6 +98,30 @@ function filterDialerProxyGroupsByAvailableNames(
 }
 
 export function createSourceActions(set: SetState, get: GetState, setAndGenerateConfig: SetAndGenerateConfig): SourceActions {
+  const pendingReadOnce = new Map<string, ReturnType<typeof fetchUrlContentInBrowser>>();
+  const readOnceKey = (source: SubscriptionSource) => JSON.stringify([get().draftRevision ?? 0, source.id, tryNormalizeSubscriptionUrlInput(source.content) ?? source.content.trim()]);
+  const readOnceConsumed = (source: SubscriptionSource) => {
+    const current = get().sources.find((item) => item.id === source.id) ?? source;
+    return isReadOnceSourceConsumed({ ...current, content: source.content, readOnce: source.readOnce });
+  };
+  const fetchSource = (source: SubscriptionSource) => {
+    const options = { ...(source.readOnce ? {} : { userinfoUrl: source.userinfoUrl, userinfoUserAgent: source.userinfoUserAgent }), ...(source.includeRules ? { includeRules: true } : {}) };
+    if (!source.readOnce) return fetchUrlContentInBrowser(source.content, options);
+    const key = readOnceKey(source);
+    const pending = pendingReadOnce.get(key);
+    if (pending) return pending;
+    const url = tryNormalizeSubscriptionUrlInput(source.content) ?? source.content.trim();
+    set((state) => ({ sources: state.sources.map((item) => item.id === source.id ? { ...item, readOnceAttemptedUrls: [...new Set([...(item.readOnceAttemptedUrls ?? []), url])] } : item) }));
+    const request = fetchUrlContentInBrowser(source.content, options).then((result) => {
+      pendingReadOnce.delete(key);
+      return result;
+    }, (error: unknown) => {
+      pendingReadOnce.delete(key);
+      throw error;
+    });
+    pendingReadOnce.set(key, request);
+    return request;
+  };
   const importOperations = new SourceImportOperationGuard(() => get().draftRevision ?? 0);
   const discardStaleSingle = (operation: SingleSourceImportOperation): boolean => {
     if (importOperations.isSingleCurrent(get().sources, operation)) return false;
@@ -121,6 +146,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         const routingChanged = sources.some((source, index) => {
           const previous = prev.find((item) => item.id === source.id);
           return (source.source?.trim() ?? "") !== (previous?.source?.trim() ?? "")
+            || source.readOnce !== previous?.readOnce
             || source.includeRules !== previous?.includeRules
             || source.ruleTargets !== previous?.ruleTargets
             || (source.includeRules && (prev[index]?.id !== source.id || source.ruleSnapshot !== previous?.ruleSnapshot));
@@ -267,6 +293,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
       const { sources } = get();
       const source = sources.find((s) => s.id === sourceId);
       if (!source || !source.content.trim()) return;
+      if (readOnceConsumed(source) && !pendingReadOnce.has(readOnceKey(source))) return;
       const operation = importOperations.startSingle(source);
 
       const currentSourceContent =
@@ -295,8 +322,8 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         let prefetchedParseResult: ParseResult | null = null;
 
         // URL 源的 proxy-providers 模式：不拉取/解析节点，仅标记为已导入并移除该源原节点
-        if (source.includeRules && source.useProxyProviders) throw new Error("使用来源规则时必须关闭 proxy-providers 模式并保存节点快照");
-        if (source.type === "url" && source.useProxyProviders) {
+        if (source.includeRules && source.useProxyProviders && !source.readOnce) throw new Error("使用来源规则时必须关闭 proxy-providers 模式并保存节点快照");
+        if (source.type === "url" && source.useProxyProviders && !source.readOnce) {
           const rawUrl = source.content.trim();
           const normalizedUrl = tryNormalizeSubscriptionUrlInput(rawUrl);
           if (!normalizedUrl) {
@@ -353,11 +380,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
         // 如果是 url，需要先获取内容
         if (source.type === "url") {
-          const fetched = await fetchUrlContentInBrowser(source.content, {
-            userinfoUrl: source.userinfoUrl,
-            userinfoUserAgent: source.userinfoUserAgent,
-            ...(source.includeRules ? { includeRules: true } : {}),
-          });
+          const fetched = await fetchSource(source);
           contentToParse = fetched.content;
           prefetchedParseResult = pickUrlFetchParseResult(fetched);
           const header = fetched.headers["subscription-userinfo"];
@@ -404,7 +427,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
             lastNameTemplate: latestSource.lastParsedNameTemplate,
             treatAsNewSource,
             deletedNodes: state.deletedNodes,
-            preserveOtherSourceNodes: state.sources.some((item) => item.includeRules),
+            preserveOtherSourceNodes: state.sources.some((item) => item.includeRules || item.readOnce),
           });
 
           const nextNodes = merged.nodes;
@@ -456,6 +479,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           source.type === "url" &&
           !source.useProxyProviders &&
           !source.includeRules &&
+          !source.readOnce &&
           !/无效的 url/i.test(baseInfo.message) &&
           !/只支持 HTTP\/HTTPS/i.test(baseInfo.message) &&
           !/proxy-providers/i.test(baseInfo.message);
@@ -512,6 +536,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
       for (const source of sources) {
         if (!source.content.trim()) continue;
+        if (readOnceConsumed(source) && !pendingReadOnce.has(readOnceKey(source))) continue;
 
         try {
           let contentToParse = source.content;
@@ -519,8 +544,8 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           let prefetchedParseResult: ParseResult | null = null;
 
           // URL 源的 proxy-providers 模式：不拉取/解析节点，仅更新导入状态（节点由客户端拉取）
-          if (source.includeRules && source.useProxyProviders) throw new Error("使用来源规则时必须关闭 proxy-providers 模式并保存节点快照");
-          if (source.type === "url" && source.useProxyProviders) {
+          if (source.includeRules && source.useProxyProviders && !source.readOnce) throw new Error("使用来源规则时必须关闭 proxy-providers 模式并保存节点快照");
+          if (source.type === "url" && source.useProxyProviders && !source.readOnce) {
             const rawUrl = source.content.trim();
             try {
               const normalizedUrl = tryNormalizeSubscriptionUrlInput(rawUrl);
@@ -554,11 +579,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           // 如果是 url，需要先获取内容
           if (source.type === "url") {
             try {
-              const fetched = await fetchUrlContentInBrowser(source.content, {
-                userinfoUrl: source.userinfoUrl,
-                userinfoUserAgent: source.userinfoUserAgent,
-                ...(source.includeRules ? { includeRules: true } : {}),
-              });
+              const fetched = await fetchSource(source);
               contentToParse = fetched.content;
               prefetchedParseResult = pickUrlFetchParseResult(fetched);
               const header = fetched.headers["subscription-userinfo"];
@@ -578,6 +599,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
               const shouldHintProxyProviders =
                 !source.useProxyProviders &&
                 !source.includeRules &&
+          !source.readOnce &&
                 !/无效的 url/i.test(baseInfo.message) &&
                 !/只支持 HTTP\/HTTPS/i.test(baseInfo.message) &&
                 !/proxy-providers/i.test(baseInfo.message);
@@ -637,6 +659,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
             source.type === "url" &&
             !source.useProxyProviders &&
             !source.includeRules &&
+          !source.readOnce &&
             !/无效的 url/i.test(baseInfo.message) &&
             !/只支持 HTTP\/HTTPS/i.test(baseInfo.message) &&
             !/proxy-providers/i.test(baseInfo.message);
@@ -667,12 +690,15 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         meta.lastParsedTag = typeof source.tag === "string" ? source.tag.trim() || undefined : undefined;
         meta.lastParsedNameTemplate = typeof source.nameTemplate === "string" ? source.nameTemplate.trim() || undefined : undefined;
       }
-      if (get().sources.some((source) => source.includeRules)) {
+      if (get().sources.some((source) => source.includeRules || source.readOnce)) {
         const replaced = new Set([...sourceMeta].filter(([, meta]) => meta.parsed).map(([id]) => id));
+        const retainedNodes: ParsedNode[] = [];
         for (const node of get().nodes) {
           const retainedIds = getNodeSourceIds(node).filter((id) => !replaced.has(id));
-          if (retainedIds.length > 0) allNodes.push(mergeNodeSourceIds(node, new Set(retainedIds)));
+          if (retainedIds.length > 0) retainedNodes.push(mergeNodeSourceIds(node, new Set(retainedIds)));
         }
+        if (get().sources.some((source) => source.readOnce)) allNodes.unshift(...retainedNodes);
+        else allNodes.push(...retainedNodes);
       }
       // 去重节点（基于 originName + 节点内容）
       const uniqueNodeMap = new Map<string, ParsedNode>();

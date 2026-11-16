@@ -63,6 +63,8 @@ function sourceArray(value: unknown): SubscriptionSource[] | undefined {
     sources.push({
       id: item.id,
       type: item.type,
+      ...(item.type === "url" && item.readOnce === true ? { readOnce: true } : {}),
+      ...(Array.isArray(item.readOnceAttemptedUrls) ? { readOnceAttemptedUrls: item.readOnceAttemptedUrls.filter((url): url is string => typeof url === "string") } : {}),
       ...(item.includeRules === true ? { includeRules: true, ruleSnapshot: normalizeSourceRuleSnapshot(item.ruleSnapshot), ruleTargets: normalizeSourceRuleTargets(item.ruleTargets) } : {}),
       ...(typeof item.source === "string" && item.source.trim() ? { source: item.source.trim() } : {}),
       content: item.content,

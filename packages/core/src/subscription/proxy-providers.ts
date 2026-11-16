@@ -27,7 +27,7 @@ export function buildProxyProvidersFromConfig(
     if (!raw || typeof raw !== "object") continue;
     const item = raw as Record<string, unknown>;
     if (item.type !== "url") continue;
-    if (item.useProxyProviders !== true) continue;
+    if (item.useProxyProviders !== true || item.readOnce === true) continue;
 
     const url =
       typeof item.content === "string"

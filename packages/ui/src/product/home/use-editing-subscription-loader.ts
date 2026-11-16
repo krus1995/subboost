@@ -193,6 +193,8 @@ export function useEditingSubscriptionLoader({
                           : lastParsedContent.trim()
                       )
                     : undefined,
+                readOnce: t === "url" && "readOnce" in item && item.readOnce === true,
+                readOnceAttemptedUrls: "readOnceAttemptedUrls" in item && Array.isArray(item.readOnceAttemptedUrls) ? item.readOnceAttemptedUrls.filter((url: unknown): url is string => typeof url === "string") : undefined,
                 includeRules: "includeRules" in item && item.includeRules === true,
                 ruleSnapshot: normalizeSourceRuleSnapshot("ruleSnapshot" in item ? item.ruleSnapshot : undefined),
                 ruleTargets: normalizeSourceRuleTargets("ruleTargets" in item ? item.ruleTargets : undefined),
@@ -220,6 +222,8 @@ export function useEditingSubscriptionLoader({
               lastParsedContent?: string;
               tag?: string;
               source?: string;
+              readOnce?: boolean;
+              readOnceAttemptedUrls?: string[];
               includeRules?: boolean;
               ruleSnapshot?: SubscriptionSource["ruleSnapshot"];
               ruleTargets?: SubscriptionSource["ruleTargets"];
@@ -287,13 +291,15 @@ export function useEditingSubscriptionLoader({
               id: finalId,
               type: s.type,
               ...(s.source ? { source: s.source } : {}),
+              ...(s.readOnce ? { readOnce: true } : {}),
+              ...(s.readOnceAttemptedUrls ? { readOnceAttemptedUrls: s.readOnceAttemptedUrls } : {}),
               ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
               content: s.type === "url" ? (tryNormalizeSubscriptionUrlInput(s.content) ?? s.content.trim()) : s.content,
               ...(lastParsedContent ? { lastParsedContent } : {}),
               ...(typeof s.tag === "string" && s.tag.trim() ? { tag: s.tag.trim() } : {}),
               ...(typeof s.nameTemplate === "string" && s.nameTemplate.trim() ? { nameTemplate: s.nameTemplate.trim() } : {}),
               ...(hasSubscriptionUserInfo(s.subscriptionUserInfo) ? { subscriptionUserInfo: s.subscriptionUserInfo } : {}),
-              ...(s.type === "url" && s.useProxyProviders ? { useProxyProviders: true } : {}),
+              ...(s.type === "url" && !s.readOnce && s.useProxyProviders ? { useProxyProviders: true } : {}),
               ...(s.type === "url" && typeof s.userinfoUrl === "string" && s.userinfoUrl.trim()
                 ? { userinfoUrl: tryNormalizeSubscriptionUrlInput(s.userinfoUrl) ?? s.userinfoUrl.trim() }
                 : {}),

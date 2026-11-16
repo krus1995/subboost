@@ -14,6 +14,26 @@ const node: ParsedNode = {
 };
 
 describe("refreshNodeSnapshot", () => {
+  it("freezes read-once nodes and usage while an ordinary source sharing the node changes", async () => {
+    const frozen = { id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true, useProxyProviders: true, userinfoUrl: "https://usage.invalid/sub", subscriptionUserInfo: { upload: 1, total: 100 } };
+    const fetchUrlNodes = vi.fn().mockResolvedValue({ ok: true, nodes: [{ ...node, password: "changed" }] });
+    const fetchUrlUserInfo = vi.fn();
+    const result = await refreshNodeSnapshot({ config: { sources: [frozen, { id: "normal", type: "url", content: "https://normal.invalid/sub" }] }, urls: [], storedNodes: [{ ...node, _sourceIds: ["once", "normal"] }], fetchUrlNodes, fetchUrlUserInfo });
+    expect(fetchUrlNodes).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: "normal" }));
+    expect(fetchUrlUserInfo).not.toHaveBeenCalled();
+    expect(result.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ password: "secret", _sourceIds: ["once"] }), expect.objectContaining({ password: "changed", _sourceIds: ["normal"] })]));
+    expect(result.savedSources[0].subscriptionUserInfo).toEqual(frozen.subscriptionUserInfo);
+    expect(result.subscriptionInfo).toMatchObject({ upload: 1, total: 100 });
+    expect(result.refreshableSourceCount).toBe(1);
+  });
+  it("does not attempt a read-once-only subscription", async () => {
+    const fetchUrlNodes = vi.fn();
+    const result = await refreshNodeSnapshot({ config: { sources: [{ id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true }] }, urls: [], storedNodes: [{ ...node, _sourceIds: ["once"] }], fetchUrlNodes });
+    expect(fetchUrlNodes).not.toHaveBeenCalled();
+    expect(result.attemptedUrlFetch).toBe(false);
+    expect(result.refreshableSourceCount).toBe(0);
+    expect(result.nodes).toHaveLength(1);
+  });
   const ruleYaml = (server = "example.com", target = "Original") => `proxies:
   - {name: node-a, type: trojan, server: ${server}, port: 443, password: secret}
 proxy-groups:

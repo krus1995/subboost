@@ -136,8 +136,9 @@ describe("InputSourceEditorDialog", () => {
     mocks.inputs[4].onChange({ target: { value: "https://next.example/sub" } });
     mocks.inputs[5].onChange({ target: { value: "https://next.example/userinfo" } });
     mocks.inputs[6].onChange({ target: { value: "Meta" } });
-    mocks.switches[0].onCheckedChange(true);
-    mocks.switches[1].onCheckedChange(true);
+    mocks.switches.find((item) => item["aria-label"] === "使用此来源的规则").onCheckedChange(true);
+    mocks.switches.find((item) => item["aria-label"] === "使用 proxy-providers 模式").onCheckedChange(true);
+    mocks.switches.find((item) => item["aria-label"] === "阅后即焚").onCheckedChange(true);
 
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { tag: "B" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { source: "公益" });
@@ -145,10 +146,23 @@ describe("InputSourceEditorDialog", () => {
     expect(handlers.onUpdateContent).toHaveBeenCalledWith("source-url", "https://next.example/sub");
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { userinfoUrl: "https://next.example/userinfo" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { userinfoUserAgent: "Meta" });
+    expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { readOnce: true, useProxyProviders: false });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { useProxyProviders: true });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { includeRules: true, useProxyProviders: false });
   });
 
+  it("protects consumed snapshots and allows rules before the first read", () => {
+    const source = { id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true, parsed: true, lastParsedContent: "https://once.invalid/sub" };
+    const { html } = renderDialog({ source });
+    expect(mocks.switches.find((item) => item["aria-label"] === "使用此来源的规则").disabled).toBe(true);
+    expect(mocks.switches.find((item) => item["aria-label"] === "使用 proxy-providers 模式").disabled).toBe(true);
+    expect(mocks.inputs.find((item) => item.placeholder === "留空则默认使用当前订阅源 URL").disabled).toBe(true);
+    expect(html).not.toContain("额外抓取");
+    renderDialog({ source: { ...source, parsed: false, lastParsedContent: undefined } });
+    expect(mocks.switches.find((item) => item["aria-label"] === "使用此来源的规则").disabled).toBe(false);
+    renderDialog({ source: { ...source, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] } } });
+    expect(mocks.switches.find((item) => item["aria-label"] === "使用此来源的规则").disabled).toBe(false);
+  });
   it("edits yaml and node text sources with a textarea", () => {
     const yaml = renderDialog({
       source: { id: "source-yaml", type: "yaml", content: "proxies: []" } as any,

@@ -12,7 +12,7 @@ function buildProxyProvidersFromSources(
   const out: Record<string, unknown> = {};
 
   for (const source of state.sources) {
-    if (!source || source.type !== "url" || !source.useProxyProviders) continue;
+    if (!source || source.type !== "url" || !source.useProxyProviders || source.readOnce) continue;
     const url = typeof source.content === "string" ? source.content.trim() : "";
     if (!url) continue;
 

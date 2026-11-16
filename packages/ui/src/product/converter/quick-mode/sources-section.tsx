@@ -1,3 +1,4 @@
+import { isReadOnceSourceConsumed } from "@subboost/ui/store/config-store/read-once-source";
 import { X, AlertCircle, Check, Loader2, Maximize2, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@subboost/ui/components/ui/button";
 import { IconButton } from "@subboost/ui/components/ui/icon-button";
@@ -90,10 +91,10 @@ export function SourcesSection() {
                     <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </IconButton>
                   <IconButton
-                    label={source.parsing ? "导入中" : source.parsed ? "重新导入" : "导入此源"}
+                    label={source.parsing ? "导入中" : isReadOnceSourceConsumed(source) ? "已尝试读取，阅后即焚" : source.parsed ? "重新导入" : "导入此源"}
                     variant="ghost"
                     onClick={() => void handleImportSource(source.id)}
-                    disabled={!source.content.trim() || source.parsing}
+                    disabled={!source.content.trim() || source.parsing || isReadOnceSourceConsumed(source)}
                     className={cn(
                       "h-6 w-6 rounded p-1 transition-colors disabled:opacity-100",
                       source.parsing
@@ -104,7 +105,7 @@ export function SourcesSection() {
                             ? "text-fg-50 hover:text-indigo-400 hover:bg-indigo-500/10"
                             : "text-fg-50 cursor-not-allowed"
                     )}
-                    title={source.parsing ? "导入中..." : source.parsed ? "重新导入" : "导入此源"}
+                    title={source.parsing ? "导入中..." : isReadOnceSourceConsumed(source) ? "已尝试读取，关闭阅后即焚后可重新导入" : source.parsed ? "重新导入" : "导入此源"}
                   >
                     {source.parsing ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
