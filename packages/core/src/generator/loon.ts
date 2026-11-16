@@ -9,6 +9,7 @@ import { loonAtom as atom, inlineLoonRule, inlineLoonList } from './loon-rules';
 import { generateProxyGroups, isSubscriptionInfoNodeName, PROXY_GROUP_MODULES } from './proxy-groups';
 import { buildGeneratedRuleEntries, buildModuleNameMap, EXPERIMENTAL_CN_RULE } from './rules';
 import { compileSourceRules } from './source-rules';
+import { deduplicateRuleConditions } from './source-rule-categories';
 import { renderLoonNode } from './loon-node';
 
 const RULE_DEFINITIONS = Object.fromEntries([...PROXY_GROUP_MODULES.flatMap((module) => module.rules), EXPERIMENTAL_CN_RULE].map((rule) => [rule.id, rule]));
@@ -188,7 +189,7 @@ async function renderRules(options: GenerateOptions, config: UserConfig, fallbac
     for (const line of inlineLoonList(text, definition.behavior, target, entry.noResolve)) lines.push(line);
   }
   if (effectiveEntries.some((entry) => /^PROCESS-(NAME|PATH),/.test(entry.text))) lines.unshift('# iOS and tvOS ignore process rules. PROCESS-PATH uses Loon PROCESS-NAME syntax.');
-  return lines;
+  return options.sourceRules?.length ? deduplicateRuleConditions(lines) : lines;
 }
 
 function proxyDefaultResolver(groups: ProxyGroup[], nodeNames: Set<string>): (name: string) => boolean {

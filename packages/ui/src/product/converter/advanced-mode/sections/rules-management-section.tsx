@@ -14,6 +14,7 @@ import {
 } from "@subboost/core/generator/rules";
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { SectionHeader } from "../section-header";
+import { SourceRulesEditor } from "../../source-rules-editor";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -179,6 +180,7 @@ export function RulesManagementSection({
 
       {isExpanded && (
         <div className="mt-2 pl-6 space-y-2">
+          <SourceRulesEditor />
           <div className="rounded-lg border border-ink/10 bg-ink/5 px-3 py-2">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <div className="min-w-0 flex-[1_1_13rem] text-[11px] leading-5 text-fg-60">

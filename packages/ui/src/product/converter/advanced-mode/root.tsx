@@ -1,6 +1,5 @@
 "use client";
 
-import { SourceRulesEditor } from "../source-rules-editor";
 import * as React from "react";
 import { DialerProxyGroupsSection } from "./sections/dialer-proxy-groups-section";
 import { DnsSection } from "./sections/dns-section";
@@ -34,7 +33,6 @@ export function AdvancedMode() {
       />
       <DialerProxyGroupsSection isExpanded={expandedSections.has("chain")} onToggle={() => toggleSection("chain")} />
       <ProxyGroupsSection isExpanded={expandedSections.has("proxy")} onToggle={() => toggleSection("proxy")} />
-      <SourceRulesEditor />
       <RulesManagementSection
         isExpanded={expandedSections.has("rules")}
         onToggle={() => toggleSection("rules")}

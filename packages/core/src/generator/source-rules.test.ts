@@ -1,196 +1,122 @@
 import { describe, expect, it } from 'vitest';
 import type { ParsedNode } from '../types/node';
-import type { SourceRuleInput, SourceRuleSnapshot } from '../subscription/source-rules';
+import type { SourceRuleInput } from '../subscription/source-rules';
 import { generateClashConfig, type GenerateOptions } from './index';
 import { generateLoonConfig } from './loon';
 import { compileSourceRules } from './source-rules';
+import { buildModuleNameMap } from './rules';
+import { deduplicateRuleConditions, resolveSourceRuleCategory, summarizeSourceRuleCategories } from './source-rule-categories';
 
-const node = (name: string, source: string, origin = name): ParsedNode => ({ name, type: 'ss', server: 'example.invalid', port: 443, cipher: 'aes-128-gcm', password: 'synthetic', _sourceIds: [source], _originName: origin });
-const snapshot = (domain: string, nativeNode = 'Japan'): SourceRuleSnapshot => ({ groups: [{ name: 'Proxies', type: 'select', proxies: [nativeNode, 'DIRECT'] }, { name: 'Service', type: 'select', proxies: ['Proxies'] }], rules: [`DOMAIN-SUFFIX,${domain},Service`, 'MATCH,Proxies'] });
-const sources: SourceRuleInput[] = [{ id: 'one', source: 'Paid', snapshot: snapshot('first.example') }, { id: 'two', source: 'Free', snapshot: snapshot('second.example') }];
-const options = (): GenerateOptions => ({ nodes: [node('Paid Japan', 'one', 'Japan'), node('Free Japan', 'two', 'Japan')], sourceRules: sources, userConfig: { enabledGroups: ['select'] } });
+const node: ParsedNode = { name: 'JP sample', type: 'ss', server: 'node.invalid', port: 443, cipher: 'aes-128-gcm', password: 'sample' };
+const source = (id: string, rules: string[], targets?: SourceRuleInput['targets']): SourceRuleInput => ({ id, source: id, snapshot: { groups: [{ name: 'Google', type: 'select', proxies: ['JP sample'] }, { name: 'Proxies', type: 'select', proxies: ['JP sample'] }], rules }, ...(targets ? { targets } : {}) });
+const options = (inputs: SourceRuleInput[]): GenerateOptions => ({ nodes: [node], sourceRules: inputs, userConfig: { enabledGroups: ['select', 'google'] } });
 const ruleLines = (text: string) => text.split('[Rule]\n')[1].trim().split('\n').filter((line) => !line.startsWith('#'));
-const groups = (text: string) => text.split('[Proxy Group]\n')[1].split('\n\n[Rule]')[0].split('\n');
-const load = async () => 'exact.builtin.example\n+.builtin.example';
+const load = async (path: string) => path.startsWith('geoip/') ? '192.0.2.0/24' : 'admob.com\n+.builtin.example';
+const names = buildModuleNameMap();
 
-describe('ordered source rule blocks', () => {
-  it('disambiguates native groups and resolves same-name nodes by source and original name', async () => {
-    const input = options();
+describe('source rules merged into existing categories', () => {
+  it('reuses existing categories without generating source groups, keeping Clash and Loon aligned', async () => {
+    const input = options([source('main', ['DOMAIN,admob.com,Google', 'DOMAIN,other.example,Proxies', 'MATCH,Proxies'])]);
     const clash = generateClashConfig(input);
-    const nativeGroups = (clash['proxy-groups'] ?? []).filter((group) => group.name.startsWith('来源 '));
-    expect(nativeGroups.map((group) => group.name)).toEqual(['来源 1 Proxies', '来源 1 Service', '来源 2 Proxies', '来源 2 Service']);
-    expect(nativeGroups[0].proxies).toEqual(['Paid Japan', 'DIRECT']);
-    expect(nativeGroups[2].proxies).toEqual(['Free Japan', 'DIRECT']);
-    expect(clash['proxy-groups']?.[0].name).toBe('🚀 节点选择');
-    expect(clash.rules).toEqual(['DOMAIN-SUFFIX,first.example,来源 1 Service', 'DOMAIN-SUFFIX,second.example,来源 2 Service', 'MATCH,来源 1 Proxies']);
+    expect(clash['proxy-groups']?.some((group) => group.name.startsWith('来源 '))).toBe(false);
+    expect(clash.rules?.slice(0, 2)).toEqual(['DOMAIN,admob.com,🔍 谷歌服务', 'DOMAIN,other.example,🚀 节点选择']);
+    expect(clash.rules?.at(-1)).toBe('MATCH,🚀 节点选择');
+    expect(clash['rule-providers']).toHaveProperty('google');
     const loon = await generateLoonConfig(input, load);
-    expect(ruleLines(loon)).toEqual(clash.rules?.map((rule) => rule.replace(/^MATCH,/, 'FINAL,')));
-    expect(groups(loon)).toContain('来源 2 Proxies = select, Free Japan, DIRECT');
+    expect(ruleLines(loon).filter((line) => line.startsWith('DOMAIN,admob.com,'))).toEqual(['DOMAIN,admob.com,🔍 谷歌服务']);
+    expect(ruleLines(loon).at(-1)).toBe('FINAL,🚀 节点选择');
   });
-  it('preserves duplicate rules and native rule order within logical-label blocks', () => {
-    const input = options();
-    input.sourceRules = [{ ...sources[0], source: 'Shared', snapshot: { ...snapshot('same.example'), rules: ['DOMAIN-SUFFIX,same.example,Service', 'DOMAIN-SUFFIX,same.example,Service', 'MATCH,Proxies'] } }, { ...sources[1], source: 'Shared', snapshot: snapshot('same.example') }];
-    input.ruleSourceOrder = ['label:Shared', 'subboost'];
+  it('keeps the first rule across identical and different source categories', () => {
+    const input = options([source('main', ['DOMAIN,same.example,Google', 'DOMAIN,same.example,DIRECT', 'MATCH,DIRECT']), source('backup', ['DOMAIN,same.example,REJECT', 'MATCH,REJECT'])]);
+    expect(generateClashConfig(input).rules?.filter((rule) => rule.includes('same.example'))).toEqual(['DOMAIN,same.example,🔍 谷歌服务']);
+  });
+  it('gives source rules priority over an identical custom condition and retained rule-set references', () => {
+    const input = options([source('main', ['DOMAIN,admob.com,Google', 'MATCH,Proxies'])]);
+    input.userConfig = { enabledGroups: ['select', 'ad', 'google'], customRules: [{ id: 'duplicate', type: 'DOMAIN', value: 'admob.com', target: 'REJECT' }] };
+    input.ruleSourceOrder = ['subboost', 'label:main'];
     const rules = generateClashConfig(input).rules ?? [];
-    expect(rules.filter((rule) => rule.startsWith('DOMAIN-SUFFIX,same.example,'))).toHaveLength(3);
-    expect(rules.at(-1)).toBe('MATCH,来源 1 Proxies');
-    expect(rules.filter((rule) => rule.startsWith('MATCH,'))).toHaveLength(1);
+    expect(rules[0]).toBe('DOMAIN,admob.com,🔍 谷歌服务');
+    expect(rules.filter((rule) => rule.startsWith('DOMAIN,admob.com,'))).toHaveLength(1);
+    expect(rules).toContain('RULE-SET,category-ads-all,🛑 广告拦截');
   });
-  it('sorts blocks and chooses the first block fallback, including the ordinary template fallback', async () => {
-    const input = options();
-    input.ruleSourceOrder = ['label:Free', 'subboost', 'label:Paid'];
-    input.userConfig = { ...input.userConfig, customRules: [{ id: 'user', type: 'DOMAIN', value: 'custom.example', target: 'DIRECT' }] };
+  it('orders logical source blocks and their only final independently of a legacy SubBoost position', () => {
+    const input = options([source('a', ['DOMAIN,same.example,DIRECT', 'MATCH,DIRECT']), source('b', ['DOMAIN,same.example,REJECT', 'MATCH,REJECT'])]);
+    input.ruleSourceOrder = ['subboost', 'label:b', 'label:a'];
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,same.example,REJECT');
+    expect(generateClashConfig(input).rules?.at(-1)).toBe('MATCH,REJECT');
+    input.sourceRules![1].source = 'a';
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,same.example,DIRECT');
+  });
+  it('keeps direct and reject actions and source group defaults even when a category is closed', async () => {
+    const input = options([source('a', ['DOMAIN,direct.example,DIRECT', 'DOMAIN,reject.example,REJECT', 'DOMAIN,group.example,DirectFirst', 'MATCH,DIRECT'])]);
+    input.sourceRules![0].snapshot.groups.push({ name: 'DirectFirst', type: 'select', proxies: ['DIRECT', 'JP sample'] });
+    input.sourceRules![0].categories = { DirectFirst: { kind: 'module', id: 'google' } };
     const rules = generateClashConfig(input).rules ?? [];
-    expect(rules).toEqual(['DOMAIN-SUFFIX,second.example,来源 2 Service', 'DOMAIN,custom.example,DIRECT', 'DOMAIN-SUFFIX,first.example,来源 1 Service', 'MATCH,来源 2 Proxies']);
-    input.ruleSourceOrder = ['subboost', 'label:Paid', 'label:Free'];
-    const ordinary = generateClashConfig({ ...input, sourceRules: undefined });
-    const firstSubBoost = generateClashConfig(input);
-    expect(firstSubBoost.rules?.at(-1)).toBe(ordinary.rules?.at(-1));
-    expect(firstSubBoost.rules?.[0]).toBe('DOMAIN,custom.example,DIRECT');
-    expect(ruleLines(await generateLoonConfig(input, load)).at(-1)).toBe(firstSubBoost.rules?.at(-1)?.replace(/^MATCH,/, 'FINAL,'));
+    expect(rules.slice(0, 3)).toEqual(['DOMAIN,direct.example,DIRECT', 'DOMAIN,reject.example,REJECT', 'DOMAIN,group.example,DIRECT']);
+    expect(ruleLines(await generateLoonConfig(input, load)).slice(0, 3)).toEqual(rules.slice(0, 3));
   });
-  it('retains selected builtin rule sets and user rules in the SubBoost block and expands Loon locally', async () => {
-    const input = options();
-    input.userConfig = { enabledGroups: ['select', 'github'], customRules: [{ id: 'user', type: 'DOMAIN', value: 'custom.example', target: 'DIRECT' }] };
-    input.ruleSourceOrder = ['label:Paid', 'subboost', 'label:Free'];
-    const clash = generateClashConfig(input);
-    const rules = clash.rules ?? [];
-    expect(rules[0]).toContain('first.example');
-    expect(rules.findIndex((rule) => rule.startsWith('RULE-SET,github,'))).toBeGreaterThan(0);
-    expect(rules.findIndex((rule) => rule.startsWith('RULE-SET,github,'))).toBeLessThan(rules.findIndex((rule) => rule.includes('second.example')));
-    expect(clash['rule-providers']).toHaveProperty('github');
-    const loon = await generateLoonConfig(input, load);
-    expect(loon).toContain('DOMAIN,exact.builtin.example,🐱 代码托管');
-    expect(loon).toContain('DOMAIN,custom.example,DIRECT');
+  it('keeps known closed categories and routes them through the existing default exit', () => {
+    const input = options([source('a', ['DOMAIN,apple.example,Apple', 'MATCH,Proxies'])]);
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,apple.example,🚀 节点选择');
+    expect(resolveSourceRuleCategory(input.sourceRules![0], 'Apple', { moduleNames: names })).toEqual({ kind: 'module', id: 'apple' });
   });
-  it('binds native targets to typed manual groups, including when native Loon nodes are unavailable', async () => {
-    const input = options();
-    input.nodes[0] = { ...input.nodes[0], type: 'anytls', alpn: ['h2'] } as ParsedNode;
-    input.customProxyGroups = [{ id: 'fallback', name: 'Manual community', emoji: '', groupType: 'select', memberSource: 'filtered-nodes', advanced: { sourceIds: ['two'] } }];
-    input.sourceRules = [{ ...sources[0], targets: { Service: { kind: 'custom', id: 'fallback' }, Proxies: { kind: 'custom', id: 'fallback' } } }];
-    const loon = await generateLoonConfig(input, load, { mode: 'compatible' });
-    expect(loon).toContain('DOMAIN-SUFFIX,first.example,Manual community');
-    expect(loon).toContain('FINAL,Manual community');
-    expect(loon).not.toContain('来源 1 Service =');
+  it('maps original category names rather than guessing from rule domains', () => {
+    const input = options([source('a', ['DOMAIN-SUFFIX,apple.com,Proxies', 'DOMAIN-SUFFIX,admob.com,Google', 'MATCH,DIRECT'])]);
+    input.userConfig = { enabledGroups: ['select', 'global', 'apple', 'google'] };
+    expect(generateClashConfig(input).rules?.slice(0, 2)).toEqual(['DOMAIN-SUFFIX,apple.com,🌍 非中国', 'DOMAIN-SUFFIX,admob.com,🔍 谷歌服务']);
   });
-  it('supports parent-group target bindings through nested native groups', () => {
-    const input = options();
-    input.sourceRules = [{ ...sources[0], targets: { Proxies: 'DIRECT' } }];
-    const clash = generateClashConfig(input);
-    expect(clash['proxy-groups']?.find((group) => group.name === '来源 1 Service')?.proxies).toEqual(['DIRECT']);
-    expect(clash.rules?.at(-1)).toBe('MATCH,DIRECT');
+  it.each([['🎯Direct', 'cn'], ['Scholar', 'google-scholar'], ['MyTVSuper', 'streaming-asia'], ['Epic', 'gaming-pc'], ['Other service', 'global']])('classifies %s as %s', (original, id) => {
+    expect(resolveSourceRuleCategory(source('a', []), original, { moduleNames: names })).toEqual({ kind: 'module', id });
   });
-  it('diagnoses unavailable native Loon proxies without silently selecting another source', async () => {
-    const input = options();
-    input.nodes[0] = { ...input.nodes[0], type: 'anytls', alpn: ['h2'] } as ParsedNode;
-    await expect(generateLoonConfig(input, load, { mode: 'compatible' })).rejects.toThrow(/第 1 个来源.*没有可用原生出口/);
+  it('reuses same-name custom categories and preserves an explicit custom outlet', async () => {
+    const input = options([source('a', ['DOMAIN,video.example,Media', 'MATCH,Media'])]);
+    input.customProxyGroups = [{ id: 'media', name: 'Media', emoji: '', groupType: 'select' }, { id: 'alternate', name: 'Alternate', emoji: '', groupType: 'select' }];
+    input.sourceRules![0].targets = { Media: { kind: 'custom', id: 'alternate' } };
+    expect(resolveSourceRuleCategory(input.sourceRules![0], 'Media', { moduleNames: names, customProxyGroups: input.customProxyGroups })).toEqual({ kind: 'custom', id: 'media' });
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,video.example,Alternate');
+    expect(await generateLoonConfig(input, load)).toContain('FINAL,Alternate');
   });
-  it('does not confuse a skipped name collision with another source node', async () => {
-    const input = options();
-    input.nodes = [{ ...node('Japan', 'one'), type: 'anytls', alpn: ['h2'] } as ParsedNode, node('Japan', 'two')];
-    input.sourceRules = [sources[0]];
-    await expect(generateLoonConfig(input, load, { mode: 'compatible' })).rejects.toThrow(/没有可用原生出口/);
-    input.sourceRules = [sources[1]];
-    expect(await generateLoonConfig(input, load, { mode: 'compatible' })).toContain('来源 1 Proxies = select, Japan (2), DIRECT');
+  it('uses stable module category ids after category and display-name edits', () => {
+    const input = options([source('a', ['DOMAIN,video.example,Proxies', 'MATCH,Proxies'])]);
+    input.sourceRules![0].categories = { Proxies: { kind: 'module', id: 'google' } };
+    input.proxyGroupNameOverrides = { google: 'My search' };
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,video.example,🔍 My search');
   });
-  it('does not resolve discarded lower priority final targets when all business rules are explicitly bound', async () => {
-    const input = options();
-    input.nodes[0] = { ...input.nodes[0], type: 'anytls', alpn: ['h2'] } as ParsedNode;
-    input.sourceRules = [{ ...sources[0], targets: { Service: 'DIRECT' } }];
-    input.ruleSourceOrder = ['subboost'];
-    const loon = await generateLoonConfig(input, load, { mode: 'compatible' });
-    expect(loon).toContain('DOMAIN-SUFFIX,first.example,DIRECT');
-    expect(loon).not.toContain('来源 1 Proxies =');
+  it('keeps explicit parent bindings through nested original groups', () => {
+    const input = options([source('a', ['DOMAIN,example.com,Nested', 'MATCH,DIRECT'], { Proxies: 'REJECT' })]);
+    input.sourceRules![0].snapshot.groups.push({ name: 'Nested', type: 'select', proxies: ['Proxies'] });
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,example.com,REJECT');
   });
-  it('rejects stale or disabled typed target bindings', async () => {
-    const input = options();
-    input.sourceRules = [{ ...sources[0], targets: { Service: { kind: 'custom', id: 'missing' } } }];
-    expect(() => generateClashConfig(input)).toThrow(/目标绑定引用/);
-    await expect(generateLoonConfig(input, load)).rejects.toThrow(/目标绑定引用/);
+  it('ignores an overridden lower-priority stale target but diagnoses a surviving one', () => {
+    const input = options([source('a', ['DOMAIN,same.example,DIRECT', 'MATCH,DIRECT']), source('b', ['DOMAIN,same.example,Google', 'MATCH,Google'], { Google: { kind: 'custom', id: 'deleted' } })]);
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,same.example,DIRECT');
+    input.sourceRules![1].snapshot.rules.unshift('DOMAIN,unique.example,Google');
+    expect(() => generateClashConfig(input)).toThrow('目标绑定引用');
   });
-  it('retains exact process, GEOIP and leading-dot keyword rules with an iOS process notice', async () => {
-    const input = options();
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [], rules: ['PROCESS-NAME,Example.exe,DIRECT', 'PROCESS-PATH,/Applications/Example.app/Example,DIRECT', 'DOMAIN-KEYWORD,.telemetry,REJECT', 'GEOIP,CN,DIRECT,no-resolve', 'MATCH,DIRECT'] } }];
-    expect(ruleLines(await generateLoonConfig(input, load))).toEqual(['PROCESS-NAME,Example.exe,DIRECT', 'PROCESS-NAME,/Applications/Example.app/Example,DIRECT', 'DOMAIN-KEYWORD,.telemetry,REJECT', 'GEOIP,CN,DIRECT,no-resolve', 'FINAL,DIRECT']);
-    expect(await generateLoonConfig(input, load)).toContain('iOS and tvOS ignore process rules');
+  it('expands Loon rule sets before dropping identical conditions and retains different conditions', async () => {
+    const input = options([source('a', ['DOMAIN,admob.com,DIRECT', 'DOMAIN-SUFFIX,other.example,Google', 'MATCH,DIRECT'])]);
+    const lines = ruleLines(await generateLoonConfig(input, load));
+    expect(lines.filter((line) => line.startsWith('DOMAIN,admob.com,'))).toEqual(['DOMAIN,admob.com,DIRECT']);
+    expect(lines).toContain('DOMAIN-SUFFIX,builtin.example,🔍 谷歌服务');
+    expect(lines).toContain('DOMAIN-SUFFIX,other.example,🔍 谷歌服务');
   });
-  it('excludes account metadata from usable native source exits', () => {
-    const input = options();
-    input.nodes.push(node('当前流量：20GB / 100GB', 'one'));
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Main', type: 'select', proxies: ['当前流量：20GB / 100GB', 'Japan'] }], rules: ['MATCH,Main'] } }];
-    expect(generateClashConfig(input)['proxy-groups']?.find((group) => group.name === '来源 1 Main')?.proxies).toEqual(['Paid Japan']);
+  it('distinguishes no-resolve, keyword punctuation, and complex condition payloads', () => {
+    const rules = ['IP-CIDR,1.2.3.0/24,DIRECT', 'IP-CIDR,1.2.3.0/24,REJECT,no-resolve', 'DOMAIN-KEYWORD,foo.,DIRECT', 'DOMAIN-KEYWORD,foo,REJECT', 'AND,((DOMAIN,a.example),(NETWORK,TCP)),DIRECT', 'AND,((DOMAIN,a.example),(NETWORK,UDP)),REJECT', 'AND,((DOMAIN,a.example),(NETWORK,TCP)),REJECT'];
+    expect(deduplicateRuleConditions(rules)).toEqual(rules.slice(0, -1));
   });
-  it('preserves the proxy default when compatibility filtering removes its first native node', async () => {
-    const input = options();
-    input.nodes = [{ ...node('Lost native', 'one'), type: 'anytls', alpn: ['h2'] } as ParsedNode, node('Paid Japan', 'one', 'Japan')];
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Primary', type: 'select', proxies: ['Lost native', 'DIRECT', 'Japan'] }], rules: ['MATCH,Primary'] } }];
-    const loon = await generateLoonConfig(input, load, { mode: 'compatible' });
-    expect(groups(loon)).toContain('来源 1 Primary = select, Paid Japan, DIRECT');
-    expect(ruleLines(loon)).toEqual(['FINAL,来源 1 Primary']);
+  it('keeps counts for overwritten sources and bounds displayed examples', () => {
+    const a = source('a', ['DOMAIN,a.example,Google', 'DOMAIN,b.example,Google', 'DOMAIN,c.example,Google', 'DOMAIN,d.example,Google', 'MATCH,Proxies']);
+    const summary = summarizeSourceRuleCategories([a, { ...a, id: 'b' }], { moduleNames: names });
+    expect(summary[0]).toMatchObject({ count: 8, effectiveCount: 4 });
+    expect(summary[0].rows[1]).toMatchObject({ count: 4, effectiveCount: 0 });
+    expect(summary[0].rows[0].examples).toHaveLength(3);
   });
-  it('removes repeated references to a native group that lost its only compatible outbound', async () => {
-    const input = options();
-    input.nodes = [{ ...node('Lost native', 'one'), type: 'anytls', alpn: ['h2'] } as ParsedNode, node('Paid Japan', 'one', 'Japan')];
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Unavailable', type: 'select', proxies: ['Lost native'] }, { name: 'Direct default', type: 'select', proxies: ['DIRECT', 'Unavailable', 'Unavailable', 'Japan'] }], rules: ['MATCH,Direct default'] } }];
-    const loon = await generateLoonConfig(input, load, { mode: 'compatible' });
-    expect(groups(loon)).toContain('来源 1 Direct default = select, DIRECT, Paid Japan');
-    expect(loon).not.toContain('来源 1 Unavailable =');
-    expect(ruleLines(loon)).toEqual(['FINAL,来源 1 Direct default']);
+  it('rejects saved cycles that must be resolved for active rules', () => {
+    const input = options([source('a', ['DOMAIN,a.example,Loop', 'MATCH,DIRECT'])]);
+    input.sourceRules![0].snapshot.groups.push({ name: 'Loop', type: 'select', proxies: ['Loop'] });
+    expect(() => generateClashConfig(input)).toThrow('循环引用');
   });
-  it('diagnoses stale native references instead of binding a same-name node from another source', async () => {
-    const input = options();
-    input.nodes = [node('Absent from primary', 'two')];
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [], rules: ['MATCH,Absent from primary'] } }];
-    expect(() => generateClashConfig(input)).toThrow(/第 1 个来源.*不存在的节点或策略组/);
-    await expect(generateLoonConfig(input, load)).rejects.toThrow(/第 1 个来源.*不存在的节点或策略组/);
-  });
-  it('refuses damaged native group cycles before producing a configuration', async () => {
-    const input = options();
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'First', type: 'select', proxies: ['Second'] }, { name: 'Second', type: 'select', proxies: ['First'] }], rules: ['MATCH,First'] } }];
-    expect(() => generateClashConfig(input)).toThrow(/第 1 个来源.*循环引用/);
-    await expect(generateLoonConfig(input, load)).rejects.toThrow(/第 1 个来源.*循环引用/);
-  });
-  it('refuses a native group whose saved member list is missing', async () => {
-    const input = options();
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Missing members', type: 'select' }], rules: ['MATCH,Missing members'] } }];
-    expect(() => generateClashConfig(input)).toThrow(/第 1 个来源.*没有可用原生出口/);
-    await expect(generateLoonConfig(input, load)).rejects.toThrow(/第 1 个来源.*没有可用原生出口/);
-  });
-  it('refuses a damaged source snapshot when neither block contains a final fallback', () => {
-    expect(() => compileSourceRules({ sourceRules: [{ id: 'one', snapshot: { groups: [], rules: ['DOMAIN,source.example,DIRECT'] } }], nodes: [], originalNodes: [], groups: [], rules: ['DOMAIN,custom.example,REJECT'], moduleNames: {}, client: 'clash' })).toThrow('整合规则缺少最终兜底');
-  });
-  it('uses the saved probe settings for native Loon groups without their own probe settings', async () => {
-    const input = options();
-    input.userConfig = { enabledGroups: [], testUrl: 'https://probe.invalid/check', testInterval: 123 };
-    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Native fallback', type: 'fallback', proxies: ['Japan'] }], rules: ['MATCH,Native fallback'] } }];
-    const loon = await generateLoonConfig(input, load);
-    expect(groups(loon)).toContain('来源 1 Native fallback = fallback, Paid Japan, url=https://probe.invalid/check, interval=123');
-    expect(ruleLines(loon)).toEqual(['FINAL,来源 1 Native fallback']);
-  });
-  it('refuses bindings to a disabled manual group instead of using a different default group', async () => {
-    const input = options();
-    input.customProxyGroups = [{ id: 'disabled', name: 'Disabled manual group', emoji: '', groupType: 'select', enabled: false }];
-    input.sourceRules = [{ ...sources[0], targets: { Service: { kind: 'custom', id: 'disabled' } } }];
-    expect(() => generateClashConfig(input)).toThrow(/目标绑定引用了已删除、关闭/);
-    await expect(generateLoonConfig(input, load)).rejects.toThrow(/目标绑定引用了已删除、关闭/);
-  });
-  it('retains native display settings in Clash and reports their omission without blocking Loon', async () => {
-    const input = options();
-    input.sourceRules = [{ ...sources[0], snapshot: { ...snapshot('first.example'), groups: snapshot('first.example').groups.map((group) => ({ ...group, icon: 'https://example.invalid/icon.png', hidden: true })) } }];
-    const original = JSON.stringify(input.sourceRules);
-    const clash = generateClashConfig(input);
-    expect(clash['proxy-groups']?.find((group) => group.name === '来源 1 Service')).toMatchObject({ icon: 'https://example.invalid/icon.png', hidden: true });
-    const loon = await generateLoonConfig(input, load);
-    expect(loon).toContain('来源 1 Service = select, 来源 1 Proxies');
-    expect(loon).toContain('# Loon 不保留导入策略组的图标和隐藏状态。');
-    expect(ruleLines(loon)).toEqual(clash.rules?.map((rule) => rule.replace(/^MATCH,/, 'FINAL,')));
-    expect(JSON.stringify(input.sourceRules)).toBe(original);
-  });
-  it('rejects native Loon group settings without an equivalent unless target binding bypasses them', async () => {
-    const input = options();
-    input.sourceRules = [{ ...sources[0], snapshot: { ...snapshot('first.example'), groups: [{ name: 'Proxies', type: 'url-test', proxies: ['Japan'], tolerance: 100 }, { name: 'Service', type: 'select', proxies: ['Proxies'] }] } }];
-    await expect(generateLoonConfig(input, load)).rejects.toThrow(/tolerance/);
-    input.sourceRules[0].targets = { Proxies: 'DIRECT' };
-    expect(await generateLoonConfig(input, load)).toContain('FINAL,DIRECT');
+  it('refuses a damaged snapshot with no final in either input', () => {
+    expect(() => compileSourceRules({ sourceRules: [source('a', ['DOMAIN,example.com,DIRECT'])], nodes: [], originalNodes: [], groups: [], rules: [], moduleNames: names, client: 'clash' })).toThrow('缺少最终兜底');
   });
 });

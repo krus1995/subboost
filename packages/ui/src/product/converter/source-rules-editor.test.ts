@@ -31,20 +31,20 @@ describe("SourceRulesEditor", () => {
     expect(renderToStaticMarkup(React.createElement(SourceRulesEditor))).toBe("");
   });
 
-  it("groups equal labels in input order and includes the editable SubBoost block", () => {
+  it("groups equal labels and merges imported rules with existing SubBoost categories", () => {
     mocks.state.sources = [sourceA, { ...sourceA, id: "a2" }, sourceB];
     const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
     expect((html.match(/下移规则块 label:公益/g) ?? [])).toHaveLength(1);
-    expect(html).toContain("SubBoost 规则");
+    expect(html).toContain("SubBoost 1 项");
     expect(html).toContain("公益 · 日本");
-    expect(html).toContain("保留来源原目标");
+    expect(html).toContain("自动选择出口");
   });
 
-  it("moves SubBoost before source rules using shared block keys", () => {
+  it("reorders imported sources while keeping SubBoost after them", () => {
     const tree = elements(SourceRulesEditor());
-    const button = tree.find((item) => item.props["aria-label"] === "上移规则块 subboost");
+    const button = tree.find((item) => item.props["aria-label"] === "上移规则块 label:主机场");
     (button?.props.onClick as () => void)();
-    expect(mocks.state.setRuleSourceOrder).toHaveBeenCalledWith(["label:公益", "subboost", "label:主机场"]);
+    expect(mocks.state.setRuleSourceOrder).toHaveBeenCalledWith(["label:主机场", "label:公益", "subboost"]);
   });
 
   it("binds original targets to stable manual group ids and can restore the source default", () => {
@@ -99,7 +99,7 @@ describe("SourceRulesEditor", () => {
   it("keeps the first and last rule blocks inside the available ordering range", () => {
     const tree = elements(SourceRulesEditor());
     const first = tree.find((item) => item.props["aria-label"] === "上移规则块 label:公益");
-    const last = tree.find((item) => item.props["aria-label"] === "下移规则块 subboost");
+    const last = tree.find((item) => item.props["aria-label"] === "下移规则块 label:主机场");
     expect(first?.props.disabled).toBe(true);
     expect(last?.props.disabled).toBe(true);
     (first?.props.onClick as () => void)();

@@ -73,6 +73,7 @@ export interface SubscriptionSource {
   includeRules?: boolean;
   ruleSnapshot?: SourceRuleSnapshot;
   ruleTargets?: Record<string, ProxyGroupRuleTarget>;
+  ruleCategories?: Record<string, import("@subboost/core/types/config").ProxyGroupTargetRef>;
   // 上一次成功导入时的输入内容（用于判断是否更换 url 等）
   lastParsedContent?: string;
   // 上一次成功导入时使用的标签/模板（用于判断是否为“用户手动改名”）

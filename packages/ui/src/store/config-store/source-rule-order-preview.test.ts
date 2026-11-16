@@ -16,6 +16,6 @@ it("updates the preview and final immediately after reordering two inputs with t
   useConfigStore.getState().generateConfig();
   expect(preview().at(-1)).toBe("MATCH,DIRECT");
   useConfigStore.getState().setSources([...sources].reverse());
-  expect(preview().slice(0, 2)).toEqual(["DOMAIN,example.org,REJECT", "DOMAIN,example.org,DIRECT"]);
+  expect(preview()).toEqual(["DOMAIN,example.org,REJECT", "MATCH,REJECT"]);
   expect(preview().at(-1)).toBe("MATCH,REJECT");
 });
