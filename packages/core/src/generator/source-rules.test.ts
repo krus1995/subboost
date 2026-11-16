@@ -3,6 +3,7 @@ import type { ParsedNode } from '../types/node';
 import type { SourceRuleInput, SourceRuleSnapshot } from '../subscription/source-rules';
 import { generateClashConfig, type GenerateOptions } from './index';
 import { generateLoonConfig } from './loon';
+import { compileSourceRules } from './source-rules';
 
 const node = (name: string, source: string, origin = name): ParsedNode => ({ name, type: 'ss', server: 'example.invalid', port: 443, cipher: 'aes-128-gcm', password: 'synthetic', _sourceIds: [source], _originName: origin });
 const snapshot = (domain: string, nativeNode = 'Japan'): SourceRuleSnapshot => ({ groups: [{ name: 'Proxies', type: 'select', proxies: [nativeNode, 'DIRECT'] }, { name: 'Service', type: 'select', proxies: ['Proxies'] }], rules: [`DOMAIN-SUFFIX,${domain},Service`, 'MATCH,Proxies'] });
@@ -118,6 +119,60 @@ describe('ordered source rule blocks', () => {
     input.nodes.push(node('当前流量：20GB / 100GB', 'one'));
     input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Main', type: 'select', proxies: ['当前流量：20GB / 100GB', 'Japan'] }], rules: ['MATCH,Main'] } }];
     expect(generateClashConfig(input)['proxy-groups']?.find((group) => group.name === '来源 1 Main')?.proxies).toEqual(['Paid Japan']);
+  });
+  it('preserves the proxy default when compatibility filtering removes its first native node', async () => {
+    const input = options();
+    input.nodes = [{ ...node('Lost native', 'one'), type: 'anytls', alpn: ['h2'] } as ParsedNode, node('Paid Japan', 'one', 'Japan')];
+    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Primary', type: 'select', proxies: ['Lost native', 'DIRECT', 'Japan'] }], rules: ['MATCH,Primary'] } }];
+    const loon = await generateLoonConfig(input, load, { mode: 'compatible' });
+    expect(groups(loon)).toContain('来源 1 Primary = select, Paid Japan, DIRECT');
+    expect(ruleLines(loon)).toEqual(['FINAL,来源 1 Primary']);
+  });
+  it('removes repeated references to a native group that lost its only compatible outbound', async () => {
+    const input = options();
+    input.nodes = [{ ...node('Lost native', 'one'), type: 'anytls', alpn: ['h2'] } as ParsedNode, node('Paid Japan', 'one', 'Japan')];
+    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Unavailable', type: 'select', proxies: ['Lost native'] }, { name: 'Direct default', type: 'select', proxies: ['DIRECT', 'Unavailable', 'Unavailable', 'Japan'] }], rules: ['MATCH,Direct default'] } }];
+    const loon = await generateLoonConfig(input, load, { mode: 'compatible' });
+    expect(groups(loon)).toContain('来源 1 Direct default = select, DIRECT, Paid Japan');
+    expect(loon).not.toContain('来源 1 Unavailable =');
+    expect(ruleLines(loon)).toEqual(['FINAL,来源 1 Direct default']);
+  });
+  it('diagnoses stale native references instead of binding a same-name node from another source', async () => {
+    const input = options();
+    input.nodes = [node('Absent from primary', 'two')];
+    input.sourceRules = [{ id: 'one', snapshot: { groups: [], rules: ['MATCH,Absent from primary'] } }];
+    expect(() => generateClashConfig(input)).toThrow(/第 1 个来源.*不存在的节点或策略组/);
+    await expect(generateLoonConfig(input, load)).rejects.toThrow(/第 1 个来源.*不存在的节点或策略组/);
+  });
+  it('refuses damaged native group cycles before producing a configuration', async () => {
+    const input = options();
+    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'First', type: 'select', proxies: ['Second'] }, { name: 'Second', type: 'select', proxies: ['First'] }], rules: ['MATCH,First'] } }];
+    expect(() => generateClashConfig(input)).toThrow(/第 1 个来源.*循环引用/);
+    await expect(generateLoonConfig(input, load)).rejects.toThrow(/第 1 个来源.*循环引用/);
+  });
+  it('refuses a native group whose saved member list is missing', async () => {
+    const input = options();
+    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Missing members', type: 'select' }], rules: ['MATCH,Missing members'] } }];
+    expect(() => generateClashConfig(input)).toThrow(/第 1 个来源.*没有可用原生出口/);
+    await expect(generateLoonConfig(input, load)).rejects.toThrow(/第 1 个来源.*没有可用原生出口/);
+  });
+  it('refuses a damaged source snapshot when neither block contains a final fallback', () => {
+    expect(() => compileSourceRules({ sourceRules: [{ id: 'one', snapshot: { groups: [], rules: ['DOMAIN,source.example,DIRECT'] } }], nodes: [], originalNodes: [], groups: [], rules: ['DOMAIN,custom.example,REJECT'], moduleNames: {}, client: 'clash' })).toThrow('整合规则缺少最终兜底');
+  });
+  it('uses the saved probe settings for native Loon groups without their own probe settings', async () => {
+    const input = options();
+    input.userConfig = { enabledGroups: [], testUrl: 'https://probe.invalid/check', testInterval: 123 };
+    input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Native fallback', type: 'fallback', proxies: ['Japan'] }], rules: ['MATCH,Native fallback'] } }];
+    const loon = await generateLoonConfig(input, load);
+    expect(groups(loon)).toContain('来源 1 Native fallback = fallback, Paid Japan, url=https://probe.invalid/check, interval=123');
+    expect(ruleLines(loon)).toEqual(['FINAL,来源 1 Native fallback']);
+  });
+  it('refuses bindings to a disabled manual group instead of using a different default group', async () => {
+    const input = options();
+    input.customProxyGroups = [{ id: 'disabled', name: 'Disabled manual group', emoji: '', groupType: 'select', enabled: false }];
+    input.sourceRules = [{ ...sources[0], targets: { Service: { kind: 'custom', id: 'disabled' } } }];
+    expect(() => generateClashConfig(input)).toThrow(/目标绑定引用了已删除、关闭/);
+    await expect(generateLoonConfig(input, load)).rejects.toThrow(/目标绑定引用了已删除、关闭/);
   });
   it('retains native display settings in Clash and reports their omission without blocking Loon', async () => {
     const input = options();

@@ -39,6 +39,10 @@ describe('Loon rule boundaries', () => {
     expect([...inlineLoonList('192.0.2.0/24\n2001:db8::/32', 'ipcidr', '策略', true)]).toEqual(['IP-CIDR,192.0.2.0/24,策略,no-resolve', 'IP-CIDR6,2001:db8::/32,策略,no-resolve']);
   });
 
+  it('rejects invalid native GEOIP country codes before rendering a Loon rule', () => {
+    expect(() => inlineLoonRule('GEOIP', 'PRIVATE', 'DIRECT', false)).toThrow('GEOIP 规则的国家代码');
+    expect(inlineLoonRule('GEOIP', 'CN', 'DIRECT', true)).toBe('GEOIP,CN,DIRECT,no-resolve');
+  });
   it('uses native Loon process syntax and refuses expressions with changed matching semantics', () => {
     expect(inlineLoonRule('PROCESS-NAME', 'Example.exe', 'DIRECT', false)).toBe('PROCESS-NAME,Example.exe,DIRECT');
     expect(inlineLoonRule('PROCESS-PATH', '/usr/bin/example', 'DIRECT', false)).toBe('PROCESS-NAME,/usr/bin/example,DIRECT');
