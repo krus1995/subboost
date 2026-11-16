@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { normalizeSavedSourcesForPersistence } from "./saved-sources";
 
 describe("normalizeSavedSourcesForPersistence", () => {
+  it("keeps logical source labels through persisted JSON without changing unlabeled sources", () => {
+    const sources = normalizeSavedSourcesForPersistence([
+      { id: "main", type: "url", content: "https://main.example/sub", source: " airport " },
+      { id: "public-a", type: "yaml", content: "proxies: []", source: "public" },
+      { id: "public-b", type: "nodes", content: "trojan://secret@example.com:443#Node", source: "public" },
+      { id: "old", type: "url", content: "https://old.example/sub" },
+      { id: "blank", type: "url", content: "https://blank.example/sub", source: " " },
+      { id: "invalid", type: "url", content: "https://invalid.example/sub", source: 123 },
+    ]);
+    const saved: unknown = JSON.parse(JSON.stringify(sources));
+    const restored = normalizeSavedSourcesForPersistence(saved);
+    expect(restored).toEqual(sources);
+    expect(restored.map(source => source.source)).toEqual(["airport", "public", "public", undefined, undefined, undefined]);
+    expect(restored[3]).toEqual({ id: "old", type: "url", content: "https://old.example/sub" });
+  });
+
   it("normalizes URL sources and preserves supported source metadata", () => {
     expect(
       normalizeSavedSourcesForPersistence([
@@ -9,6 +25,7 @@ describe("normalizeSavedSourcesForPersistence", () => {
           id: " src-1 ",
           type: "url",
           content: " https://example.com/sub&token=abc ",
+          source: " public ",
           useProxyProviders: true,
           userinfoUrl: " https://info.example/user&token=abc ",
           userinfoUserAgent: " LocalAgent/1.0 ",
@@ -30,6 +47,7 @@ describe("normalizeSavedSourcesForPersistence", () => {
         id: "src-1",
         type: "url",
         content: "https://example.com/sub?token=abc",
+        source: "public",
         useProxyProviders: true,
         userinfoUrl: "https://info.example/user?token=abc",
         userinfoUserAgent: "LocalAgent/1.0",
