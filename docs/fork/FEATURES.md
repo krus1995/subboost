@@ -30,10 +30,14 @@ Loon 的远程配置导入和两类规则的优先级见[官方 URL Scheme](http
 
 Loon 导出会将节点名里影响配置解析的标点换成全角字符。例如，`[Airport] Tokyo, 01` 显示为 `［Airport］ Tokyo， 01`。转换后如有重名，会追加编号。节点筛选与排序仍按保存的原名执行，Loon 策略组和规则引用导出后的名称。回归检查见 `loon-names.test.ts` 和 `bash ops/fork/check.sh image`。
 
-## 订阅源只请求一次
+## 订阅源导入与自动刷新
 
-首页导入、管理页手动刷新和定时刷新共用同一条限制：SubBoost 服务端对同一订阅地址在 6 分钟内最多发一次 HTTP 请求。这个时长沿用项目已有的最短自动刷新间隔。正文只用一种客户端标识请求；上游按标识返回不同节点时，导入本次响应中包含的节点。成功、拒绝、超时或正文解析失败都会占用本次访问机会。
+首页手动导入和管理页手动刷新可以连续使用，每次操作只用一种客户端标识获取订阅正文。上游拒绝请求或限流时，页面显示本次错误。定时刷新对同一地址在 6 分钟内最多发一次 HTTP 请求，多条订阅共用地址时也遵循这个间隔。自动请求成功、失败或超时都会占用这次访问机会。手动请求不占用自动刷新的访问机会。
 
-同一地址的流量信息从正文响应头读取。单独配置的流量地址和重定向目标也受访问间隔限制。访问记录复用 PostgreSQL 的 JobLeaseLock 表，按地址摘要区分，重启后继续生效。遇到本地访问间隔限制时保留已保存的节点。这项限制适用于 SubBoost 服务端；使用 Clash 的 proxy-provider 配置时，由客户端自行下载原始订阅。
+同一地址的流量信息从正文响应头读取。自动刷新时，单独配置的流量地址和重定向目标也受访问间隔限制。访问记录复用 PostgreSQL 的 JobLeaseLock 表，按地址摘要区分，重启后继续生效。自动刷新遇到这个限制时会保留已保存的节点。Clash 的 proxy-provider 由客户端自行下载原始订阅。
 
 与上游共享的入口包括 server-core 的订阅导入与节点刷新、local 的 HTTP 传输和自动更新任务。回归命令为 `npm run test:unit -- source-import refresh-node-snapshot subscription-service auto-update-service`。运行 `bash ops/fork/check.sh image` 会在隔离数据库中，通过模拟上游的实际 HTTP 计数核对请求次数。
+
+首页快捷模式和高级模式共用来源编辑器。导入成功后，修改标签或节点命名模板并点「完成」，编辑器使用已导入的节点更新名称及配置引用，保留节点数和流量信息。修改订阅地址后点「完成」仍会导入新地址。
+
+与上游共享的代码包括来源编辑器、浏览器中的订阅导入和节点名称引用。回归命令为 `npm run test:unit -- source-actions-naming sources-section input-section node-name-references`。
