@@ -25,7 +25,7 @@ import {
 import { decryptJson, decryptJsonObject, encryptJson } from "./crypto";
 import { getAppUrl } from "./env";
 import { prisma } from "./prisma";
-import { fetchSourceUserInfoHeadersDirect, importSourceUrlDirect, type SourceTransportResponses } from "./source-import";
+import { fetchSourceUserInfoHeadersDirect, importSourceUrlDirect, type SourceRequestContext } from "./source-import";
 import { normalizeLocalAutoUpdateIntervalSeconds } from "./auto-update-policy";
 
 export const MAX_NODES_PER_SUBSCRIPTION = 10000;
@@ -328,13 +328,13 @@ export async function resetSubscriptionLink(ownerId: string, id: string, expecte
   return { status: "updated" as const, subscription: { id, token, subscriptionUrl: buildLocalSubscriptionUrl(token) } };
 }
 
-export function buildSubscriptionFetchCallbacks() {
-  const responses: SourceTransportResponses = new Map();
+export function buildSubscriptionFetchCallbacks(trigger: SourceRequestContext["trigger"]) {
+  const context: SourceRequestContext = { trigger, responses: new Map() };
   return {
     fetchUrlNodes: async (source: SavedSource) => {
       const imported = await importSourceUrlDirect({
         url: source.content,
-      }, responses);
+      }, context);
       if (imported.ok) {
         return {
           ok: true,
@@ -353,7 +353,7 @@ export function buildSubscriptionFetchCallbacks() {
       };
     },
     fetchUrlUserInfo: async (source: SavedSource) => {
-      return fetchSourceUserInfoHeadersDirect(source, responses);
+      return fetchSourceUserInfoHeadersDirect(source, context);
     },
   };
 }
@@ -382,7 +382,6 @@ async function persistRefreshSuccess(params: {
       },
     });
     if (updated.count !== 1) return false;
-    if (params.snapshot.failedSources?.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN")) return true;
     await tx.subscriptionAutoUpdateState.upsert({
       where: { subscriptionId: params.subscriptionId },
       create: { subscriptionId: params.subscriptionId },
@@ -401,7 +400,7 @@ export async function refreshSubscription(ownerId: string, id: string) {
     config: secrets.config,
     urls: secrets.urls,
     storedNodes: secrets.nodes,
-    ...buildSubscriptionFetchCallbacks(),
+    ...buildSubscriptionFetchCallbacks("manual"),
   });
   const refreshResult = prepareRefreshCacheResult({
     config: secrets.config,
@@ -410,18 +409,6 @@ export async function refreshSubscription(ownerId: string, id: string) {
   });
 
   if (!refreshResult.ok) {
-    if (snapshot.failedSources?.some(source => source.networkCode === "LOCAL_SUBSCRIPTION_COOLDOWN")) {
-      return {
-        ok: false as const,
-        response: {
-          status: 429,
-          body: {
-            code: "LOCAL_SUBSCRIPTION_COOLDOWN",
-            error: "此订阅地址在 6 分钟内已请求，请稍后刷新。已保留旧快照。",
-          },
-        },
-      };
-    }
     return {
       ok: false as const,
       response: buildManualRefreshFailureResponse({

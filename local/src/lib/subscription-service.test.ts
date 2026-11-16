@@ -546,7 +546,7 @@ describe("local subscription service", () => {
   });
 
   it("builds fetch callbacks for refresh source imports", async () => {
-    const callbacks = buildSubscriptionFetchCallbacks();
+    const callbacks = buildSubscriptionFetchCallbacks("manual");
 
     await expect(
       callbacks.fetchUrlNodes({
