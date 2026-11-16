@@ -4,7 +4,10 @@ import { buildSourceRuleBlocks, buildSourceRuleInputs } from "@subboost/core/sub
 import { getProxyGroupTargetKey, parseProxyGroupTargetValue, resolveProxyGroupTargetName } from "@subboost/core/proxy-group-targets";
 import { buildGeneratedRuleEntries, buildModuleNameMap } from "@subboost/core/generator/rules";
 import { PROXY_GROUP_MODULES } from "@subboost/core/generator/proxy-group-modules";
-import { resolveSourceCategoryTarget, summarizeSourceRuleCategories } from "@subboost/core/generator/source-rule-categories";
+import { buildSourceNodeTargets, getSourceRuleDefaultTarget, resolveSourceCategoryTarget, summarizeSourceRuleCategories } from "@subboost/core/generator/source-rule-categories";
+import { resolveNodeNameFilter } from "@subboost/core/subscription/node-name-filter";
+import { isSubscriptionInfoNodeName } from "@subboost/core/subscription/info-node-name";
+import { getNodeOriginName } from "@subboost/core/subscription/node-source-state";
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { Button } from "@subboost/ui/components/ui/button";
 import { buildManualRuleTargets } from "./advanced-mode/sections/proxy-group-rule-targets";
@@ -20,8 +23,9 @@ export function SourceRulesEditor() {
   const moduleNames = buildModuleNameMap(proxyGroupNameOverrides);
   const categories = summarizeSourceRuleCategories(orderedInputs, { moduleNames, customProxyGroups });
   const targets = buildManualRuleTargets({ enabledProxyGroups, customProxyGroups, proxyGroupNameOverrides });
-  const availableTargets = ['DIRECT', 'REJECT', ...targets.map((target) => target.name), ...state.nodes.map((node) => node.name)];
-  const fallbackTarget = ['select', 'global', 'final'].map((id) => moduleNames[id]).find((name) => availableTargets.includes(name)) ?? targets[0]?.name ?? state.nodes[0]?.name ?? 'DIRECT';
+  const usableNodes = resolveNodeNameFilter(state.nodes, state.nodeNameFilter).effectiveNodes.filter((node) => !isSubscriptionInfoNodeName(getNodeOriginName(node)));
+  const availableTargets = ['DIRECT', 'REJECT', ...targets.map((target) => target.name), ...usableNodes.map((node) => node.name)];
+  const fallbackTarget = getSourceRuleDefaultTarget(moduleNames, targets.map((target) => target.name), usableNodes.map((node) => node.name));
   const builtinEntries = buildGeneratedRuleEntries({ enabledModules: enabledProxyGroups, customRules: state.customRules, customRuleSets: state.customRuleSets, customProxyGroups, builtinRuleEdits: state.builtinRuleEdits, proxyGroupNameOverrides, ruleOrder: state.ruleOrder, cnIpNoResolve: state.cnIpNoResolve, experimentalCnUseCnRuleSet: state.experimentalCnUseCnRuleSet });
   const move = (key: string, offset: number) => {
     const order = blocks.map((block) => block.key);
@@ -44,7 +48,7 @@ export function SourceRulesEditor() {
     <div className="space-y-2" aria-label="按分类管理规则">
       {categories.map(({ category, count, effectiveCount, rows }) => {
         const categoryName = resolveProxyGroupTargetName(category, { moduleNames, customProxyGroups }) || '分类已删除，请重选';
-        const builtin = builtinEntries.filter((entry) => entry.sourceLabel === categoryName && entry.key !== 'special:match');
+        const builtin = builtinEntries.filter((entry) => (entry.sourceLabel === categoryName || entry.target === categoryName) && entry.key !== 'special:match');
         return <details key={getProxyGroupTargetKey(category)} className="rounded-lg border border-ink/10 p-2 text-xs">
           <summary className="cursor-pointer font-medium">{categoryName} · 导入 {count} 条，有效 {effectiveCount} 条 · SubBoost {builtin.length} 项</summary>
           {builtin.map((entry) => <p key={entry.key} className="mt-2 text-fg-60">SubBoost · {entry.summary} · {entry.target}</p>)}
@@ -54,8 +58,8 @@ export function SourceRulesEditor() {
             const binding = source.ruleTargets?.[original];
             const value = typeof binding === 'string' ? binding : binding ? getProxyGroupTargetKey(binding) : '';
             let effective = '';
-            try { const result = resolveSourceCategoryTarget({ input, original, moduleNames, customProxyGroups, availableTargets, fallbackTarget }); effective = (result.unavailable ? '分类未启用，当前出口 ' : '当前出口 ') + result.target; }
-            catch (error) { effective = error instanceof Error ? error.message : '目标不可用'; }
+            try { const result = resolveSourceCategoryTarget({ input, original, moduleNames, customProxyGroups, availableTargets, fallbackTarget, nodeTargets: buildSourceNodeTargets(input.id, state.nodes, usableNodes) }); effective = activeCount === 0 ? '已被更高优先级来源覆盖，不导出此规则' : (result.unavailable ? '分类未启用，当前出口 ' : '当前出口 ') + result.target; }
+            catch (error) { effective = activeCount === 0 ? '已被更高优先级来源覆盖，不导出此规则' : error instanceof Error ? error.message : '目标不可用'; }
             return <div key={input.id + ':' + original} className="mt-3 space-y-2 border-t border-ink/10 pt-2">
               <p>{source.tag || source.name || label} · {original} · {ruleCount} 条，有效 {activeCount} 条</p>
               {source.error && <p role="status" className="text-amber-400">导入失败，继续使用上次成功的节点和规则。</p>}

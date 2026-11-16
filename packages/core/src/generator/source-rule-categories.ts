@@ -1,3 +1,6 @@
+import type { ParsedNode } from '../types/node';
+import { getNodeOriginName, getNodeSourceIds } from '../subscription/node-source-state';
+import { isSubscriptionInfoNodeName } from '../subscription/info-node-name';
 import type { CustomProxyGroup, ProxyGroupRuleTarget, ProxyGroupTargetRef } from '../types/config';
 import { getProxyGroupTargetKey, resolveProxyGroupTargetName } from '../proxy-group-targets';
 import { parseSourceRule, type SourceRuleInput } from '../subscription/source-rules';
@@ -16,18 +19,18 @@ const ALIASES: Array<[string, RegExp]> = [
   ['news', /news|新闻/i], ['shopping', /shopping|购物/i], ['adult', /adult|成人/i],
   ['streaming-asia', /mytvsuper|bahamut|abema|bili|亚洲流媒体/i],
   ['streaming-west', /spotify|hbo|hulu|primevideo|twitch|streaming|media|流媒体/i], ['social-other', /tiktok|reddit|social|社交/i],
-  ['dev-tools', /docker|npm|developer|开发工具/i], ['private', /private|lan|私有网络|局域网/i],
-  ['cn', /direct|china|domestic|国内|(?<!非)中国|直连/i], ['ad', /reject|adblock|advert|广告|拦截/i],
+  ['dev-tools', /docker|npm|developer|开发工具/i], ['private', /private|\blan\b|私有网络|局域网/i],
+  ['cn', /\bdirect\b|\bchina\b|\bdomestic\b|国内|(?<!非)中国|直连/i], ['ad', /reject|adblock|advert|广告|拦截/i],
   ['global', /proxies|proxy|global|节点选择|非中国|代理/i], ['final', /final|fallback|兜底|漏网/i],
 ];
 
 export function resolveSourceRuleCategory(input: SourceRuleInput, original: string, options: { moduleNames: Record<string, string>; customProxyGroups?: CustomProxyGroup[] }): ProxyGroupTargetRef {
-  const selected = input.categories?.[original];
+  const selected = input.categories && Object.hasOwn(input.categories, original) ? input.categories[original] : undefined;
   if (selected) return selected;
   const custom = options.customProxyGroups?.find((group) => group.name.trim() === original.trim());
   if (custom) return { kind: 'custom', id: custom.id };
-  const module = PROXY_GROUP_MODULES.find((item) => item.id === original.toLowerCase() || item.name === original || options.moduleNames[item.id] === original);
-  if (module) return { kind: 'module', id: module.id };
+  const matchedModule = PROXY_GROUP_MODULES.find((item) => item.id === original.toLowerCase() || item.name === original || options.moduleNames[item.id] === original);
+  if (matchedModule) return { kind: 'module', id: matchedModule.id };
   if (original === 'DIRECT') return { kind: 'module', id: 'cn' };
   if (original === 'REJECT') return { kind: 'module', id: 'ad' };
   const alias = ALIASES.find(([, pattern]) => pattern.test(original));
@@ -55,9 +58,20 @@ export function deduplicateRuleConditions(rules: string[]): string[] {
   });
 }
 
+export function buildSourceNodeTargets(sourceId: string, originalNodes: ParsedNode[], nodes: ParsedNode[]): ReadonlyMap<string, string | null> {
+  const belongs = (node: ParsedNode) => getNodeSourceIds(node).includes(sourceId) && !isSubscriptionInfoNodeName(getNodeOriginName(node));
+  const targets = new Map<string, string | null>(originalNodes.filter(belongs).map((node) => [getNodeOriginName(node), null]));
+  for (const node of nodes.filter(belongs)) targets.set(getNodeOriginName(node), node.name);
+  return targets;
+}
+
+export function getSourceRuleDefaultTarget(moduleNames: Record<string, string>, groupNames: string[], nodeNames: string[]): string {
+  return ['select', 'global', 'final', 'auto'].map((id) => moduleNames[id]).find((name) => groupNames.includes(name)) ?? nodeNames[0] ?? 'DIRECT';
+}
+
 export function resolveSourceCategoryTarget(options: {
   input: SourceRuleInput; original: string; moduleNames: Record<string, string>; customProxyGroups?: CustomProxyGroup[];
-  availableTargets: readonly string[]; fallbackTarget: string;
+  availableTargets: readonly string[]; fallbackTarget: string; nodeTargets?: ReadonlyMap<string, string | null>;
 }): { category: ProxyGroupTargetRef; target: string; unavailable: boolean } {
   const { input, original } = options;
   const category = resolveSourceRuleCategory(input, original, options);
@@ -72,7 +86,9 @@ export function resolveSourceCategoryTarget(options: {
     return first ? binding(first, visiting) : undefined;
   };
   const explicit = binding(original);
-  const target = explicit ? resolveProxyGroupTargetName(explicit, targetOptions) : categoryTarget;
+  const nodeTarget = options.nodeTargets?.get(original);
+  if (!explicit && nodeTarget === null) throw new Error('规则引用的原节点没有可用出口，请指定目标绑定或调整客户端兼容设置。');
+  const target = explicit ? resolveProxyGroupTargetName(explicit, targetOptions) : nodeTarget ?? categoryTarget;
   const unavailable = !options.availableTargets.includes(target);
   if (explicit && unavailable) throw new Error('目标绑定引用了已删除、关闭或当前客户端不可用的节点或策略组。');
   return { category, target: unavailable ? options.fallbackTarget : target, unavailable };

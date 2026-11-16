@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSourceRuleBlocks, buildSourceRuleInputs, getSourceRuleBlockKey, listSourceRuleTargets,
-  normalizeRuleSourceOrder, normalizeSourceRuleSnapshot, normalizeSourceRuleTargets,
+  normalizeRuleSourceOrder, normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeSourceRuleCategories,
   orderSourceRuleInputs, parseSourceRule, parseSourceRuleSnapshot,
 } from "./source-rules";
 
@@ -141,6 +141,14 @@ describe("source rule snapshots", () => {
       { id: "enabled", source: " airport ", includeRules: true, ruleSnapshot, ruleTargets: { Proxies: { kind: "module", id: "select" } } },
     ])).toEqual([{ id: "enabled", source: "airport", snapshot: ruleSnapshot, targets: { Proxies: { kind: "module", id: "select" } } }]);
     expect(() => buildSourceRuleInputs([{ id: "enabled", includeRules: true }])).toThrow("尚未导入有效规则");
+  });
+
+  it("normalizes only explicit saved category references", () => {
+    expect(normalizeSourceRuleCategories(null)).toBeUndefined();
+    expect(normalizeSourceRuleCategories({ " ": { kind: "module", id: "google" }, Bad: "DIRECT" })).toBeUndefined();
+    const categories = { Google: { kind: "module", id: "google" } };
+    const ruleSnapshot = { groups: [], rules: ["MATCH,DIRECT"] };
+    expect(buildSourceRuleInputs([{ id: "a", includeRules: true, ruleSnapshot, ruleCategories: categories }])[0].categories).toEqual(categories);
   });
 
   it("groups equal labels into ordered blocks with a movable SubBoost block", () => {

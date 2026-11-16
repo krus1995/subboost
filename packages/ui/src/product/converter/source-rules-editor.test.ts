@@ -89,6 +89,25 @@ describe("SourceRulesEditor", () => {
     expect(mocks.state.setRuleSourceOrder).toHaveBeenCalledWith(["source:b", "source:a", "subboost"]);
   });
 
+  it("changes the existing category independently from an explicit outlet", () => {
+    mocks.state.sources = [{ ...sourceA, ruleTargets: { Original: "REJECT" } }];
+    const category = elements(SourceRulesEditor()).find((item) => item.props["aria-label"] === "公益 的 Original 分类");
+    (category?.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "module:google" } });
+    expect(mocks.state.setSources).toHaveBeenCalledWith([expect.objectContaining({ ruleCategories: { Original: { kind: "module", id: "google" } }, ruleTargets: { Original: "REJECT" } })]);
+    expect(renderToStaticMarkup(React.createElement(SourceRulesEditor))).toContain("当前出口 REJECT");
+  });
+
+  it("summarizes a large import and keeps custom rules in the same category", () => {
+    mocks.state.sources = [{ ...sourceA, ruleSnapshot: { groups: [], rules: [...Array.from({ length: 7560 }, (_, index) => "DOMAIN,example" + index + ".org,Google"), "MATCH,DIRECT"] } }];
+    mocks.state.customRules = [{ id: "manual", type: "DOMAIN", value: "manual.example", target: { kind: "module", id: "google" } }];
+    const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(html).toContain("导入 7560 条");
+    expect(html).toContain("manual.example");
+    expect(html).toContain("分类未启用，当前出口");
+    expect(html).not.toContain("DOMAIN,example3.org");
+    expect(html).toContain("DOMAIN,example2.org");
+  });
+
   it("reports a rule snapshot that still relies on client-side provider nodes", () => {
     mocks.state.sources = [{ ...sourceA, useProxyProviders: true }];
     const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));

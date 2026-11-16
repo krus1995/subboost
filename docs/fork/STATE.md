@@ -196,3 +196,7 @@ GitHub Actions 已恢复。PR #12 在[必需检查](https://github.com/krus1995/
 ## 主订阅规则归入现有分类
 
 验收基线 `62f86685772627d2eaecd1c9013c84d123cf05b1`。导入主订阅后，在现有规则管理中能按 SubBoost 分类查看导入规则并调整出口。仅使用已有分类，保留直连和拒绝动作。同一匹配条件只按主订阅中第一次出现的分类生效。用离线 ImmTelecom 文件和模拟数据核对同类、异类冲突、规则集、预览、保存与两种导出，过程中不访问用户订阅。
+
+首个代码候选 `0a9d802449711b139da0577fea2163b7e84f342a` 已提交，供独立离线回放和浏览器验收。导入规则使用现有分类，分类和出口分别保存；停用分类显示实际默认出口，直连和拒绝保留原动作。多来源按首次条件保留，Loon 在展开规则集后再比较。Clash 保留远程引用，导入规则在前，因此宽泛来源规则也会先于规则集内更具体条件匹配。规则管理汇总两类规则，显示被覆盖的内联规则和兜底。
+
+短回归 `npm run test:unit -- source-rules source-rules-editor source-rule-order-preview saved-sources auth-handoff editing-subscription-loader use-subscription-link rules-management-section` 通过 151 项。旧断言曾要求保留重复条件和生成来源代理组，现按用户确认的语义改为已有分类、唯一有效条件；HTTP 业务断言同步核对保存分类和两端结果。没有改动检查门槛或依赖。完整源码与隔离镜像由外层独立验收继续核对，尚未宣布通过。

@@ -15,11 +15,11 @@ describe("normalizeSavedSourcesForPersistence", () => {
   it("retains rule snapshots and typed target bindings across stored JSON", () => {
     const sources = normalizeSavedSourcesForPersistence([
       { id: "rules", type: "url", content: "https://source.example/sub", source: "airport", includeRules: true,
-        ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "media" } } },
+        ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "media" } }, ruleCategories: { DIRECT: { kind: "module", id: "cn" } } },
       { id: "disabled", type: "url", content: "https://disabled.example/sub", includeRules: false, ruleSnapshot: "bad" },
     ]);
     expect(normalizeSavedSourcesForPersistence(JSON.parse(JSON.stringify(sources)))).toEqual(sources);
-    expect(sources[0]).toMatchObject({ includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "media" } } });
+    expect(sources[0]).toMatchObject({ includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "media" } }, ruleCategories: { DIRECT: { kind: "module", id: "cn" } } });
     expect(sources[1]).not.toHaveProperty("ruleSnapshot");
     expect(sources[1]).not.toHaveProperty("includeRules");
   });

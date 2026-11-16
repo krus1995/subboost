@@ -65,7 +65,7 @@ describe('source rules merged into existing categories', () => {
     input.userConfig = { enabledGroups: ['select', 'global', 'apple', 'google'] };
     expect(generateClashConfig(input).rules?.slice(0, 2)).toEqual(['DOMAIN-SUFFIX,apple.com,🌍 非中国', 'DOMAIN-SUFFIX,admob.com,🔍 谷歌服务']);
   });
-  it.each([['🎯Direct', 'cn'], ['Scholar', 'google-scholar'], ['MyTVSuper', 'streaming-asia'], ['Epic', 'gaming-pc'], ['Other service', 'global']])('classifies %s as %s', (original, id) => {
+  it.each([['🎯Direct', 'cn'], ['Scholar', 'google-scholar'], ['MyTVSuper', 'streaming-asia'], ['Epic', 'gaming-pc'], ['Other service', 'global'], ['Finland', 'global'], ['Thailand', 'global'], ['Indirect', 'global']])('classifies %s as %s', (original, id) => {
     expect(resolveSourceRuleCategory(source('a', []), original, { moduleNames: names })).toEqual({ kind: 'module', id });
   });
   it('reuses same-name custom categories and preserves an explicit custom outlet', async () => {
@@ -81,6 +81,12 @@ describe('source rules merged into existing categories', () => {
     input.sourceRules![0].categories = { Proxies: { kind: 'module', id: 'google' } };
     input.proxyGroupNameOverrides = { google: 'My search' };
     expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,video.example,🔍 My search');
+  });
+  it('does not read inherited category names', () => {
+    const input = source('a', []);
+    input.categories = { Google: { kind: 'module', id: 'google' } };
+    expect(resolveSourceRuleCategory(input, 'constructor', { moduleNames: names })).toEqual({ kind: 'module', id: 'global' });
+    expect(resolveSourceRuleCategory(input, 'toString', { moduleNames: names })).toEqual({ kind: 'module', id: 'global' });
   });
   it('keeps explicit parent bindings through nested original groups', () => {
     const input = options([source('a', ['DOMAIN,example.com,Nested', 'MATCH,DIRECT'], { Proxies: 'REJECT' })]);
@@ -115,6 +121,22 @@ describe('source rules merged into existing categories', () => {
     const input = options([source('a', ['DOMAIN,a.example,Loop', 'MATCH,DIRECT'])]);
     input.sourceRules![0].snapshot.groups.push({ name: 'Loop', type: 'select', proxies: ['Loop'] });
     expect(() => generateClashConfig(input)).toThrow('循环引用');
+  });
+  it('preserves directly referenced source nodes and rejects them when unavailable', () => {
+    const input = options([source('a', ['DOMAIN,node.example,Original JP', 'MATCH,DIRECT'])]);
+    input.nodes = [{ ...node, _sourceIds: ['a'], _originName: 'Original JP' }];
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,node.example,JP sample');
+    expect(() => compileSourceRules({ sourceRules: input.sourceRules!, nodes: [], originalNodes: input.nodes, groups: [], rules: ['MATCH,DIRECT'], moduleNames: names, client: 'clash' })).toThrow('原节点没有可用出口');
+  });
+  it('does not use a reject category or account information node as a missing category default', () => {
+    const input = options([source('a', ['DOMAIN,apple.example,Apple', 'MATCH,Proxies'])]);
+    input.userConfig = { enabledGroups: ['ad'] };
+    input.nodes.unshift({ ...node, name: '当前流量：20GB / 100GB' });
+    expect(generateClashConfig(input).rules?.[0]).toBe('DOMAIN,apple.example,JP sample');
+  });
+  it('retains regex payload commas while removing only identical complete conditions', () => {
+    const rules = ['DOMAIN-REGEX,^a{1,3}\\.example$,DIRECT', 'DOMAIN-REGEX,^a{1,4}\\.example$,REJECT', 'DOMAIN-REGEX,^a{1,3}\\.example$,REJECT'];
+    expect(deduplicateRuleConditions(rules)).toEqual(rules.slice(0, 2));
   });
   it('refuses a damaged snapshot with no final in either input', () => {
     expect(() => compileSourceRules({ sourceRules: [source('a', ['DOMAIN,example.com,DIRECT'])], nodes: [], originalNodes: [], groups: [], rules: [], moduleNames: names, client: 'clash' })).toThrow('缺少最终兜底');
