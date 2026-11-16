@@ -20,6 +20,17 @@ function node(patch: Partial<ParsedNode> = {}): ParsedNode {
 }
 
 describe("subscription config utils", () => {
+  it("passes rule snapshots and source-block order through saved subscription generation", () => {
+    const snapshot = { groups: [], rules: ["MATCH,DIRECT"] };
+    const options = buildGenerateOptionsFromConfig({
+      sources: [{ id: "source-1", type: "url", content: "https://source.example/sub", source: "airport", includeRules: true, ruleSnapshot: snapshot,
+        ruleTargets: { DIRECT: { kind: "module", id: "select" } } }],
+      ruleSourceOrder: ["label:airport", "subboost"],
+    }, { nodes: [node()] });
+    expect(options.sourceRules).toEqual([{ id: "source-1", source: "airport", snapshot, targets: { DIRECT: { kind: "module", id: "select" } } }]);
+    expect(options.ruleSourceOrder).toEqual(["label:airport", "subboost"]);
+  });
+
   it("passes persisted logical source labels to both exporters", () => {
     const config = {
       sources: [

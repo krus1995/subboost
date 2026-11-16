@@ -1,5 +1,6 @@
 import type { GenerateOptions } from "@subboost/core/generator";
 import { buildSourceLabelsById } from "@subboost/core/proxy-group-advanced";
+import { buildSourceRuleInputs, normalizeRuleSourceOrder } from "./source-rules";
 import { normalizePersistedRuleOrder } from "@subboost/core/generator/rules";
 import type { DialerProxyGroup } from "@subboost/core/types/template-config";
 import type { ParsedNode } from "@subboost/core/types/node";
@@ -334,6 +335,8 @@ export function buildGenerateOptionsFromConfig(
   const effectiveNodes = resolveNodeNameFilter(opts.nodes, config.nodeNameFilter).effectiveNodes;
   const groupListeners = normalizeGroupListeners(config.groupListeners);
   const sanitizedNodes = stripImportedNodeControlFieldsFromList(effectiveNodes);
+  const sourceRules = buildSourceRuleInputs(config.sources);
+  const ruleSourceOrder = normalizeRuleSourceOrder(config.ruleSourceOrder);
   const proxyGroupAdvanced = isRecord(config.proxyGroupAdvanced)
     ? Object.fromEntries(
         Object.entries(config.proxyGroupAdvanced)
@@ -345,6 +348,8 @@ export function buildGenerateOptionsFromConfig(
   return {
     nodes: sanitizedNodes,
     sourceLabelsById: buildSourceLabelsById(config.sources),
+    ...(sourceRules.length ? { sourceRules } : {}),
+    ...(ruleSourceOrder.length ? { ruleSourceOrder } : {}),
     ...(proxyProviders ? { proxyProviders } : {}),
     template,
     userConfig,

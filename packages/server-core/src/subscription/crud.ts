@@ -8,6 +8,7 @@ import { MIHOMO_STRING_SCALAR_FIELDS, normalizeMihomoStringScalar } from "@subbo
 import { resolveSubscriptionAutoUpdateState, type SubscriptionAutoUpdateStateFields } from "./auto-update-state";
 import { normalizeSavedSourcesForPersistence, type NormalizeSavedSourcesForPersistenceOptions } from "./saved-sources";
 import { resolveSmartNodeMatchingEnabled } from "./refresh-node-snapshot";
+import { buildSourceRuleInputs, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
 
 export type SubscriptionConfigInput = {
   config?: unknown;
@@ -146,6 +147,8 @@ export function normalizeSubscriptionConfigForPersistence(
   if ("nodeNameFilter" in baseConfig) {
     baseConfig.nodeNameFilter = parseNodeNameFilterConfig(baseConfig.nodeNameFilter);
   }
+  buildSourceRuleInputs(baseConfig.sources);
+  if ("ruleSourceOrder" in baseConfig) baseConfig.ruleSourceOrder = normalizeRuleSourceOrder(baseConfig.ruleSourceOrder);
 
   if (typeof input.smartNodeMatchingEnabled === "boolean") {
     baseConfig.smartNodeMatchingEnabled = input.smartNodeMatchingEnabled;

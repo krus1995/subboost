@@ -35,6 +35,12 @@ beforeEach(() => {
 });
 
 describe("local source import route", () => {
+  it("forwards an explicit attached rules request", async () => {
+    const response = await route.POST(jsonRequest({ url: "https://example.com/sub.yaml", includeRules: true }));
+    expect(response.status).toBe(200);
+    expect(importSourceUrlDirect).toHaveBeenCalledWith(expect.objectContaining({ includeRules: true }));
+  });
+
   it("uses the local direct import service", async () => {
     const response = await route.POST(jsonRequest({
       url: "https://example.com/sub.yaml",

@@ -14,6 +14,7 @@ import type { ParseResult, ParsedNode } from "@subboost/core/types/node";
 import { createSubscriptionRequestBudget, hasUsableSubscriptionSnapshot,
   type SubscriptionSnapshotComparison } from "./snapshot-comparison";
 import { SUBSCRIPTION_IMPORT_USER_AGENTS } from "./user-agents";
+import { parseSourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
 
 export type SourceImportPurpose = "content" | "userinfo";
 
@@ -37,6 +38,7 @@ export type SourceImportTransportResult = {
 
 export type SourceImportRequest = {
   url: string;
+  includeRules?: boolean;
   userinfoUrl?: string;
   userinfoUserAgent?: string;
 };
@@ -253,7 +255,9 @@ export async function importSubscriptionFromUrl(
 
   const timeoutMs = options.timeoutMs ?? 15000;
   const maxBytes = options.maxBytes ?? 10 * 1024 * 1024;
-  const userAgent = options.userAgents?.[0] || SUBSCRIPTION_IMPORT_USER_AGENTS[0];
+  const userAgent = request.includeRules === true
+    ? SUBSCRIPTION_IMPORT_USER_AGENTS[1]
+    : options.userAgents?.[0] || SUBSCRIPTION_IMPORT_USER_AGENTS[0];
   const budget = createSubscriptionRequestBudget(timeoutMs);
   const remainingTimeout = budget.remainingTimeout();
   if (remainingTimeout === 0) return toFailure(null);
@@ -263,6 +267,15 @@ export async function importSubscriptionFromUrl(
 
   if (!best || !best.ok || !isUsableParsedAttempt(best)) {
     return toFailure(best);
+  }
+
+  if (request.includeRules === true) {
+    try {
+      parseSourceRuleSnapshot(best.content);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "来源规则解析失败";
+      return { ok: false, error: message, errorInfo: createSubscriptionImportErrorInfo({ category: "parse", message }) };
+    }
   }
 
   const supplementalHeaders = budget.remainingTimeout() === 0 ? {} : await fetchSupplementalUserInfoHeaders(request, {

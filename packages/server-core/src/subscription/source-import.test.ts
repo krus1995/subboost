@@ -21,6 +21,27 @@ function ssLink(name = "SS Node"): string {
 }
 
 describe("importSubscriptionFromUrl", () => {
+  it("imports attached rules with Mihomo identity from one response", async () => {
+    const content = mihomoYaml + 'proxy-groups: [{name: Primary, type: select, proxies: [node-a]}]\nrules: ["DOMAIN,example.com,Primary", "MATCH,Primary"]';
+    const fetchText = vi.fn(async () => ({ ok: true, content }));
+    const result = await importSubscriptionFromUrl({ url: "https://example.com/sub", includeRules: true }, { fetchText });
+    expect(result).toMatchObject({ ok: true, content, parsedNodes: [expect.objectContaining({ name: "node-a" })] });
+    expect(fetchText).toHaveBeenCalledTimes(1);
+    expect(fetchText).toHaveBeenCalledWith(expect.objectContaining({ purpose: "content", userAgent: "mihomo/1.19.24" }));
+  });
+
+  it.each([
+    { ok: true, content: mihomoYaml },
+    { ok: true, content: mihomoYaml + 'rules: ["MATCH,missing"]' },
+    { ok: false, error: "HTTP 403", responseStatus: 403 },
+  ])("keeps the single response failure when attached rules cannot be used", async response => {
+    const fetchText = vi.fn(async () => response);
+    const result = await importSubscriptionFromUrl({ url: "https://example.com/sub", includeRules: true }, { fetchText });
+    expect(result.ok).toBe(false);
+    expect(fetchText).toHaveBeenCalledTimes(1);
+    if (!response.ok) expect(result).toMatchObject({ responseStatus: 403 });
+  });
+
   it("uses one configured user agent and keeps separate userinfo headers", async () => {
     const fetchText = vi.fn(async (request: SourceImportTransportRequest): Promise<SourceImportTransportResult> => {
       if (request.purpose === "userinfo") {

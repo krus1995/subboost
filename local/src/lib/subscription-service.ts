@@ -151,6 +151,7 @@ function assertNodeNameFilterKeepsOutput(
 ): void {
   if (nodes.length === 0) return;
   const options = buildGenerateOptionsFromConfig(config, { nodes });
+  if (options.sourceRules?.length) generateClashYaml(options);
   const hasProxyProviders = Boolean(
     options.proxyProviders && Object.keys(options.proxyProviders).length > 0
   );
@@ -334,11 +335,13 @@ export function buildSubscriptionFetchCallbacks(trigger: SourceRequestContext["t
     fetchUrlNodes: async (source: SavedSource) => {
       const imported = await importSourceUrlDirect({
         url: source.content,
+        ...(source.includeRules ? { includeRules: true } : {}),
       }, context);
       if (imported.ok) {
         return {
           ok: true,
           nodes: imported.parsedNodes,
+          content: imported.content,
           errors: imported.parseErrors,
           headers: imported.headers,
         };

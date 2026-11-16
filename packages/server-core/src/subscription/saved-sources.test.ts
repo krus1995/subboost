@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { normalizeSavedSourcesForPersistence } from "./saved-sources";
 
 describe("normalizeSavedSourcesForPersistence", () => {
+  it("retains rule snapshots and typed target bindings across stored JSON", () => {
+    const sources = normalizeSavedSourcesForPersistence([
+      { id: "rules", type: "url", content: "https://source.example/sub", source: "airport", includeRules: true,
+        ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "media" } } },
+      { id: "disabled", type: "url", content: "https://disabled.example/sub", includeRules: false, ruleSnapshot: "bad" },
+    ]);
+    expect(normalizeSavedSourcesForPersistence(JSON.parse(JSON.stringify(sources)))).toEqual(sources);
+    expect(sources[0]).toMatchObject({ includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "media" } } });
+    expect(sources[1]).not.toHaveProperty("ruleSnapshot");
+    expect(sources[1]).not.toHaveProperty("includeRules");
+  });
+
   it("keeps logical source labels through persisted JSON without changing unlabeled sources", () => {
     const sources = normalizeSavedSourcesForPersistence([
       { id: "main", type: "url", content: "https://main.example/sub", source: " airport " },
