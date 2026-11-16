@@ -319,6 +319,19 @@ describe("quick mode SourcesSection", () => {
     expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ userinfoUserAgent: "clash.meta/v1.19.16" }));
   });
 
+  it("can stop using imported rules without fetching the subscription again", () => {
+    mocks.store.sources = [{ ...urlSource, includeRules: true }];
+    renderSection({ 1: "s1", 2: { ...urlSource, includeRules: true } });
+    mocks.captures.editor.onUpdateMeta("s1", { includeRules: false });
+    expect(mocks.markSourceAsPendingImport).not.toHaveBeenCalled();
+    expect(mocks.store.setSources).toHaveBeenCalledWith([expect.objectContaining({ includeRules: false, parsed: true })]);
+
+    mocks.store.sources = [{ ...urlSource, includeRules: false }];
+    renderSection({ 1: "s1", 2: { ...urlSource, includeRules: true } });
+    mocks.captures.editor.onClose();
+    expect(mocks.store.parseSingleSource).not.toHaveBeenCalled();
+  });
+
   it("edits only the source label without invalidating nodes or fetching on close", () => {
     mocks.store.sources = [{ ...urlSource, source: "公益" }];
     renderSection({ 1: "s1", 2: { ...urlSource, source: "主机场" } });

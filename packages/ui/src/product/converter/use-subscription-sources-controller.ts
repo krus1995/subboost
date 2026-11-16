@@ -46,7 +46,7 @@ function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: E
   return (
     next.content !== snapshot.content ||
     next.useProxyProviders !== snapshot.useProxyProviders ||
-    next.includeRules !== (snapshot.includeRules === true) ||
+    (next.includeRules && !snapshot.includeRules) ||
     next.userinfoUrl !== snapshot.userinfoUrl ||
     next.userinfoUserAgent !== snapshot.userinfoUserAgent
   );
@@ -55,7 +55,7 @@ function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: E
 function sourceMetaNeedsReimport(patch: Partial<SubscriptionSource>): boolean {
   return (
     Object.prototype.hasOwnProperty.call(patch, "useProxyProviders") ||
-    Object.prototype.hasOwnProperty.call(patch, "includeRules") ||
+    patch.includeRules === true ||
     Object.prototype.hasOwnProperty.call(patch, "userinfoUrl") ||
     Object.prototype.hasOwnProperty.call(patch, "userinfoUserAgent")
   );
