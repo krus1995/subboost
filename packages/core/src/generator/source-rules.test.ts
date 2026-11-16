@@ -138,6 +138,17 @@ describe('source rules merged into existing categories', () => {
     const rules = ['DOMAIN-REGEX,^a{1,3}\\.example$,DIRECT', 'DOMAIN-REGEX,^a{1,4}\\.example$,REJECT', 'DOMAIN-REGEX,^a{1,3}\\.example$,REJECT'];
     expect(deduplicateRuleConditions(rules)).toEqual(rules.slice(0, 2));
   });
+  it('exports a complete configuration with no proxy groups and one merged condition', async () => {
+    const input = options([source('a', ['DOMAIN,video.example,Google', 'MATCH,Proxies'])]);
+    input.userConfig = { enabledGroups: [] };
+    const clash = generateClashConfig(input);
+    expect(clash['proxy-groups']).toEqual([]);
+    expect(clash.rules).toEqual(['DOMAIN,video.example,JP sample', 'MATCH,JP sample']);
+    const loon = await generateLoonConfig(input, load);
+    const groupSection = loon.split('[Proxy Group]')[1].split('[Rule]')[0].trim();
+    expect(groupSection).toBe('');
+    expect(ruleLines(loon)).toEqual(['DOMAIN,video.example,JP sample', 'FINAL,JP sample']);
+  });
   it('refuses a damaged snapshot with no final in either input', () => {
     expect(() => compileSourceRules({ sourceRules: [source('a', ['DOMAIN,example.com,DIRECT'])], nodes: [], originalNodes: [], groups: [], rules: [], moduleNames: names, client: 'clash' })).toThrow('缺少最终兜底');
   });

@@ -177,7 +177,7 @@ async function checkReadOnceSources() {
       assert.deepEqual(clash["proxy-groups"] ?? [], [], "no configured or synthetic proxy groups");
       assert.deepEqual(clash.rules, ["DOMAIN,video.example,JP Frozen", "MATCH,JP Frozen"]);
     } else {
-      const groupSection = body.split("[Proxy Group]\n")[1].split("\n\n[Rule]")[0].trim();
+      const groupSection = body.split("[Proxy Group]")[1].split("[Rule]")[0].trim();
       assert.equal(groupSection, "", "no configured or synthetic Loon groups");
       const rules = body.split("[Rule]\n")[1].trim().split(/\r?\n/).filter(line => line && !line.startsWith("#"));
       assert.deepEqual(rules, ["DOMAIN,video.example,JP Frozen", "FINAL,JP Frozen"]);
