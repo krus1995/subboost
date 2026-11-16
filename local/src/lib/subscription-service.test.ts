@@ -599,7 +599,7 @@ describe("local subscription service", () => {
     });
   });
 
-  it.each(["manual", "scheduled"] as const)("requests attached rules under the existing %s request policy", async trigger => {
+  it.each(["manual", "automatic"] as const)("requests attached rules under the existing %s request policy", async trigger => {
     const callbacks = buildSubscriptionFetchCallbacks(trigger);
     await callbacks.fetchUrlNodes({ id: "rules", type: "url", content: "https://source.example/sub", includeRules: true });
     expect(mocks.importSourceUrlDirect).toHaveBeenCalledWith({ url: "https://source.example/sub", includeRules: true }, expect.objectContaining({ trigger }));
