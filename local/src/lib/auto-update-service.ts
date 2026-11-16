@@ -88,13 +88,16 @@ async function prepareLocalRefresh(
   attemptedAt: Date
 ): Promise<PreparedLocalRefresh> {
   const secrets = readSubscriptionSecrets(subscription);
-  const requestedHosts = extractHostsFromSubscriptionUrls(secrets.urls);
+
   const snapshot = await refreshNodeSnapshot({
     config: secrets.config,
     urls: secrets.urls,
     storedNodes: secrets.nodes,
     ...buildSubscriptionFetchCallbacks("automatic"),
   });
+  const requestedHosts = extractHostsFromSubscriptionUrls(snapshot.savedSources.some((source) => source.readOnce)
+    ? snapshot.savedSources.filter((source) => source.type === "url" && !source.readOnce && !source.useProxyProviders).map((source) => source.content)
+    : secrets.urls);
   const { failureState, failureReason } = resolveAutomaticRefreshFailureAnalysis({
     currentState: currentAutoUpdateState,
     snapshot,

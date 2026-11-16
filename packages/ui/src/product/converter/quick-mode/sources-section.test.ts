@@ -319,6 +319,16 @@ describe("quick mode SourcesSection", () => {
     expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ userinfoUserAgent: "clash.meta/v1.19.16" }));
   });
 
+  it("freezes an imported source and changes usage settings without invalidating its snapshot", () => {
+    renderSection({ 1: "s1" });
+    mocks.captures.editor.onUpdateMeta("s1", { readOnce: true, useProxyProviders: false });
+    expect(mocks.markSourceAsPendingImport).not.toHaveBeenCalled();
+    expect(mocks.store.setSources).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ readOnce: true, parsed: true, readOnceAttemptedUrls: [urlSource.content] })]));
+    mocks.store.sources = [{ ...urlSource, readOnce: true }];
+    renderSection({ 1: "s1", 2: urlSource });
+    mocks.captures.editor.onClose();
+    expect(mocks.store.parseSingleSource).not.toHaveBeenCalled();
+  });
   it("can stop using imported rules without fetching the subscription again", () => {
     mocks.store.sources = [{ ...urlSource, includeRules: true }];
     renderSection({ 1: "s1", 2: { ...urlSource, includeRules: true } });

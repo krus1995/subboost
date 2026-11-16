@@ -68,6 +68,8 @@ export interface SubscriptionSource {
   content: string;
   name?: string;
   source?: string;
+  readOnce?: boolean;
+  readOnceAttemptedUrls?: string[];
   includeRules?: boolean;
   ruleSnapshot?: SourceRuleSnapshot;
   ruleTargets?: Record<string, ProxyGroupRuleTarget>;

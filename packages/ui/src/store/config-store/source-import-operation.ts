@@ -19,6 +19,7 @@ export function buildSourceImportFingerprint(source: SubscriptionSource): string
     source.content,
     source.useProxyProviders === true,
     source.includeRules === true,
+    source.readOnce === true,
     typeof source.userinfoUrl === "string" ? source.userinfoUrl : null,
     typeof source.userinfoUserAgent === "string" ? source.userinfoUserAgent : null,
   ]);

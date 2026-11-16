@@ -45,10 +45,12 @@ function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: E
   const next = createExpandedSourceSnapshot(source);
   return (
     next.content !== snapshot.content ||
+    (source.readOnce && snapshot.useProxyProviders && !next.useProxyProviders) ||
+    (!source.readOnce && (
     next.useProxyProviders !== snapshot.useProxyProviders ||
     (next.includeRules && !snapshot.includeRules) ||
     next.userinfoUrl !== snapshot.userinfoUrl ||
-    next.userinfoUserAgent !== snapshot.userinfoUserAgent
+    next.userinfoUserAgent !== snapshot.userinfoUserAgent))
   );
 }
 
@@ -198,6 +200,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
           const changed = (Object.keys(patch) as Array<keyof SubscriptionSource>).some((key) => source[key] !== next[key]);
           if (!changed) return source;
 
+          if (next.readOnce && source.parsed && !source.useProxyProviders) return { ...next, readOnceAttemptedUrls: [...new Set([...(source.readOnceAttemptedUrls ?? []), source.content.trim()])] };
           return sourceMetaNeedsReimport(patch) ? markSourceAsPendingImport(next) : next;
         })
       );
@@ -237,6 +240,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
             type,
             content: "",
             useProxyProviders: type === "url" ? Boolean(source.useProxyProviders) : undefined,
+            readOnce: type === "url" ? source.readOnce : undefined,
             includeRules: type === "nodes" ? false : source.includeRules,
             userinfoUrl: type === "url" ? source.userinfoUrl : undefined,
             userinfoUserAgent: type === "url" ? source.userinfoUserAgent : undefined,

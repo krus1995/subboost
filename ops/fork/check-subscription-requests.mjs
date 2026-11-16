@@ -123,6 +123,50 @@ async function checkSourceRouting() {
   for (const path of profiles.keys()) expectRequests(path, ["GET", "GET"]);
   console.log("source routing HTTP acceptance passed: saved labels and region, ordered rules and bindings, atomic refresh");
 }
+async function checkReadOnceSources() {
+  const frozenPath = "/read-once";
+  const normalPath = "/read-once-normal";
+  const usagePath = "/read-once-usage";
+  const original = fixtureProfile("Frozen", 4401);
+  profiles.set(frozenPath, original);
+  profiles.set(normalPath, original);
+  const imported = await api("/api/source-import", { method: "POST", body: { url: sourceUrl(frozenPath), includeRules: true } });
+  const ruleSnapshot = { groups: original["proxy-groups"], rules: original.rules };
+  const sources = [
+    { id: "frozen", type: "url", content: sourceUrl(frozenPath), readOnce: true, readOnceAttemptedUrls: [sourceUrl(frozenPath)],
+      includeRules: true, ruleSnapshot, userinfoUrl: sourceUrl(usagePath), userinfoUserAgent: "never-request", subscriptionUserInfo: { upload: 10, download: 20, total: 1000000 }, lastParsedContent: sourceUrl(frozenPath) },
+    { id: "normal", type: "url", content: sourceUrl(normalPath), lastParsedContent: sourceUrl(normalPath) },
+  ];
+  const { subscription } = await api("/api/subscriptions", { method: "POST", status: 201, body: {
+    name: "read-once acceptance", nodes: imported.parseResult.nodes.map(item => ({ ...item, _sourceIds: ["frozen", "normal"], _originName: item.name })),
+    urls: sources.map(source => source.content), config: { sources, enabledGroups: [] }, autoUpdateInterval: 360,
+  } });
+  sampleIds.push(subscription.id);
+  const item = "/api/subscriptions/" + subscription.id;
+  profiles.set(frozenPath, fixtureProfile("Never read", 5501));
+  profiles.set(normalPath, fixtureProfile("Renewed", 6601));
+  await api(item + "/refresh", { method: "POST" });
+  const saved = (await api(item)).subscription;
+  assert.deepEqual(saved.config.sources.find(source => source.id === "frozen").ruleSnapshot, ruleSnapshot);
+  assert.deepEqual(saved.config.sources.find(source => source.id === "frozen").subscriptionUserInfo, sources[0].subscriptionUserInfo);
+  assert.ok(saved.nodes.some(node => node.name === "JP Frozen" && node._sourceIds.includes("frozen")));
+  assert.ok(saved.nodes.some(node => node.name === "JP Renewed" && node._sourceIds.includes("normal")));
+  await db.query(`UPDATE "Subscription" SET "createdAt" = NOW() - INTERVAL '1 day 3 minutes', "lastUpdatedAt" = NOW() - INTERVAL '1 day' WHERE id = $1`, [subscription.id]);
+  await api("/api/cron/update-subscriptions", { method: "POST", cron: true });
+  for (const file of ["config.yaml", "loon.conf"]) {
+    const response = await fetch(appUrl + "/api/subscriptions/" + subscription.token + "/" + file);
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    assert.ok(body.includes("JP Frozen"));
+    assert.ok(body.includes("JP Renewed"));
+    assert.ok(!body.includes("Never read"));
+    assert.ok(!body.includes(sourceUrl(frozenPath)), "read-once URL must not appear in a provider");
+  }
+  expectRequests(frozenPath, ["GET"]);
+  expectRequests(usagePath, []);
+  expectRequests(normalPath, ["GET", "GET"]);
+  console.log("read-once HTTP acceptance passed: frozen body, usage and rules, shared nodes, manual and scheduled refresh, both exports");
+}
 try {
   const response = await fetch(appUrl + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: "ci-admin", password: "upgrade-test-password" }) });
@@ -180,6 +224,7 @@ try {
   expectRequests("/shared", ["GET", "GET", "GET", "GET", "GET", "GET"]);
   console.log("subscription HTTP counts passed for manual import, refresh, upstream errors and scheduled refresh");
   await checkSourceRouting();
+  await checkReadOnceSources();
 } finally {
   for (const id of sampleIds) await api("/api/subscriptions/" + id, { method: "DELETE" });
   if (originalSettings) await api("/api/settings/source-import", { method: "PATCH", body: originalSettings });

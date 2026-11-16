@@ -85,7 +85,7 @@ export function resolveAutomaticRefreshFailureAnalysis(params: {
   failedAt: Date;
 }): AutomaticRefreshFailureAnalysis {
   const refreshableSources = params.snapshot.savedSources.filter(
-    (source) => !(source.type === "url" && source.useProxyProviders === true)
+    (source) => !(source.type === "url" && (source.useProxyProviders === true || source.readOnce === true))
   );
   const failureState =
     params.snapshot.failedSourceCount > 0

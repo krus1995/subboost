@@ -1,5 +1,6 @@
 "use client";
 
+import { isReadOnceSourceConsumed } from "@subboost/ui/store/config-store/read-once-source";
 import { HelpCircle } from "lucide-react";
 import { DEFAULT_NODE_NAME_TEMPLATE } from "@subboost/core/node-name-template";
 import { Button } from "@subboost/ui/components/ui/button";
@@ -27,6 +28,7 @@ export function SourceEditorDialog({
   onUpdateContent,
   onUpdateMeta,
 }: SourceEditorDialogProps) {
+  const consumedReadOnce = source ? isReadOnceSourceConsumed(source) : false;
   return (
     <Dialog open={Boolean(source)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-4xl">
@@ -67,15 +69,21 @@ export function SourceEditorDialog({
 
             {source.type !== "nodes" && <div className="space-y-1">
               <div className="flex items-center justify-between gap-3 text-xs"><span>使用此来源的规则</span>
-                <Switch aria-label="使用此来源的规则" checked={source.includeRules === true} onCheckedChange={(includeRules) => onUpdateMeta(source.id, { includeRules, ...(includeRules ? { useProxyProviders: false } : {}) })} />
+                <Switch disabled={Boolean(consumedReadOnce && !source.ruleSnapshot)} aria-label="使用此来源的规则" checked={source.includeRules === true} onCheckedChange={(includeRules) => onUpdateMeta(source.id, { includeRules, ...(includeRules ? { useProxyProviders: false } : {}) })} />
               </div>
-              <p className="text-[11px] text-fg-40">导入同一份完整 Clash 响应中的节点、策略组和规则。仅有节点的订阅无法作为规则来源；开启后关闭客户端直连模式。</p>
+              <p className="text-[11px] text-fg-40">导入同一份完整 Clash 响应中的节点、策略组和规则。仅有节点的订阅无法作为规则来源；开启后关闭客户端直连模式。已读取的阅后即焚来源没有规则快照时，需先关闭阅后即焚再导入规则。</p>
             </div>}
 
             <div className="space-y-1">
               <p className="text-xs text-fg-60">{sourceTypeInfo[source.type].label}</p>
               {source.type === "url" ? (
                 <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-3 text-xs"><span>阅后即焚</span>
+                      <Switch aria-label="阅后即焚" checked={source.readOnce === true} onCheckedChange={(readOnce) => onUpdateMeta(source.id, { readOnce, ...(readOnce ? { useProxyProviders: false } : {}) })} />
+                    </div>
+                    <p className="text-[11px] text-fg-40">只尝试导入一次，失败也不重试。已有节点直接保留，手动和自动刷新均不再访问此来源或流量地址。</p>
+                  </div>
                   <div className="flex items-center gap-3">
                     <Input
                       value={source.content}
@@ -116,7 +124,7 @@ export function SourceEditorDialog({
                       </HelpPopover>
                       <Switch
                         checked={Boolean(source.useProxyProviders)}
-                        disabled={source.includeRules === true}
+                        disabled={source.includeRules === true || source.readOnce === true}
                         onCheckedChange={(checked) => onUpdateMeta(source.id, { useProxyProviders: checked })}
                         aria-label="使用 proxy-providers 模式"
                       />
@@ -126,6 +134,7 @@ export function SourceEditorDialog({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FormField label="流量/到期信息 URL（可选）">
                       <Input
+                        disabled={source.readOnce === true}
                         value={source.userinfoUrl ?? ""}
                         onChange={(event) => onUpdateMeta(source.id, { userinfoUrl: event.target.value })}
                         placeholder="留空则默认使用当前订阅源 URL"
@@ -134,6 +143,7 @@ export function SourceEditorDialog({
                     </FormField>
                     <FormField label="流量信息 User-Agent（可选）">
                       <Input
+                        disabled={source.readOnce === true}
                         value={source.userinfoUserAgent ?? ""}
                         onChange={(event) => onUpdateMeta(source.id, { userinfoUserAgent: event.target.value })}
                         placeholder="例如 clash.meta/v1.19.16"
@@ -141,10 +151,10 @@ export function SourceEditorDialog({
                       />
                     </FormField>
                   </div>
-                  <p className="text-[11px] text-fg-40">
+                  {source.readOnce ? <p className="text-[11px] text-fg-40">阅后即焚仅保留首次正文响应中的流量信息，不访问独立流量接口。</p> : <p className="text-[11px] text-fg-40">
                     有些订阅源不会直接返回 <span className="font-mono">subscription-userinfo</span>，但会提供独立的流量接口。
                     设置后，SubBoost 会在导入/刷新时额外抓取该接口，用来更新这个源自己的流量与到期快照。
-                  </p>
+                  </p>}
                 </div>
               ) : (
                 <Textarea

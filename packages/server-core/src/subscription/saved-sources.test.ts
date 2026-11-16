@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { normalizeSavedSourcesForPersistence } from "./saved-sources";
 
 describe("normalizeSavedSourcesForPersistence", () => {
+  it("persists read-once history and disallows remote providers for it", () => {
+    const sources = normalizeSavedSourcesForPersistence([
+      { id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true, useProxyProviders: true, readOnceAttemptedUrls: ["https://once.invalid/sub", "https://once.invalid/sub", 123, ""] },
+      { id: "local", type: "yaml", content: "proxies: []", readOnce: true, readOnceAttemptedUrls: ["https://once.invalid/sub"] },
+    ]);
+    expect(sources[0]).toEqual({ id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true, readOnceAttemptedUrls: ["https://once.invalid/sub"] });
+    expect(sources[1]).not.toHaveProperty("readOnce");
+    expect(sources[1]).not.toHaveProperty("readOnceAttemptedUrls");
+    expect(normalizeSavedSourcesForPersistence(JSON.parse(JSON.stringify(sources)))).toEqual(sources);
+  });
   it("retains rule snapshots and typed target bindings across stored JSON", () => {
     const sources = normalizeSavedSourcesForPersistence([
       { id: "rules", type: "url", content: "https://source.example/sub", source: "airport", includeRules: true,

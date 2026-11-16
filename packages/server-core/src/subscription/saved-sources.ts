@@ -14,6 +14,8 @@ export type SavedSource = {
   type: SavedSourceType;
   content: string;
   source?: string;
+  readOnce?: boolean;
+  readOnceAttemptedUrls?: string[];
   includeRules?: boolean;
   ruleSnapshot?: SourceRuleSnapshot;
   ruleTargets?: Record<string, ProxyGroupRuleTarget>;
@@ -100,10 +102,12 @@ export function normalizeSavedSourcesForPersistence(
       type,
       content: type === "url" ? normalizeUrlContent(content) : content,
       ...(source ? { source } : {}),
+      ...(type === "url" && record.readOnce === true ? { readOnce: true } : {}),
+      ...(type === "url" && Array.isArray(record.readOnceAttemptedUrls) ? { readOnceAttemptedUrls: [...new Set(record.readOnceAttemptedUrls.filter((url): url is string => typeof url === "string" && Boolean(url.trim())).map(normalizeUrlContent))] } : {}),
       ...(record.includeRules === true ? { includeRules: true } : {}),
       ...(ruleSnapshot ? { ruleSnapshot } : {}),
       ...(ruleTargets ? { ruleTargets } : {}),
-      ...(type === "url" && record.useProxyProviders === true ? { useProxyProviders: true } : {}),
+      ...(type === "url" && record.readOnce !== true && record.useProxyProviders === true ? { useProxyProviders: true } : {}),
       ...(type === "url" && userinfoUrl ? { userinfoUrl: normalizeUrlContent(userinfoUrl) } : {}),
       ...(type === "url" && userinfoUserAgent ? { userinfoUserAgent } : {}),
       ...(subscriptionUserInfo ? { subscriptionUserInfo } : {}),
