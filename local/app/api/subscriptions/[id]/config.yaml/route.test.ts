@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
+import { SourceRuleInputError } from "@subboost/core/subscription/source-rules";
 
 const mocks = vi.hoisted(() => ({
   consumeLocalRateLimit: vi.fn(),
@@ -23,6 +25,16 @@ vi.mock("@local/lib/subscription-service", () => ({
 import { GET } from "./route";
 
 describe("local subscription YAML route", () => {
+  it.each([
+    new SourceRuleCompilationError("来源规则目标绑定不存在，请重新选择"),
+    new SourceRuleInputError("来源缺少有效规则，请重新导入"),
+  ])("returns an actionable 422 for unusable source rules", async error => {
+    mocks.generateSubscriptionProfile.mockRejectedValueOnce(error);
+    const response = await GET(new Request("https://local.test/config.yaml"), { params: Promise.resolve({ id: "demo" }) });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: "VALIDATION_ERROR", error: error.message });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.consumeLocalRateLimit.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });

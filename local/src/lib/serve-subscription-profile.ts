@@ -1,4 +1,6 @@
 import { LoonConversionError } from "@subboost/core/generator/loon-error";
+import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
+import { SourceRuleInputError } from "@subboost/core/subscription/source-rules";
 import { buildSubscriptionResponseHeaders } from "@subboost/server-core/subscription";
 import { apiError } from "./http";
 import { LoonRulesUnavailable } from "./loon-rule-list";
@@ -39,7 +41,9 @@ export async function serveSubscriptionProfile(request: Request, token: string, 
       }),
     });
   } catch (error) {
-    if (error instanceof LoonConversionError) return apiError(error.message, "VALIDATION_ERROR", 422);
+    if (error instanceof LoonConversionError || error instanceof SourceRuleCompilationError || error instanceof SourceRuleInputError) {
+      return apiError(error.message, "VALIDATION_ERROR", 422);
+    }
     if (error instanceof LoonRulesUnavailable) return apiError(error.message, "CONFIGURATION_ERROR", 503);
     throw error;
   }

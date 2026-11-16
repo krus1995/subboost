@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
 import {
   createSubscriptionResponse,
   deleteSubscriptionResponse,
@@ -43,6 +44,12 @@ vi.mock("@local/lib/subscription-service", () => ({
 const request = new Request("http://localhost/api/subscriptions", { method: "POST" });
 
 describe("local subscription route handlers", () => {
+  it("reports unusable source rules without committing an invalid manual refresh", async () => {
+    const error = new SourceRuleCompilationError("来源规则目标不存在，请重新选择");
+    mocks.refreshSubscription.mockRejectedValueOnce(error);
+    await expect(refreshSubscriptionResponse("sub-1")).resolves.toEqual({ message: error.message, code: "VALIDATION_ERROR", status: 422 });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.withCurrentAdmin.mockImplementation(async (handler: (admin: { id: string }) => unknown) =>

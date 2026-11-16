@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LoonConversionError } from "@subboost/core/generator/loon-error";
+import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
+import { SourceRuleInputError } from "@subboost/core/subscription/source-rules";
 import { LoonRulesUnavailable } from "@local/lib/loon-rule-list";
 import { generateSubscriptionProfile } from "@local/lib/subscription-service";
 import { GET } from "./route";
@@ -31,6 +33,8 @@ describe("public Loon profile", () => {
 
   it.each([
     [new LoonConversionError("不支持的节点传输方式"), 422],
+    [new SourceRuleCompilationError("来源规则目标绑定不存在，请重新选择"), 422],
+    [new SourceRuleInputError("来源缺少有效规则，请重新导入"), 422],
     [new LoonRulesUnavailable("规则列表暂时不可用"), 503],
   ] as const)("reports a failed export without serving an incomplete profile", async (error, status) => {
     vi.mocked(generateSubscriptionProfile).mockRejectedValue(error);

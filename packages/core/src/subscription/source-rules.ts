@@ -11,6 +11,9 @@ export type SourceRuleInput = {
   targets?: Record<string, ProxyGroupRuleTarget>;
 };
 export type ParsedSourceRule = { type: string; value: string; target: string; noResolve: boolean };
+export class SourceRuleInputError extends Error {
+  constructor(message: string) { super(message); this.name = "SourceRuleInputError"; }
+}
 
 const RULE_TYPES = new Set(["DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6", "GEOIP", "PROCESS-NAME", "PROCESS-PATH"]);
 const GROUP_TYPES = new Set(["select", "url-test", "fallback", "load-balance"]);
@@ -164,8 +167,8 @@ export function buildSourceRuleInputs(sources: unknown): SourceRuleInput[] {
     if (!isRecord(value) || value.includeRules !== true) return [];
     const id = text(value.id);
     const snapshot = normalizeSourceRuleSnapshot(value.ruleSnapshot);
-    if (!id || !snapshot) throw new Error(`来源 #${index + 1} 尚未导入有效规则，请先解析该来源`);
-    if (value.useProxyProviders === true) throw new Error(`来源 #${index + 1} 需先关闭客户端直连并导入节点快照`);
+    if (!id || !snapshot) throw new SourceRuleInputError(`来源 #${index + 1} 尚未导入有效规则，请先解析该来源`);
+    if (value.useProxyProviders === true) throw new SourceRuleInputError(`来源 #${index + 1} 需先关闭客户端直连并导入节点快照`);
     const source = text(value.source);
     const targets = normalizeSourceRuleTargets(value.ruleTargets);
     return [{ id, ...(source ? { source } : {}), snapshot, ...(targets ? { targets } : {}) }];
