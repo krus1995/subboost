@@ -58,6 +58,55 @@ describe("SourceRulesEditor", () => {
     expect(mocks.state.setSources).toHaveBeenLastCalledWith([expect.objectContaining({ id: "a", ruleTargets: {} }), sourceB]);
   });
 
+  it("shows useful names when incomplete imports have no logical source label", () => {
+    mocks.state.sources = [
+      { ...sourceA, source: undefined, tag: "Backup feed", ruleSnapshot: undefined },
+      { ...sourceB, source: undefined, ruleSnapshot: undefined },
+    ];
+    const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(html).toContain("Backup feed 尚未保存有效规则");
+    expect(html).toContain("来源 2 尚未保存有效规则");
+  });
+
+  it("retains unnamed imported blocks and reports a failed update beside the old snapshot", () => {
+    mocks.state.sources = [
+      { ...sourceA, source: undefined, tag: "Backup feed", error: "HTTP 403", ruleTargets: { Original: "DIRECT" } },
+      { ...sourceB, source: undefined, name: "Second input", ruleTargets: { Original: "REJECT" } },
+    ];
+    const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(html).toContain("1. Backup feed");
+    expect(html).toContain("2. 未标记来源");
+    expect(html).toContain("Second input");
+    expect(html).toContain("导入失败，继续使用上次成功的节点和规则");
+    expect(html).toContain('value="DIRECT" selected=""');
+    expect(html).toContain('value="REJECT" selected=""');
+    const tree = elements(SourceRulesEditor());
+    const target = tree.find((item) => item.props["aria-label"] === "b 的 Original 目标");
+    (target?.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "DIRECT" } });
+    expect(mocks.state.setSources).toHaveBeenCalledWith([mocks.state.sources[0], expect.objectContaining({ id: "b", ruleTargets: { Original: "DIRECT" } })]);
+    const down = tree.find((item) => item.props["aria-label"] === "下移规则块 source:a");
+    (down?.props.onClick as () => void)();
+    expect(mocks.state.setRuleSourceOrder).toHaveBeenCalledWith(["source:b", "source:a", "subboost"]);
+  });
+
+  it("reports a rule snapshot that still relies on client-side provider nodes", () => {
+    mocks.state.sources = [{ ...sourceA, useProxyProviders: true }];
+    const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(html).toContain("请关闭客户端直连模式并导入完整 Clash 配置");
+    expect(html).not.toContain("设置规则目标");
+  });
+
+  it("keeps the first and last rule blocks inside the available ordering range", () => {
+    const tree = elements(SourceRulesEditor());
+    const first = tree.find((item) => item.props["aria-label"] === "上移规则块 label:公益");
+    const last = tree.find((item) => item.props["aria-label"] === "下移规则块 subboost");
+    expect(first?.props.disabled).toBe(true);
+    expect(last?.props.disabled).toBe(true);
+    (first?.props.onClick as () => void)();
+    (last?.props.onClick as () => void)();
+    expect(mocks.state.setRuleSourceOrder).not.toHaveBeenCalled();
+  });
+
   it("reports missing snapshots and preserves stale bindings for explicit correction", () => {
     mocks.state.sources = [{ ...sourceA, ruleSnapshot: undefined }, { ...sourceB, ruleTargets: { Original: { kind: "custom", id: "removed" } } }];
     const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));

@@ -88,6 +88,40 @@ describe("rule-bearing source imports", () => {
     expect(store.getState().sources[1].error).toBeTruthy();
   });
 
+  it("rejects provider mode in a batch while retaining that source snapshot", async () => {
+    const ruleSnapshot = parseSourceRuleSnapshot(content);
+    mocks.fetchUrlContentInBrowser.mockResolvedValue({ content: "public", headers: {}, parseResult: parseResult([node("JP public new")]) });
+    const store = createHarness({ sources: [{ ...rulesSource, ruleSnapshot, useProxyProviders: true }, nodesSource], nodes: [oldRulesNode, oldPublicNode] });
+    await store.actions.parseMultipleSources(store.getState().sources);
+    expect(mocks.fetchUrlContentInBrowser).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchUrlContentInBrowser).toHaveBeenCalledWith(nodesSource.content, expect.any(Object));
+    expect(store.getState().sources[0].error).toContain("proxy-providers");
+    expect(store.getState().sources[0].ruleSnapshot).toEqual(ruleSnapshot);
+    expect(store.getState().nodes).toEqual(expect.arrayContaining([oldRulesNode, expect.objectContaining({ name: "JP public new" })]));
+  });
+
+  it("restores original names for legacy saved nodes when a rule source refresh fails", async () => {
+    const legacy = node("Legacy JP", { _sourceIds: ["rules"] });
+    mocks.fetchUrlContentInBrowser.mockRejectedValue(new Error("HTTP 403"));
+    const store = createHarness({ sources: [rulesSource], nodes: [legacy] });
+    await store.actions.parseMultipleSources(store.getState().sources);
+    expect(store.getState().nodes).toEqual([{ ...legacy, _originName: "Legacy JP" }]);
+    expect(store.getState().sources[0].error).toContain("HTTP 403");
+  });
+
+  it("does not resurrect a source removed while a batch response is pending", async () => {
+    let finish!: (value: { content: string; headers: Record<string, string>; parseResult: ReturnType<typeof parseResult> }) => void;
+    mocks.fetchUrlContentInBrowser.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const store = createHarness({ sources: [rulesSource, nodesSource], nodes: [oldRulesNode, oldPublicNode] });
+    const operation = store.actions.parseMultipleSources([rulesSource]);
+    store.actions.setSources([nodesSource]);
+    finish({ content, headers: {}, parseResult: parseResult([node("JP-1")]) });
+    await operation;
+    expect(store.getState().sources).toEqual([nodesSource]);
+    expect(store.getState().nodes).toEqual([oldPublicNode]);
+    expect(store.getState().isLoading).toBe(false);
+  });
+
   it("preserves snapshots after upstream refusal and does not retry", async () => {
     mocks.fetchUrlContentInBrowser.mockRejectedValue(new Error("HTTP 403"));
     const ruleSnapshot = parseSourceRuleSnapshot(content);
