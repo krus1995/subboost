@@ -149,24 +149,31 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
     applySourceNaming: (sourceId, previousNaming) => {
       const source = get().sources.find((item) => item.id === sourceId);
-      if (!source || !get().nodes.some((node) => getNodeSourceIds(node).includes(sourceId))) return;
+      if (!source) return;
       setAndGenerateConfig((state) => {
-        const automatic = new Map<ParsedNode, string>();
-        const previousUsed = new Set<string>();
-        for (const node of state.nodes) {
-          if (!getNodeSourceIds(node).includes(sourceId)) previousUsed.add(node.name);
-        }
-        for (const node of state.nodes) {
-          if (!getNodeSourceIds(node).includes(sourceId)) continue;
-          const originName = getNodeOriginName(node);
-          const previousName = makeUniqueName(formatNodeNameFromTemplate({
-            originName,
-            tag: source.lastParsedTag ?? previousNaming.tag,
-            template: source.lastParsedNameTemplate ?? previousNaming.nameTemplate,
-          }), previousUsed);
+        const ownedNodes = new Set(state.nodes.filter((node) => {
+          const sourceIds = getNodeSourceIds(node);
+          return state.sources.find((item) => sourceIds.includes(item.id))?.id === sourceId;
+        }));
+        const previousUsed = new Set(state.nodes.filter((node) => !ownedNodes.has(node)).map((node) => node.name));
+        const previousNamesByBase = new Map<string, Set<string>>();
+        const previousBaseOf = (node: ParsedNode) => formatNodeNameFromTemplate({
+          originName: getNodeOriginName(node),
+          tag: source.lastParsedTag ?? previousNaming.tag,
+          template: source.lastParsedNameTemplate ?? previousNaming.nameTemplate,
+        });
+        for (const node of ownedNodes) {
+          const base = previousBaseOf(node);
+          const previousName = makeUniqueName(base, previousUsed);
           previousUsed.add(previousName);
-          if (node.name !== previousName) continue;
-          automatic.set(node, formatNodeNameFromTemplate({ originName, tag: source.tag, template: source.nameTemplate }));
+          const names = previousNamesByBase.get(base) ?? new Set<string>();
+          names.add(previousName);
+          previousNamesByBase.set(base, names);
+        }
+        const automatic = new Map<ParsedNode, string>();
+        for (const node of ownedNodes) {
+          if (!previousNamesByBase.get(previousBaseOf(node))?.has(node.name)) continue;
+          automatic.set(node, formatNodeNameFromTemplate({ originName: getNodeOriginName(node), tag: source.tag, template: source.nameTemplate }));
         }
         const used = new Set(state.nodes.filter((node) => !automatic.has(node)).map((node) => node.name));
         const renameMap = new Map<string, string>();

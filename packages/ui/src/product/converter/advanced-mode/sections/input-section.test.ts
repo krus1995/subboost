@@ -263,6 +263,7 @@ describe("advanced mode InputSection", () => {
       parseErrors: [{ message: "bad subscription" }],
       sources: [urlSource, nodesSource],
       setSources: vi.fn(),
+      applySourceNaming: vi.fn(),
       parseSingleSource: vi.fn(),
     };
     mocks.userStore = { user: { isAdmin: false, quota: { maxImportSourcesPerType: 2 } } };
@@ -299,8 +300,9 @@ describe("advanced mode InputSection", () => {
     mocks.captures.editor.onUpdateContent("s1", "https://editor.example/sub");
     expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ content: "https://editor.example/sub" }));
 
+    mocks.markSourceAsPendingImport.mockClear();
     mocks.captures.editor.onUpdateMeta("s1", { tag: "JP" });
-    expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ tag: "JP" }));
+    expect(mocks.markSourceAsPendingImport).not.toHaveBeenCalled();
 
     mocks.markSourceAsPendingImport.mockClear();
     mocks.captures.editor.onUpdateMeta("s1", { nameTemplate: "{name}", useProxyProviders: true });
@@ -313,6 +315,12 @@ describe("advanced mode InputSection", () => {
     expect(mocks.markSourceAsPendingImport).not.toHaveBeenCalled();
   });
 
+  it("applies naming locally when closing a naming-only edit", () => {
+    renderSection({ 1: "s1", 2: { ...urlSource, tag: "OLD", nameTemplate: "{name}" } });
+    mocks.captures.editor.onClose();
+    expect(mocks.store.parseSingleSource).not.toHaveBeenCalled();
+    expect(mocks.store.applySourceNaming).toHaveBeenCalledWith("s1", expect.objectContaining({ tag: "OLD", nameTemplate: "{name}" }));
+  });
   it("closes the editor and re-imports only changed sources", () => {
     renderSection({
       1: "s1",

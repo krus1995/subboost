@@ -326,6 +326,7 @@ describe("quick mode SourcesSection", () => {
     });
     mocks.captures.editor.onClose();
     expect(mocks.store.parseSingleSource).not.toHaveBeenCalled();
+    expect(mocks.store.applySourceNaming).toHaveBeenCalledWith("s1", expect.objectContaining({ tag: "OLD", nameTemplate: "{name}" }));
   });
   it("closes the expanded editor and triggers re-import only when metadata changed", () => {
     renderSection({

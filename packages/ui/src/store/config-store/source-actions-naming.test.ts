@@ -93,4 +93,35 @@ describe("local source naming", () => {
     expect(harness.getState().nodes.map((item: { name: string }) => item.name)).toEqual(["[C]One", "[B]Two"]);
     expect(harness.getState().sources[0]).toMatchObject({ parsed: true, lastParsedTag: "C" });
   });
+  it.each([false, true])("updates naming metadata without nodes, provider=%s", (useProxyProviders) => {
+    const previous = source({ id: "a", type: "url", content: "https://a.example/sub", tag: "A", lastParsedTag: "A", parsed: true, useProxyProviders });
+    const harness = createHarness({ sources: [previous], nodes: [] });
+    harness.actions.setSources([{ ...previous, tag: "B", nameTemplate: "{tag}-{name}" }]);
+    harness.actions.applySourceNaming("a", previous);
+    expect(harness.getState().sources[0]).toMatchObject({ parsed: true, lastParsedTag: "B", lastParsedNameTemplate: "{tag}-{name}" });
+    expect(mocks.fetchUrlContentInBrowser).not.toHaveBeenCalled();
+  });
+
+  it("renames duplicate-origin nodes after their order changes and preserves an alias", () => {
+    const previous = source({ id: "a", tag: "A", lastParsedTag: "A", parsed: true });
+    const harness = createHarness({ sources: [previous], nodes: [
+      node("[A]Tokyo (2)", { server: "second.example.com", _originName: "Tokyo", _sourceIds: ["a"] }),
+      node("Private alias", { server: "third.example.com", _originName: "Tokyo", _sourceIds: ["a"] }),
+      node("[A]Tokyo", { server: "first.example.com", _originName: "Tokyo", _sourceIds: ["a"] }),
+    ], listenerPorts: { "[A]Tokyo (2)": 12000, "[A]Tokyo": 12001 } });
+    harness.actions.setSources([{ ...previous, tag: "B" }]);
+    harness.actions.applySourceNaming("a", previous);
+    expect(harness.getState().nodes.map((item: { name: string }) => item.name)).toEqual(["[B]Tokyo", "Private alias", "[B]Tokyo (2)"]);
+    expect(harness.getState().listenerPorts).toEqual({ "[B]Tokyo": 12000, "[B]Tokyo (2)": 12001 });
+  });
+
+  it("keeps a shared node named by its primary source", () => {
+    const first = source({ id: "a", parsed: true });
+    const second = source({ id: "b", parsed: true });
+    const harness = createHarness({ sources: [first, second], nodes: [node("Tokyo", { _originName: "Tokyo", _sourceIds: ["b", "a"] })] });
+    harness.actions.setSources([first, { ...second, tag: "B" }]);
+    harness.actions.applySourceNaming("b", second);
+    expect(harness.getState().nodes[0].name).toBe("Tokyo");
+    expect(harness.getState().sources[1].lastParsedTag).toBe("B");
+  });
 });
