@@ -22,9 +22,10 @@ export function compileSourceRules(options: {
   moduleNames: Record<string, string>;
   customProxyGroups?: CustomProxyGroup[];
   client: 'clash' | 'loon';
-}): { groups: ProxyGroup[]; rules: string[] } {
+}): { groups: ProxyGroup[]; rules: string[]; notices: string[] } {
   const { nodes, groups, sourceRules } = options;
   const resultGroups = [...groups];
+  const notices = new Set<string>();
   const currentNodeNames = new Set(nodes.filter((node) => !isSubscriptionInfoNodeName(getNodeOriginName(node))).map((node) => node.name));
   const manualTargets = new Set([...ACTIONS, ...currentNodeNames, ...groups.map((group) => group.name)]);
   const usedNames = new Set([...nodes.map((node) => node.name), ...groups.map((group) => group.name), ...ACTIONS]);
@@ -92,8 +93,9 @@ export function compileSourceRules(options: {
       const target = { name: outputName, proxy: members[0].proxy, explicit: members[0].explicit };
       memo.set(name, target);
       if (options.client === 'loon') {
-        const unsupported = ['lazy', 'tolerance', 'timeout', 'max-failed-times', 'expected-status', 'hidden', 'icon'].filter((key) => group[key] !== undefined);
-        if (unsupported.length) error(`的原生策略组包含 Loon 无法保留的设置：${unsupported.join('、')}。请指定目标绑定。`);
+        const unsupported = ['lazy', 'tolerance', 'timeout', 'max-failed-times', 'expected-status'].filter((key) => group[key] !== undefined);
+        if (unsupported.length) error(`的原生策略组包含当前 Loon 导出无法保留的设置：${unsupported.join('、')}。请指定目标绑定。`);
+        if (group.icon !== undefined || group.hidden !== undefined) notices.add('Loon 不保留导入策略组的图标和隐藏状态。');
       }
       resultGroups.push({ ...group, name: outputName, proxies: members.map((member) => member.name) });
       return target;
@@ -109,5 +111,5 @@ export function compileSourceRules(options: {
   const ordered = blocks.map((block) => block.key === 'subboost' ? options.rules : block.sources.flatMap((source) => compiledBySource.get(source.id) ?? []));
   const final = ordered[0]?.find((rule) => rule.startsWith('MATCH,')) ?? options.rules.find((rule) => rule.startsWith('MATCH,'));
   if (!final) throw new SourceRuleCompilationError('整合规则缺少最终兜底。');
-  return { groups: resultGroups, rules: [...ordered.flatMap((rules) => rules.filter((rule) => !rule.startsWith('MATCH,'))), final] };
+  return { groups: resultGroups, notices: [...notices], rules: [...ordered.flatMap((rules) => rules.filter((rule) => !rule.startsWith('MATCH,'))), final] };
 }

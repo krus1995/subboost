@@ -341,6 +341,7 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
       const compiled = compileSourceRules({ sourceRules: options.sourceRules, ruleSourceOrder: options.ruleSourceOrder, nodes, originalNodes, groups, rules, moduleNames: buildModuleNameMap(options.proxyGroupNameOverrides), customProxyGroups: options.customProxyGroups, client: 'loon' });
       groups = compiled.groups;
       compiledRules = compiled.rules;
+      report.push(...compiled.notices.map((notice) => `# ${notice}`));
     }
     const displayNames = buildDisplayNames(nodes, groups);
     const nodeLines = renderNodes(nodes, displayNames);

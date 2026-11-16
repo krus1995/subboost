@@ -119,6 +119,18 @@ describe('ordered source rule blocks', () => {
     input.sourceRules = [{ id: 'one', snapshot: { groups: [{ name: 'Main', type: 'select', proxies: ['当前流量：20GB / 100GB', 'Japan'] }], rules: ['MATCH,Main'] } }];
     expect(generateClashConfig(input)['proxy-groups']?.find((group) => group.name === '来源 1 Main')?.proxies).toEqual(['Paid Japan']);
   });
+  it('retains native display settings in Clash and reports their omission without blocking Loon', async () => {
+    const input = options();
+    input.sourceRules = [{ ...sources[0], snapshot: { ...snapshot('first.example'), groups: snapshot('first.example').groups.map((group) => ({ ...group, icon: 'https://example.invalid/icon.png', hidden: true })) } }];
+    const original = JSON.stringify(input.sourceRules);
+    const clash = generateClashConfig(input);
+    expect(clash['proxy-groups']?.find((group) => group.name === '来源 1 Service')).toMatchObject({ icon: 'https://example.invalid/icon.png', hidden: true });
+    const loon = await generateLoonConfig(input, load);
+    expect(loon).toContain('来源 1 Service = select, 来源 1 Proxies');
+    expect(loon).toContain('# Loon 不保留导入策略组的图标和隐藏状态。');
+    expect(ruleLines(loon)).toEqual(clash.rules?.map((rule) => rule.replace(/^MATCH,/, 'FINAL,')));
+    expect(JSON.stringify(input.sourceRules)).toBe(original);
+  });
   it('rejects native Loon group settings without an equivalent unless target binding bypasses them', async () => {
     const input = options();
     input.sourceRules = [{ ...sources[0], snapshot: { ...snapshot('first.example'), groups: [{ name: 'Proxies', type: 'url-test', proxies: ['Japan'], tolerance: 100 }, { name: 'Service', type: 'select', proxies: ['Proxies'] }] } }];
