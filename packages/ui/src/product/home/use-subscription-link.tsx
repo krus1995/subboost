@@ -340,6 +340,8 @@ export function useSubscriptionLink({
                 return {
                   id: s.id,
                   type: s.type,
+                  ...(s.source?.trim() ? { source: s.source.trim() } : {}),
+                  ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
                   content:
                     s.type === "url"
                       ? (tryNormalizeSubscriptionUrlInput(s.content) ?? s.content.trim())
@@ -384,6 +386,7 @@ export function useSubscriptionLink({
             hiddenProxyGroups,
             customRules,
             ruleOrder,
+            ruleSourceOrder: useConfigStore.getState().ruleSourceOrder,
             customProxyGroups,
             customRuleSets,
             builtinRuleEdits,

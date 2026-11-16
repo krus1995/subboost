@@ -106,6 +106,21 @@ describe("ProxyGroupAdvancedPanel", () => {
     };
   });
 
+  it.each([
+    { labels: ["主机场", "公益"], contents: ["one", "two"], visible: true },
+    { labels: ["公益", ""], contents: ["one", "two"], visible: true },
+    { labels: ["公益", "公益"], contents: ["one", "two"], visible: false },
+    { labels: ["", ""], contents: ["one", "two"], visible: false },
+    { labels: ["公益", ""], contents: ["one", ""], visible: false },
+  ])("shows source label choices only for mixed active inputs: $labels / $contents", ({ labels, contents, visible }) => {
+    mocks.store.sources = labels.map((source, index) => ({ id: `source-${index}`, type: "yaml", content: contents[index], source }));
+    const html = renderToStaticMarkup(React.createElement(ProxyGroupAdvancedPanel, {
+      target: { kind: "custom", id: "media", name: "Media" }, advanced: {}, onChange: vi.fn(), rulesCount: 0, rulesContent: null,
+    }));
+    expect(html.includes("来源标签 公益")).toBe(visible);
+    expect(html).not.toContain("来源标签 未标记");
+  });
+
   it("renders source, region, enabled, excluded, and rules sections", () => {
     const onChange = vi.fn();
     const html = renderToStaticMarkup(

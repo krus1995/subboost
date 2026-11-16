@@ -1,5 +1,6 @@
 "use client";
 
+import { buildSourceLabelsById } from "@subboost/core/proxy-group-advanced";
 import * as React from "react";
 import { Network, Server } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -29,6 +30,7 @@ import {
 export function VisualGraph() {
   const {
     nodes,
+    sources,
     nodeNameFilter,
     enabledProxyGroups,
     dialerProxyGroups,
@@ -46,6 +48,7 @@ export function VisualGraph() {
   } = useConfigStore(
     useShallow((state) => ({
       nodes: state.nodes,
+      sources: state.sources,
       nodeNameFilter: state.nodeNameFilter,
       enabledProxyGroups: state.enabledProxyGroups,
       dialerProxyGroups: state.dialerProxyGroups ?? [],
@@ -143,6 +146,7 @@ export function VisualGraph() {
     if (effectiveNodes.length === 0) return [];
     return generateProxyGroups({
       nodes: effectiveNodes,
+      sourceLabelsById: buildSourceLabelsById(sources),
       enabledModules: enabledProxyGroups,
       ruleProviderBaseUrl,
       testUrl,
@@ -155,6 +159,7 @@ export function VisualGraph() {
     });
   }, [
     effectiveNodes,
+    sources,
     enabledProxyGroups,
     ruleProviderBaseUrl,
     testUrl,

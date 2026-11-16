@@ -20,6 +20,32 @@ function node(patch: Partial<ParsedNode> = {}): ParsedNode {
 }
 
 describe("subscription config utils", () => {
+  it("passes rule snapshots and source-block order through saved subscription generation", () => {
+    const snapshot = { groups: [], rules: ["MATCH,DIRECT"] };
+    const options = buildGenerateOptionsFromConfig({
+      sources: [{ id: "source-1", type: "url", content: "https://source.example/sub", source: "airport", includeRules: true, ruleSnapshot: snapshot,
+        ruleTargets: { DIRECT: { kind: "module", id: "select" } } }],
+      ruleSourceOrder: ["label:airport", "subboost"],
+    }, { nodes: [node()] });
+    expect(options.sourceRules).toEqual([{ id: "source-1", source: "airport", snapshot, targets: { DIRECT: { kind: "module", id: "select" } } }]);
+    expect(options.ruleSourceOrder).toEqual(["label:airport", "subboost"]);
+  });
+
+  it("passes persisted logical source labels to both exporters", () => {
+    const config = {
+      sources: [
+        { id: "main", type: "url", content: "https://main.example/sub", source: " airport " },
+        { id: "public-a", type: "url", content: "https://a.example/sub", source: "public" },
+        { id: "public-b", type: "url", content: "https://b.example/sub", source: "public" },
+        { id: "old", type: "url", content: "https://old.example/sub" },
+      ],
+    };
+    expect(buildGenerateOptionsFromConfig(config, { nodes: [node()] }).sourceLabelsById).toEqual({
+      main: "airport", "public-a": "public", "public-b": "public", old: "",
+    });
+    expect(buildGenerateOptionsFromConfig({}, { nodes: [node()] }).sourceLabelsById).toEqual({});
+  });
+
   it("normalizes effective test options with guarded fallbacks", () => {
     expect(getEffectiveTestOptions({ testUrl: " https://cp.cloudflare.com ", testInterval: 120 })).toEqual({
       testUrl: "https://cp.cloudflare.com",

@@ -46,6 +46,7 @@ export interface ResolveProxyGroupMembersOptions {
   defaultProxyNames: string[];
   availableProxyNames?: string[];
   nodes: ParsedNode[];
+  sourceLabelsById?: Record<string, string>;
   moduleNames?: Record<string, string>;
   customProxyGroups?: CustomProxyGroup[];
   advanced?: ProxyGroupAdvancedConfig;
@@ -104,6 +105,32 @@ function normalizeStringList(value: unknown): string[] {
     out.push(trimmed);
   }
   return out;
+}
+
+export function buildSourceLabelsById(sources: unknown): Record<string, string> {
+  if (!Array.isArray(sources)) return {};
+  const labels = new Map<string, string>();
+  for (const source of sources) {
+    if (!source || typeof source !== 'object' || !('id' in source) || typeof source.id !== 'string') continue;
+    if (!('content' in source) || typeof source.content !== 'string' || !source.content.trim()) continue;
+    const id = source.id.trim();
+    if (!id || labels.has(id)) continue;
+    const label = 'source' in source && typeof source.source === 'string' ? source.source.trim() : '';
+    labels.set(id, label);
+  }
+  return Object.fromEntries(labels);
+}
+
+export function hasDistinctSourceLabels(sourceLabelsById: Record<string, string> = {}): boolean {
+  return new Set(Object.values(sourceLabelsById).map((label) => label.trim())).size > 1;
+}
+
+export function hasSourceLabelChoices(sources: unknown): boolean {
+  return hasDistinctSourceLabels(buildSourceLabelsById(sources));
+}
+
+export function resolveSelectedSourceLabels(advanced: ProxyGroupAdvancedConfig | undefined, sourceLabelsById: Record<string, string> = {}): string[] {
+  return hasDistinctSourceLabels(sourceLabelsById) ? normalizeStringList(advanced?.sourceLabels) : [];
 }
 
 function normalizeRegions(value: unknown): NodeRegion[] {
@@ -181,6 +208,7 @@ export function normalizeProxyGroupAdvancedConfig(value: unknown): ProxyGroupAdv
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const item = value as Record<string, unknown>;
   const sourceIds = normalizeStringList(item.sourceIds);
+  const sourceLabels = normalizeStringList(item.sourceLabels);
   const regions = normalizeRegions(item.regions);
   const includeRegex = typeof item.includeRegex === "string" ? item.includeRegex.trim() : "";
   const excludeRegex = typeof item.excludeRegex === "string" ? item.excludeRegex.trim() : "";
@@ -197,6 +225,7 @@ export function normalizeProxyGroupAdvancedConfig(value: unknown): ProxyGroupAdv
   return {
     ...(testUrl ? { testUrl } : {}),
     ...(sourceIds.length > 0 ? { sourceIds } : {}),
+    ...(sourceLabels.length > 0 ? { sourceLabels } : {}),
     ...(regions.length > 0 ? { regions } : {}),
     ...(includeRegex ? { includeRegex } : {}),
     ...(excludeRegex ? { excludeRegex } : {}),
@@ -266,7 +295,8 @@ function buildMemberFromRef(
 function nodePassesAdvancedFilters(
   member: ProxyGroupResolvedMember,
   nodeByName: Map<string, ParsedNode>,
-  advanced: ProxyGroupAdvancedConfig
+  advanced: ProxyGroupAdvancedConfig,
+  sourceLabelsById: Record<string, string>
 ): boolean {
   if (member.ref.kind !== "node") return true;
   const node = nodeByName.get(member.ref.name);
@@ -277,6 +307,9 @@ function nodePassesAdvancedFilters(
     const sourceIdSet = new Set(sourceIds);
     if (!getNodeSourceIds(node).some((id) => sourceIdSet.has(id))) return false;
   }
+
+  const labels = resolveSelectedSourceLabels(advanced, sourceLabelsById);
+  if (labels.length > 0 && !getNodeSourceIds(node).some((id) => labels.includes(sourceLabelsById[id]?.trim()))) return false;
 
   const regions = normalizeRegions(advanced.regions);
   if (!matchesRegion(member.ref.name, regions)) return false;
@@ -345,7 +378,7 @@ export function resolveProxyGroupMembers(options: ResolveProxyGroupMembersOption
   const includedBase = candidates.filter((member) => {
     if (excludedKeys.has(member.key)) return false;
     if (extraKeys.has(member.key)) return true;
-    return nodePassesAdvancedFilters(member, nodeByName, advanced);
+    return nodePassesAdvancedFilters(member, nodeByName, advanced, options.sourceLabelsById ?? {});
   });
 
   const byKey = new Map(includedBase.map((member) => [member.key, member]));

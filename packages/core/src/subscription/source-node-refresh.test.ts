@@ -35,6 +35,17 @@ function ssNode(name: string, patch: Record<string, unknown> = {}): ParsedNode {
 }
 
 describe("source node refresh helpers", () => {
+  it("retains another source's original node name when a shared rule node is renamed upstream", () => {
+    const original = ssNode("Old", { _sourceIds: ["a", "b"], _originName: "Old" });
+    const fresh = { ...original, name: "New", _originName: "New", _sourceIds: [] };
+    const result = mergeParsedSourceNodes([original], [fresh], [], { sourceId: "a", preserveOtherSourceNodes: true });
+    expect(result.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Old", _originName: "Old", _sourceIds: ["b"] }),
+      expect.objectContaining({ name: "New", _originName: "New", _sourceIds: ["a"] }),
+    ]));
+    expect(result.renameMap.size).toBe(0);
+  });
+
   it("prepares parsed nodes with display names, origins, and sanitized imported-only fields", () => {
     const [prepared] = prepareSourceParsedNodes(
       [ssNode(" Alpha ", { "dialer-proxy": "private-only", dialer_proxy: "private-only" })],

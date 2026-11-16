@@ -1,3 +1,4 @@
+import type { SourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
 import type { ParsedNode, ParseResult } from "@subboost/core/types/node";
 import type {
   BuiltinRuleEdits,
@@ -7,6 +8,7 @@ import type {
   GroupListenerBinding,
   GroupListenerTarget,
   ProxyGroupAdvancedConfig,
+  ProxyGroupRuleTarget,
   TemplateType,
 } from "@subboost/core/types/config";
 import { DEFAULT_BASE_CONFIG_YAML, DEFAULT_SUBBOOST_CONFIG } from "@subboost/core/config/defaults";
@@ -65,6 +67,10 @@ export interface SubscriptionSource {
   type: SourceType;
   content: string;
   name?: string;
+  source?: string;
+  includeRules?: boolean;
+  ruleSnapshot?: SourceRuleSnapshot;
+  ruleTargets?: Record<string, ProxyGroupRuleTarget>;
   // 上一次成功导入时的输入内容（用于判断是否更换 url 等）
   lastParsedContent?: string;
   // 上一次成功导入时使用的标签/模板（用于判断是否为“用户手动改名”）
@@ -94,7 +100,7 @@ export type { CustomProxyGroup };
 
 export async function fetchUrlContentInBrowser(
   url: string,
-  options?: { userinfoUrl?: string; userinfoUserAgent?: string }
+  options?: { userinfoUrl?: string; userinfoUserAgent?: string; includeRules?: boolean }
 ): Promise<{
   content: string;
   headers: Record<string, string>;
@@ -124,6 +130,7 @@ export async function fetchUrlContentInBrowser(
 
     const data = await sourceImport.importSource({
       url: normalizedUrl,
+      ...(options?.includeRules ? { includeRules: true } : {}),
       ...(normalizedUserinfoUrl ? { userinfoUrl: normalizedUserinfoUrl } : {}),
       ...(typeof options?.userinfoUserAgent === "string" && options.userinfoUserAgent.trim()
         ? { userinfoUserAgent: options.userinfoUserAgent.trim() }
@@ -207,6 +214,7 @@ export interface ConfigState {
   // 用户可编辑规则窗口顺序
   // Key 格式：custom-rule:<id> / custom-rule-set:<id> / module:<moduleId>:<ruleId> / special:<id>
   ruleOrder: string[];
+  ruleSourceOrder: string[];
 
   // 当前配置是否已确认过“编辑预设规则”风险提示；只影响 UI，不参与生成。
   moduleRuleEditWarningAccepted: boolean;
@@ -272,6 +280,7 @@ export interface ConfigActions {
   updateCustomRule: (id: string, rule: Partial<Omit<CustomRule, "id">>) => void;
   removeCustomRule: (index: number) => void;
   setRuleOrder: (order: string[]) => void;
+  setRuleSourceOrder: (order: string[]) => void;
 
   // 自定义分流组
   addCustomProxyGroup: (group: Omit<CustomProxyGroup, "id">) => void;
@@ -382,6 +391,7 @@ export const initialState: ConfigState = {
   proxyGroupNameOverrides: {},
   proxyGroupOrder: [],
   ruleOrder: [],
+  ruleSourceOrder: [],
   moduleRuleEditWarningAccepted: false,
   appliedTemplateId: getBuiltinTemplateId("minimal"),
   dnsYaml: DEFAULT_BASE_CONFIG_YAML,

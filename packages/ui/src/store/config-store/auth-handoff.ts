@@ -1,3 +1,4 @@
+import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
 import type { ConfigState, SourceType, SubscriptionSource } from "./definitions";
 import { initialState } from "./definitions";
 import { safeParseJsonObject } from "@subboost/core/json";
@@ -62,6 +63,8 @@ function sourceArray(value: unknown): SubscriptionSource[] | undefined {
     sources.push({
       id: item.id,
       type: item.type,
+      ...(item.includeRules === true ? { includeRules: true, ruleSnapshot: normalizeSourceRuleSnapshot(item.ruleSnapshot), ruleTargets: normalizeSourceRuleTargets(item.ruleTargets) } : {}),
+      ...(typeof item.source === "string" && item.source.trim() ? { source: item.source.trim() } : {}),
       content: item.content,
       ...(typeof item.name === "string" ? { name: item.name } : {}),
       ...(typeof item.lastParsedContent === "string" ? { lastParsedContent: item.lastParsedContent } : {}),
@@ -163,6 +166,7 @@ function buildHandoffState(state: ConfigState): Partial<ConfigState> {
     proxyGroupNameOverrides: state.proxyGroupNameOverrides,
     proxyGroupOrder: state.proxyGroupOrder,
     ruleOrder: state.ruleOrder,
+    ruleSourceOrder: state.ruleSourceOrder,
     proxyGroupAdvancedModeEnabled: state.proxyGroupAdvancedModeEnabled,
     moduleRuleEditWarningAccepted: state.moduleRuleEditWarningAccepted,
     appliedTemplateId: state.appliedTemplateId,
@@ -225,6 +229,7 @@ function normalizeHandoffState(raw: unknown): Partial<ConfigState> | null {
   if (isStringRecord(raw.proxyGroupNameOverrides)) out.proxyGroupNameOverrides = raw.proxyGroupNameOverrides;
   const proxyGroupOrder = stringArray(raw.proxyGroupOrder);
   if (proxyGroupOrder) out.proxyGroupOrder = proxyGroupOrder;
+  if (Array.isArray(raw.ruleSourceOrder)) out.ruleSourceOrder = normalizeRuleSourceOrder(raw.ruleSourceOrder);
   const ruleOrder = stringArray(raw.ruleOrder);
   if (ruleOrder) out.ruleOrder = ruleOrder;
   if (typeof raw.moduleRuleEditWarningAccepted === "boolean") out.moduleRuleEditWarningAccepted = raw.moduleRuleEditWarningAccepted;

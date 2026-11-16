@@ -26,10 +26,12 @@ import type { SubscriptionImportErrorCategory } from "@subboost/core/subscriptio
 import type { ParsedNode } from "@subboost/core/types/node";
 import { composeNodeNameRenameMaps } from "@subboost/core/subscription/node-name-references";
 import { normalizeSavedSourcesForPersistence, type SavedSource, type SavedSourceType } from "./saved-sources";
+import { parseSourceRuleSnapshot, type SourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
 
 type UrlNodeFetchResult = {
   ok: boolean;
   nodes: ParsedNode[];
+  content?: string;
   errors?: string[];
   headers?: Record<string, string>;
   error?: string;
@@ -126,6 +128,7 @@ export async function refreshNodeSnapshot(
   const deletedNodeNames = getDeletedNodeNames(options.config);
   const deletedNodes = getDeletedNodes(options.config);
   const smartNodeMatchingEnabled = resolveSmartNodeMatchingEnabled(options.config);
+  const preserveOtherSourceNodes = savedSources.some(source => source.includeRules);
 
   let currentNodes = options.storedNodes
     .map(stripImportedNodeControlFields)
@@ -196,9 +199,20 @@ export async function refreshNodeSnapshot(
   const shouldFetchSupplementalUserInfoForSource = (source: SavedSource): boolean => {
     return Boolean(source.userinfoUrl || source.userinfoUserAgent);
   };
+  const updateSourceRules = (source: SavedSource, snapshot: SourceRuleSnapshot | undefined) => {
+    if (snapshot) refreshedSavedSources = refreshedSavedSources.map(item => item.id === source.id ? { ...item, ruleSnapshot: snapshot } : item);
+  };
 
-  for (const source of savedSources) {
+  const orderedSources = preserveOtherSourceNodes
+    ? [...savedSources].sort((a, b) => Number(Boolean(b.includeRules)) - Number(Boolean(a.includeRules)))
+    : savedSources;
+  for (const source of orderedSources) {
     if (source.type === "url" && source.useProxyProviders) {
+      if (source.includeRules) {
+        refreshableSourceCount += 1;
+        recordFailedSource(source, "启用来源规则前需先关闭客户端直连并导入节点快照", { errorCategory: "parse" });
+        continue;
+      }
       const detached = detachSourceNodesFromState(currentNodes, source.id);
       if (detached.nodes.length !== currentNodes.length) {
         detachedSourceCount += 1;
@@ -240,6 +254,15 @@ export async function refreshNodeSnapshot(
         });
         continue;
       }
+      let ruleSnapshot: SourceRuleSnapshot | undefined;
+      if (source.includeRules) {
+        try {
+          ruleSnapshot = parseSourceRuleSnapshot(fetched.content ?? "");
+        } catch (error) {
+          recordFailedSource(source, error instanceof Error ? error.message : "来源规则解析失败", { errorCategory: "parse", httpStatus: fetched.responseStatus });
+          continue;
+        }
+      }
       updateSourceSubscriptionInfo(source.id, resolvedUserInfo);
 
       const parsedNodes = prepareSourceParsedNodes(fetched.nodes, {
@@ -248,6 +271,7 @@ export async function refreshNodeSnapshot(
       });
       const merged = mergeParsedSourceNodes(currentNodes, parsedNodes, deletedNodeNames, {
         sourceId: source.id,
+        preserveOtherSourceNodes,
         currentTag: source.tag,
         currentNameTemplate: source.nameTemplate,
         lastTag: source.lastParsedTag,
@@ -263,6 +287,7 @@ export async function refreshNodeSnapshot(
 
       renameMap = composeNodeNameRenameMaps(renameMap, merged.renameMap);
       currentNodes = merged.nodes;
+      updateSourceRules(source, ruleSnapshot);
       usedUrlFetch = true;
       refreshedSourceCount += 1;
       refreshedUrlSourceCount += 1;
@@ -276,6 +301,7 @@ export async function refreshNodeSnapshot(
         recordFailedSource(source, "未解析到可用节点", { errorCategory: "parse" });
         continue;
       }
+      const ruleSnapshot = source.includeRules ? parseSourceRuleSnapshot(source.content) : undefined;
       updateSourceSubscriptionInfo(source.id, resolvedUserInfo);
 
       const parsedNodes = prepareSourceParsedNodes(parsed.nodes, {
@@ -284,6 +310,7 @@ export async function refreshNodeSnapshot(
       });
       const merged = mergeParsedSourceNodes(currentNodes, parsedNodes, deletedNodeNames, {
         sourceId: source.id,
+        preserveOtherSourceNodes,
         currentTag: source.tag,
         currentNameTemplate: source.nameTemplate,
         lastTag: source.lastParsedTag,
@@ -295,6 +322,7 @@ export async function refreshNodeSnapshot(
 
       renameMap = composeNodeNameRenameMaps(renameMap, merged.renameMap);
       currentNodes = merged.nodes;
+      updateSourceRules(source, ruleSnapshot);
       refreshedSourceCount += 1;
       refreshedStaticSourceCount += 1;
     } catch (error) {

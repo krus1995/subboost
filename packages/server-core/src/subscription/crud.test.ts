@@ -13,6 +13,19 @@ import {
 } from "./crud";
 
 describe("subscription CRUD shared helpers", () => {
+  it("persists source rule metadata and rule-block order without changing typed bindings", () => {
+    const config = normalizeSubscriptionConfigForPersistence({ config: {
+      sources: [{ id: "rules", type: "url", content: "https://source.example/sub", includeRules: true,
+        ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "stable-id" } } }],
+      ruleSourceOrder: [" label:airport ", "subboost", "label:airport", "bad"],
+    } });
+    expect(config.ruleSourceOrder).toEqual(["label:airport", "subboost"]);
+    expect(config.sources).toEqual([expect.objectContaining({ includeRules: true,
+      ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "stable-id" } } })]);
+    expect(() => normalizeSubscriptionConfigForPersistence({ config: { sources: [{ id: "missing", type: "url", content: "https://source.example/sub", includeRules: true }] } })).toThrow("尚未导入有效规则");
+    expect(() => normalizeSubscriptionConfigForPersistence({ config: { sources: [{ id: "optional", type: "url", content: "https://optional.example/sub", includeRules: false }] } })).not.toThrow();
+  });
+
   it("normalizes create/update payload fields", () => {
     expect(normalizeSubscriptionName("  Demo  ")).toBe("Demo");
     expect(normalizeSubscriptionName(123)).toBe("");

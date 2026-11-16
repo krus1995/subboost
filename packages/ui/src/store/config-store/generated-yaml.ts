@@ -1,3 +1,5 @@
+import { buildSourceRuleInputs } from "@subboost/core/subscription/source-rules";
+import { buildSourceLabelsById } from "@subboost/core/proxy-group-advanced";
 import { generateClashYaml } from "@subboost/core/generator";
 import { stripImportedNodeControlFieldsFromList } from "@subboost/core/subscription/imported-node-controls";
 import { resolveNodeNameFilter } from "@subboost/core/subscription/node-name-filter";
@@ -58,6 +60,9 @@ function buildGenerateClashYamlOptions(
   return {
     nodes: stripImportedNodeControlFieldsFromList(effectiveNodes),
     proxyProviders,
+    sourceLabelsById: buildSourceLabelsById(state.sources),
+    sourceRules: buildSourceRuleInputs(state.sources),
+    ruleSourceOrder: state.ruleSourceOrder,
     template: state.template,
     userConfig: {
       enabledGroups: state.enabledProxyGroups,

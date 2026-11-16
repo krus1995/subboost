@@ -1,5 +1,6 @@
 import { formatNodeNameFromTemplate } from "@subboost/core/node-name-template";
 import { getNodeOriginName, makeUniqueName } from "@subboost/core/subscription/node-source-state";
+import { parseSourceRuleSnapshot, type SourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
 import type { ParsedNode, ParseResult } from "@subboost/core/types/node";
 import { parseSubscription } from "@subboost/core/parser";
 import { buildNodeContentKey, buildScopedNodeIdentityKey } from "@subboost/core/node-identity";
@@ -117,7 +118,15 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
       const removed = new Set(Array.from(prevIds).filter((id) => !nextIds.has(id)));
 
       if (removed.size === 0) {
-        set({ sources });
+        const routingChanged = sources.some((source, index) => {
+          const previous = prev.find((item) => item.id === source.id);
+          return (source.source?.trim() ?? "") !== (previous?.source?.trim() ?? "")
+            || source.includeRules !== previous?.includeRules
+            || source.ruleTargets !== previous?.ruleTargets
+            || (source.includeRules && (prev[index]?.id !== source.id || source.ruleSnapshot !== previous?.ruleSnapshot));
+        });
+        if (routingChanged) setAndGenerateConfig(() => ({ sources }));
+        else set({ sources });
         return;
       }
 
@@ -286,6 +295,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         let prefetchedParseResult: ParseResult | null = null;
 
         // URL 源的 proxy-providers 模式：不拉取/解析节点，仅标记为已导入并移除该源原节点
+        if (source.includeRules && source.useProxyProviders) throw new Error("使用来源规则时必须关闭 proxy-providers 模式并保存节点快照");
         if (source.type === "url" && source.useProxyProviders) {
           const rawUrl = source.content.trim();
           const normalizedUrl = tryNormalizeSubscriptionUrlInput(rawUrl);
@@ -346,6 +356,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           const fetched = await fetchUrlContentInBrowser(source.content, {
             userinfoUrl: source.userinfoUrl,
             userinfoUserAgent: source.userinfoUserAgent,
+            ...(source.includeRules ? { includeRules: true } : {}),
           });
           contentToParse = fetched.content;
           prefetchedParseResult = pickUrlFetchParseResult(fetched);
@@ -364,6 +375,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         }
 
         // 解析内容
+        const ruleSnapshot = source.includeRules ? parseSourceRuleSnapshot(contentToParse) : undefined;
         const result = prefetchedParseResult ?? parseSubscription(contentToParse);
         const resolvedSubscriptionUserInfo = resolveSubscriptionUserInfo(subscriptionUserInfo, result.nodes);
 
@@ -392,6 +404,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
             lastNameTemplate: latestSource.lastParsedNameTemplate,
             treatAsNewSource,
             deletedNodes: state.deletedNodes,
+            preserveOtherSourceNodes: state.sources.some((item) => item.includeRules),
           });
 
           const nextNodes = merged.nodes;
@@ -416,6 +429,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
                     ...s,
                     parsing: false,
                     parsed: true,
+                    ...(ruleSnapshot ? { ruleSnapshot } : {}),
                     nodeCount: result.nodes.length,
                     subscriptionUserInfo: hasSubscriptionUserInfo(resolvedSubscriptionUserInfo)
                       ? resolvedSubscriptionUserInfo
@@ -441,6 +455,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         const shouldHintProxyProviders =
           source.type === "url" &&
           !source.useProxyProviders &&
+          !source.includeRules &&
           !/无效的 url/i.test(baseInfo.message) &&
           !/只支持 HTTP\/HTTPS/i.test(baseInfo.message) &&
           !/proxy-providers/i.test(baseInfo.message);
@@ -485,6 +500,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         {
           parsed: boolean;
           nodeCount?: number;
+          ruleSnapshot?: SourceRuleSnapshot;
           subscriptionUserInfo?: SubscriptionUserInfo;
           error?: string;
           errorInfo?: SubscriptionImportErrorInfo;
@@ -503,6 +519,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           let prefetchedParseResult: ParseResult | null = null;
 
           // URL 源的 proxy-providers 模式：不拉取/解析节点，仅更新导入状态（节点由客户端拉取）
+          if (source.includeRules && source.useProxyProviders) throw new Error("使用来源规则时必须关闭 proxy-providers 模式并保存节点快照");
           if (source.type === "url" && source.useProxyProviders) {
             const rawUrl = source.content.trim();
             try {
@@ -540,6 +557,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
               const fetched = await fetchUrlContentInBrowser(source.content, {
                 userinfoUrl: source.userinfoUrl,
                 userinfoUserAgent: source.userinfoUserAgent,
+                ...(source.includeRules ? { includeRules: true } : {}),
               });
               contentToParse = fetched.content;
               prefetchedParseResult = pickUrlFetchParseResult(fetched);
@@ -559,6 +577,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
               const baseInfo = toSubscriptionImportErrorInfo(fetchError, "未知错误");
               const shouldHintProxyProviders =
                 !source.useProxyProviders &&
+                !source.includeRules &&
                 !/无效的 url/i.test(baseInfo.message) &&
                 !/只支持 HTTP\/HTTPS/i.test(baseInfo.message) &&
                 !/proxy-providers/i.test(baseInfo.message);
@@ -577,7 +596,9 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           }
 
           // 解析内容
+          const ruleSnapshot = source.includeRules ? parseSourceRuleSnapshot(contentToParse) : undefined;
           const result = prefetchedParseResult ?? parseSubscription(contentToParse);
+          if (get().sources.some((item) => item.includeRules) && result.nodes.length === 0) throw new Error("订阅未返回有效节点，保留上次快照");
           const resolvedSubscriptionUserInfo = resolveSubscriptionUserInfo(subscriptionUserInfo, result.nodes);
           const currentTag = typeof source.tag === "string" ? source.tag.trim() : "";
           const currentNameTemplate = typeof source.nameTemplate === "string" ? source.nameTemplate.trim() : "";
@@ -599,6 +620,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           sourceMeta.set(source.id, {
             parsed: true,
             nodeCount: result.nodes.length,
+            ...(ruleSnapshot ? { ruleSnapshot } : {}),
             subscriptionUserInfo: hasSubscriptionUserInfo(resolvedSubscriptionUserInfo)
               ? resolvedSubscriptionUserInfo
               : undefined,
@@ -614,6 +636,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
           const shouldHintProxyProviders =
             source.type === "url" &&
             !source.useProxyProviders &&
+            !source.includeRules &&
             !/无效的 url/i.test(baseInfo.message) &&
             !/只支持 HTTP\/HTTPS/i.test(baseInfo.message) &&
             !/proxy-providers/i.test(baseInfo.message);
@@ -643,6 +666,13 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
         if (!meta?.parsed) continue;
         meta.lastParsedTag = typeof source.tag === "string" ? source.tag.trim() || undefined : undefined;
         meta.lastParsedNameTemplate = typeof source.nameTemplate === "string" ? source.nameTemplate.trim() || undefined : undefined;
+      }
+      if (get().sources.some((source) => source.includeRules)) {
+        const replaced = new Set([...sourceMeta].filter(([, meta]) => meta.parsed).map(([id]) => id));
+        for (const node of get().nodes) {
+          const retainedIds = getNodeSourceIds(node).filter((id) => !replaced.has(id));
+          if (retainedIds.length > 0) allNodes.push(mergeNodeSourceIds(node, new Set(retainedIds)));
+        }
       }
       // 去重节点（基于 originName + 节点内容）
       const uniqueNodeMap = new Map<string, ParsedNode>();
@@ -743,6 +773,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
             return {
               ...s,
               parsed: meta.parsed,
+              ...(meta.ruleSnapshot ? { ruleSnapshot: meta.ruleSnapshot } : {}),
               parsing: false,
               ...(typeof meta.nodeCount === "number" ? { nodeCount: meta.nodeCount } : {}),
               ...(meta.subscriptionUserInfo ? { subscriptionUserInfo: meta.subscriptionUserInfo } : { subscriptionUserInfo: undefined }),

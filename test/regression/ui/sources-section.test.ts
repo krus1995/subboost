@@ -388,7 +388,9 @@ describe("public SourcesSection branch coverage", () => {
       ])
     );
 
-    mocks.switches[0]?.onCheckedChange(false);
+    const providerSwitch = mocks.switches.find((control) => control["aria-label"] === "使用 proxy-providers 模式");
+    expect(providerSwitch).toBeDefined();
+    providerSwitch?.onCheckedChange(false);
     expect(mocks.setSources).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ id: "url-1", useProxyProviders: false })])
     );
@@ -601,6 +603,7 @@ describe("public SourcesSection branch coverage", () => {
     expect(snapshotUpdater(null)).toEqual({
       id: "url-sparse",
       content: "https://sparse.example.com/sub.yaml",
+      includeRules: false,
       tag: "",
       nameTemplate: "",
       useProxyProviders: false,

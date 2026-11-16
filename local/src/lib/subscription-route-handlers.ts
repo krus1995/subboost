@@ -1,5 +1,7 @@
 import { withCurrentAdmin } from "@local/lib/api-auth";
 import { apiError, json, jsonBodyError, LOCAL_JSON_BODY_LIMITS, readJsonBody } from "@local/lib/http";
+import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
+import { SourceRuleInputError } from "@subboost/core/subscription/source-rules";
 import {
   createSubscription,
   deleteSubscription,
@@ -68,9 +70,16 @@ export async function deleteSubscriptionResponse(id: string) {
 
 export async function refreshSubscriptionResponse(id: string) {
   return withCurrentAdmin(async (admin) => {
-    const result = await refreshSubscription(admin.id, id);
-    if (!result) return apiError("Subscription not found.", "NOT_FOUND", 404);
-    if (!result.ok) return json(result.response.body, result.response.status);
-    return json(result.body);
+    try {
+      const result = await refreshSubscription(admin.id, id);
+      if (!result) return apiError("Subscription not found.", "NOT_FOUND", 404);
+      if (!result.ok) return json(result.response.body, result.response.status);
+      return json(result.body);
+    } catch (error) {
+      if (error instanceof SourceRuleCompilationError || error instanceof SourceRuleInputError) {
+        return apiError(error.message, "VALIDATION_ERROR", 422);
+      }
+      throw error;
+    }
   });
 }

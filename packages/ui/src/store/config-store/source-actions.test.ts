@@ -73,6 +73,16 @@ describe("createSourceActions", () => {
     });
   });
 
+  it("updates a logical label without changing parsed nodes or fetching the source", () => {
+    const original = source({ id: "s1", source: "主机场", parsed: true });
+    const nodes = [node("JP", { _sourceIds: ["s1"] })];
+    const { actions, getState } = createHarness({ sources: [original], nodes });
+    actions.setSources([{ ...original, source: "公益" }]);
+    expect(getState().sources[0]).toEqual({ ...original, source: "公益" });
+    expect(getState().nodes).toBe(nodes);
+    expect(mocks.fetchUrlContentInBrowser).not.toHaveBeenCalled();
+  });
+
   it("updates source lists directly when no source ids are removed", () => {
     const existing = source({ id: "s1", type: "yaml", content: "old" });
     const next = source({ id: "s1", type: "yaml", content: "new" });

@@ -126,21 +126,27 @@ describe("InputSourceEditorDialog", () => {
     expect(html).toContain("proxy-providers模式");
     expect(html).toContain("proxy-providers 模式");
     expect(html).toContain("subscription-userinfo");
+    expect(html).toContain("来源标签（可选）");
+    expect(html).toContain("节点名前缀（tag）");
 
     mocks.inputs[0].onChange({ target: { value: "B" } });
     mocks.inputs[1].onChange({ target: { value: "{name}" } });
     expect(mocks.inputs[2]).toEqual(expect.objectContaining({ value: "A-Node", readOnly: true }));
-    mocks.inputs[3].onChange({ target: { value: "https://next.example/sub" } });
-    mocks.inputs[4].onChange({ target: { value: "https://next.example/userinfo" } });
-    mocks.inputs[5].onChange({ target: { value: "Meta" } });
+    mocks.inputs[3].onChange({ target: { value: "公益" } });
+    mocks.inputs[4].onChange({ target: { value: "https://next.example/sub" } });
+    mocks.inputs[5].onChange({ target: { value: "https://next.example/userinfo" } });
+    mocks.inputs[6].onChange({ target: { value: "Meta" } });
     mocks.switches[0].onCheckedChange(true);
+    mocks.switches[1].onCheckedChange(true);
 
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { tag: "B" });
+    expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { source: "公益" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { nameTemplate: "{name}" });
     expect(handlers.onUpdateContent).toHaveBeenCalledWith("source-url", "https://next.example/sub");
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { userinfoUrl: "https://next.example/userinfo" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { userinfoUserAgent: "Meta" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { useProxyProviders: true });
+    expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { includeRules: true, useProxyProviders: false });
   });
 
   it("edits yaml and node text sources with a textarea", () => {

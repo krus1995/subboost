@@ -213,6 +213,10 @@ describe("useEditingSubscriptionLoader", () => {
                   type: "url",
                   content: " https://example.com/sub ",
                   tag: "TAG",
+                  source: " 公益 ",
+                  includeRules: true,
+                  ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] },
+                  ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } },
                   nameTemplate: "{tag}-{name}",
                   useProxyProviders: true,
                   userinfoUrl: " https://example.com/userinfo ",
@@ -220,6 +224,7 @@ describe("useEditingSubscriptionLoader", () => {
                   subscriptionUserInfo: { upload: 1024, download: -1, total: 4096 },
                 },
               ],
+              ruleSourceOrder: ["subboost", "label:公益"],
               deletedNodes: [{ originName: "Deleted", name: "Deleted" }],
               deletedNodeNames: ["Legacy", "Deleted"],
               template: "full",
@@ -272,6 +277,10 @@ describe("useEditingSubscriptionLoader", () => {
     expect(options.setStoreSources).toHaveBeenCalledWith([
       expect.objectContaining({
         id: "source-url",
+        source: "公益",
+        includeRules: true,
+        ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] },
+        ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } },
         type: "url",
         content: "https://example.com/sub",
         parsed: true,
@@ -285,6 +294,7 @@ describe("useEditingSubscriptionLoader", () => {
     ]);
     expect(mocks.bag.storeState).toMatchObject({
       nodes: [expect.objectContaining({ name: "Remote", _originName: "Remote", _sourceIds: ["source-url"] })],
+      ruleSourceOrder: ["subboost", "label:公益"],
       deletedNodeNames: ["Deleted", "Legacy"],
       template: "full",
       enabledProxyGroups: ["select", "auto", "ai"],

@@ -2,6 +2,8 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("./source-rules-editor", () => ({ SourceRulesEditor: () => null }));
+
 vi.mock("./quick-mode/sources-section", () => ({
   SourcesSection: () => React.createElement("div", null, "sources-section"),
 }));

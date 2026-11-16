@@ -559,6 +559,7 @@ describe("local subscription service", () => {
     ).resolves.toEqual({
       ok: true,
       nodes: [node("Imported")],
+      content: undefined,
       errors: [],
       headers: { "subscription-userinfo": "upload=1; total=2048" },
     });
@@ -596,6 +597,12 @@ describe("local subscription service", () => {
       errorInfo: { category: "network" },
       publicReason: undefined,
     });
+  });
+
+  it.each(["manual", "automatic"] as const)("requests attached rules under the existing %s request policy", async trigger => {
+    const callbacks = buildSubscriptionFetchCallbacks(trigger);
+    await callbacks.fetchUrlNodes({ id: "rules", type: "url", content: "https://source.example/sub", includeRules: true });
+    expect(mocks.importSourceUrlDirect).toHaveBeenCalledWith({ url: "https://source.example/sub", includeRules: true }, expect.objectContaining({ trigger }));
   });
 
   it("refreshes subscriptions and persists successful snapshots", async () => {
@@ -639,6 +646,17 @@ describe("local subscription service", () => {
 
     mocks.prisma.subscription.findFirst.mockResolvedValueOnce(null);
     await expect(refreshSubscription("owner-1", "missing")).resolves.toBeNull();
+  });
+
+  it("persists attached rule metadata and nodes in the same guarded manual refresh write", async () => {
+    const config = { sources: [{ id: "source", type: "url", content: "https://source.example/sub", includeRules: true,
+      ruleSnapshot: { groups: [], rules: ["DOMAIN,new.example.com,DIRECT", "MATCH,DIRECT"] } }], ruleSourceOrder: ["source:source", "subboost"] };
+    mocks.prepareRefreshCacheResult.mockReturnValueOnce({ ok: true, refreshedConfig: config, nodeCount: 1 });
+    await refreshSubscription("owner-1", "sub-1");
+    const write = mocks.prisma.subscription.updateMany.mock.calls.at(-1)?.[0];
+    expect(write.where).toHaveProperty("updatedAt");
+    expect(JSON.parse(write.data.encryptedConfig)).toEqual(config);
+    expect(JSON.parse(write.data.encryptedNodes)).toEqual([node("Fresh")]);
   });
 
   it("serves mixed saved snapshots through the unchanged Loon endpoint", async () => {

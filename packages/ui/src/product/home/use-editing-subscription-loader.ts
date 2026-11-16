@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
+
 import * as React from "react";
 import type { SubscriptionSource } from "@subboost/ui/store/config-store";
 import type { ParsedNode } from "@subboost/core/types/node";
@@ -164,6 +166,7 @@ export function useEditingSubscriptionLoader({
               if (typeof t !== "string" || !validTypes.has(t)) return null;
               if (typeof c !== "string" || !c.trim()) return null;
               const lastParsedContent = (item as any).lastParsedContent;
+              const sourceLabel = "source" in item ? item.source : undefined;
               const tag = (item as any).tag;
               const nameTemplate = (item as any).nameTemplate;
               const useProxyProviders = (item as any).useProxyProviders;
@@ -190,6 +193,10 @@ export function useEditingSubscriptionLoader({
                           : lastParsedContent.trim()
                       )
                     : undefined,
+                includeRules: "includeRules" in item && item.includeRules === true,
+                ruleSnapshot: normalizeSourceRuleSnapshot("ruleSnapshot" in item ? item.ruleSnapshot : undefined),
+                ruleTargets: normalizeSourceRuleTargets("ruleTargets" in item ? item.ruleTargets : undefined),
+                source: typeof sourceLabel === "string" ? sourceLabel.trim() || undefined : undefined,
                 tag: typeof tag === "string" && tag.trim() ? tag.trim() : undefined,
                 nameTemplate: typeof nameTemplate === "string" && nameTemplate.trim() ? nameTemplate.trim() : undefined,
                 subscriptionUserInfo: hasSubscriptionUserInfo(subscriptionUserInfo) ? subscriptionUserInfo : undefined,
@@ -212,6 +219,10 @@ export function useEditingSubscriptionLoader({
               content: string;
               lastParsedContent?: string;
               tag?: string;
+              source?: string;
+              includeRules?: boolean;
+              ruleSnapshot?: SubscriptionSource["ruleSnapshot"];
+              ruleTargets?: SubscriptionSource["ruleTargets"];
               nameTemplate?: string;
               subscriptionUserInfo?: SubscriptionUserInfo;
               useProxyProviders?: boolean;
@@ -275,6 +286,8 @@ export function useEditingSubscriptionLoader({
             return {
               id: finalId,
               type: s.type,
+              ...(s.source ? { source: s.source } : {}),
+              ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
               content: s.type === "url" ? (tryNormalizeSubscriptionUrlInput(s.content) ?? s.content.trim()) : s.content,
               ...(lastParsedContent ? { lastParsedContent } : {}),
               ...(typeof s.tag === "string" && s.tag.trim() ? { tag: s.tag.trim() } : {}),
@@ -538,6 +551,7 @@ export function useEditingSubscriptionLoader({
             : state.proxyGroupNameOverrides,
           proxyGroupOrder: proxyGroupOrderFromCfg ? proxyGroupOrderFromCfg : state.proxyGroupOrder,
           ruleOrder: ruleOrderFromCfg.length > 0 ? ruleOrderFromCfg : state.ruleOrder,
+          ruleSourceOrder: normalizeRuleSourceOrder(cfg.ruleSourceOrder),
           listenerPorts: listenerPortsFromCfg,
           groupListeners: groupListenersFromCfg,
           appliedTemplateId: appliedTemplateIdFromCfg ?? state.appliedTemplateId,

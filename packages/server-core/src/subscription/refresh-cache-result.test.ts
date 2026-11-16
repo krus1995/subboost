@@ -30,6 +30,24 @@ function snapshot(patch: Partial<RefreshNodeSnapshotResult> = {}): RefreshNodeSn
 }
 
 describe("prepareRefreshCacheResult", () => {
+  it("generates refreshed source rules from the same config and raw node snapshot it saves", () => {
+    const ruleSnapshot = { groups: [{ name: "Original", type: "select", proxies: ["node-a"] }], rules: ["DOMAIN,new.example.com,Original", "MATCH,Original"] };
+    const source = { id: "source", type: "url" as const, content: "https://source.example/sub", includeRules: true, ruleSnapshot };
+    const result = prepareRefreshCacheResult({
+      config: { enabledGroups: ["select", "final"], enabledRules: ["final"], ruleSourceOrder: ["source:source", "subboost"] },
+      snapshot: snapshot({ nodes: [{ ...node, name: "User name", _originName: "node-a", _sourceIds: ["source"] }], savedSources: [source],
+        refreshedSourceCount: 1, refreshedUrlSourceCount: 1, refreshableSourceCount: 1 }),
+      maxNodesPerSubscription: 10,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.refreshedConfig.sources).toEqual([source]);
+    expect(result.refreshedConfig.ruleSourceOrder).toEqual(["source:source", "subboost"]);
+    expect(result.generatedYaml).toContain("DOMAIN,new.example.com,来源 1 Original");
+    expect(result.generatedYaml).toContain('proxies: ["User name"]');
+    expect(result.cacheEntry.nodes[0]).toMatchObject({ name: "User name", _originName: "node-a", _sourceIds: ["source"] });
+  });
+
   it("keeps previous cache when every refreshable source failed", () => {
     expect(
       prepareRefreshCacheResult({

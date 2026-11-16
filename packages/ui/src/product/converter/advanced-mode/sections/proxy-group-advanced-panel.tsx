@@ -1,5 +1,6 @@
 "use client";
 
+import { buildSourceLabelsById, hasSourceLabelChoices } from "@subboost/core/proxy-group-advanced";
 import * as React from "react";
 import { Plus, X } from "lucide-react";
 import { Badge } from "@subboost/ui/components/ui/badge";
@@ -210,6 +211,7 @@ export function ProxyGroupAdvancedPanel({
   const generatedProxyGroups = React.useMemo(() => {
     return generateProxyGroups({
       nodes: effectiveNodes,
+      sourceLabelsById: buildSourceLabelsById(sources),
       enabledModules: previewEnabledProxyGroups,
       ruleProviderBaseUrl,
       testUrl,
@@ -222,6 +224,7 @@ export function ProxyGroupAdvancedPanel({
     });
   }, [
     effectiveNodes,
+    sources,
     previewEnabledProxyGroups,
     ruleProviderBaseUrl,
     testUrl,
@@ -343,6 +346,9 @@ export function ProxyGroupAdvancedPanel({
     [includedMembers, onChange, preserveFilteredMemberOrder],
   );
 
+  const sourceLabelsById = buildSourceLabelsById(sources);
+  const sourceLabelOptions = [...new Set(Object.values(sourceLabelsById).filter(Boolean))];
+  const sourceLabels = normalizeList(advanced.sourceLabels);
   const sourceIds = normalizeList(advanced.sourceIds);
   const regions = normalizeList(advanced.regions);
   const extraRefs = normalizeList(advanced.extraMembers);
@@ -461,6 +467,16 @@ export function ProxyGroupAdvancedPanel({
     <div className="border-t border-ink/10">
       <div className="grid gap-0 md:grid-cols-[1fr_1fr_1fr]">
         <div className="p-3">
+          {hasSourceLabelChoices(sources) && <div className="mb-3">
+            <div className={ADVANCED_PANEL_TITLE_CLASS}>来源标签</div>
+            <div className="max-h-32 space-y-1.5 overflow-y-auto">
+              {sourceLabelOptions.map((label) => <label key={label} className="flex items-center gap-2 text-[11px] text-fg-65">
+                <input type="checkbox" aria-label={`来源标签 ${label}`} checked={sourceLabels.includes(label)} onChange={() => onChange({ sourceLabels: toggleValue(sourceLabels, label) })} className="h-3 w-3 accent-indigo-500" />
+                <span>{label}</span>
+              </label>)}
+            </div>
+            <div className="mt-1 text-[10px] text-fg-35">不选择表示匹配全部标签。与下方导入源条件同时生效。</div>
+          </div>}
           <div className={ADVANCED_PANEL_TITLE_CLASS}>导入源</div>
           <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1 custom-scrollbar">
             {sourceOptions.length === 0 ? (

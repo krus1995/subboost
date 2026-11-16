@@ -22,6 +22,7 @@ export async function POST(request: Request) {
       url: getStringField(body, "url"),
       userinfoUrl: getStringField(body, "userinfoUrl") || undefined,
       userinfoUserAgent: getStringField(body, "userinfoUserAgent") || undefined,
+      ...("includeRules" in body && body.includeRules === true ? { includeRules: true } : {}),
     });
 
     if (!result.ok) {

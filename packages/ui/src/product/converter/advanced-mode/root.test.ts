@@ -9,6 +9,8 @@ const captures = vi.hoisted(() => ({
   sections: {} as Record<string, any>,
 }));
 
+vi.mock("../source-rules-editor", () => ({ SourceRulesEditor: () => null }));
+
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   return {

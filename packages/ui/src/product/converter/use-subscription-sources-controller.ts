@@ -19,6 +19,7 @@ type ExpandedSourceSnapshot = {
   tag: string;
   nameTemplate: string;
   useProxyProviders: boolean;
+  includeRules: boolean;
   userinfoUrl: string;
   userinfoUserAgent: string;
 };
@@ -34,6 +35,7 @@ function createExpandedSourceSnapshot(source: SubscriptionSource): ExpandedSourc
     tag: (source.tag ?? "").trim(),
     nameTemplate: (source.nameTemplate ?? "").trim(),
     useProxyProviders: Boolean(source.useProxyProviders),
+    includeRules: source.includeRules === true,
     userinfoUrl: (source.userinfoUrl ?? "").trim(),
     userinfoUserAgent: (source.userinfoUserAgent ?? "").trim(),
   };
@@ -44,6 +46,7 @@ function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: E
   return (
     next.content !== snapshot.content ||
     next.useProxyProviders !== snapshot.useProxyProviders ||
+    (next.includeRules && !snapshot.includeRules) ||
     next.userinfoUrl !== snapshot.userinfoUrl ||
     next.userinfoUserAgent !== snapshot.userinfoUserAgent
   );
@@ -52,6 +55,7 @@ function importInputChangedSinceSnapshot(source: SubscriptionSource, snapshot: E
 function sourceMetaNeedsReimport(patch: Partial<SubscriptionSource>): boolean {
   return (
     Object.prototype.hasOwnProperty.call(patch, "useProxyProviders") ||
+    patch.includeRules === true ||
     Object.prototype.hasOwnProperty.call(patch, "userinfoUrl") ||
     Object.prototype.hasOwnProperty.call(patch, "userinfoUserAgent")
   );
@@ -233,6 +237,7 @@ export function useSubscriptionSourcesController({ mode }: Options) {
             type,
             content: "",
             useProxyProviders: type === "url" ? Boolean(source.useProxyProviders) : undefined,
+            includeRules: type === "nodes" ? false : source.includeRules,
             userinfoUrl: type === "url" ? source.userinfoUrl : undefined,
             userinfoUserAgent: type === "url" ? source.userinfoUserAgent : undefined,
             lastParsedContent: undefined,

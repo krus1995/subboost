@@ -37,7 +37,7 @@ export function SourceEditorDialog({
         {source ? (
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-3">
-              <FormField label="标签（tag）">
+              <FormField label="节点名前缀（tag）">
                 <Input
                   value={source.tag ?? ""}
                   onChange={(event) => onUpdateMeta(source.id, { tag: event.target.value })}
@@ -60,6 +60,17 @@ export function SourceEditorDialog({
             <p className="text-[11px] text-fg-40">
               可用占位符：{"{tag}"}、{"{name}"}；留空则默认：{DEFAULT_NODE_NAME_TEMPLATE}
             </p>
+
+            <FormField label="来源标签（可选）" description="用于分组筛选，不改节点名。修改标签无需重新导入。">
+              <Input value={source.source ?? ""} onChange={(event) => onUpdateMeta(source.id, { source: event.target.value })} placeholder="例如：主机场、公益。同类订阅可填相同标签" className="text-xs" />
+            </FormField>
+
+            {source.type !== "nodes" && <div className="space-y-1">
+              <div className="flex items-center justify-between gap-3 text-xs"><span>使用此来源的规则</span>
+                <Switch aria-label="使用此来源的规则" checked={source.includeRules === true} onCheckedChange={(includeRules) => onUpdateMeta(source.id, { includeRules, ...(includeRules ? { useProxyProviders: false } : {}) })} />
+              </div>
+              <p className="text-[11px] text-fg-40">导入同一份完整 Clash 响应中的节点、策略组和规则。仅有节点的订阅无法作为规则来源；开启后关闭客户端直连模式。</p>
+            </div>}
 
             <div className="space-y-1">
               <p className="text-xs text-fg-60">{sourceTypeInfo[source.type].label}</p>
@@ -105,6 +116,7 @@ export function SourceEditorDialog({
                       </HelpPopover>
                       <Switch
                         checked={Boolean(source.useProxyProviders)}
+                        disabled={source.includeRules === true}
                         onCheckedChange={(checked) => onUpdateMeta(source.id, { useProxyProviders: checked })}
                         aria-label="使用 proxy-providers 模式"
                       />

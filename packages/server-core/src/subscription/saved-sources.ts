@@ -1,4 +1,6 @@
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
+import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, type SourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
+import type { ProxyGroupRuleTarget } from "@subboost/core/types/config";
 import {
   hasSubscriptionUserInfo,
   normalizeSubscriptionUserInfo,
@@ -11,6 +13,10 @@ export type SavedSource = {
   id: string;
   type: SavedSourceType;
   content: string;
+  source?: string;
+  includeRules?: boolean;
+  ruleSnapshot?: SourceRuleSnapshot;
+  ruleTargets?: Record<string, ProxyGroupRuleTarget>;
   useProxyProviders?: boolean;
   userinfoUrl?: string;
   userinfoUserAgent?: string;
@@ -78,6 +84,9 @@ export function normalizeSavedSourcesForPersistence(
     preferredId?: string
   ): SavedSource => {
     const userinfoUrl = toTrimmedString(record.userinfoUrl);
+    const source = toTrimmedString(record.source);
+    const ruleSnapshot = normalizeSourceRuleSnapshot(record.ruleSnapshot);
+    const ruleTargets = normalizeSourceRuleTargets(record.ruleTargets);
     const userinfoUserAgent = toTrimmedString(record.userinfoUserAgent);
     const subscriptionUserInfo = normalizeSavedSourceUserInfo(record.subscriptionUserInfo);
     const tag = toTrimmedString(record.tag);
@@ -90,6 +99,10 @@ export function normalizeSavedSourcesForPersistence(
       id: nextId(preferredId),
       type,
       content: type === "url" ? normalizeUrlContent(content) : content,
+      ...(source ? { source } : {}),
+      ...(record.includeRules === true ? { includeRules: true } : {}),
+      ...(ruleSnapshot ? { ruleSnapshot } : {}),
+      ...(ruleTargets ? { ruleTargets } : {}),
       ...(type === "url" && record.useProxyProviders === true ? { useProxyProviders: true } : {}),
       ...(type === "url" && userinfoUrl ? { userinfoUrl: normalizeUrlContent(userinfoUrl) } : {}),
       ...(type === "url" && userinfoUserAgent ? { userinfoUserAgent } : {}),

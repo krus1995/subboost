@@ -43,6 +43,42 @@ describe("computeGeneratedYamlResult", () => {
     }));
   });
 
+  it("passes logical source labels to both preview exporters without rewriting provenance", () => {
+    const nodes = [{ name: "JP", type: "ss", _sourceIds: ["a", "b"] }];
+    const state = createState({ nodes, sources: [
+      { id: "a", type: "url", content: "https://a.invalid/sub", source: " 公益 " },
+      { id: "b", type: "yaml", content: "proxies: []", source: "主机场" },
+    ] });
+    computeGeneratedYamlResult(state);
+    expect(mocks.generateClashYaml).toHaveBeenCalledWith(expect.objectContaining({
+      nodes, sourceLabelsById: { a: "公益", b: "主机场" },
+    }));
+    expect(state.nodes[0]._sourceIds).toEqual(["a", "b"]);
+  });
+
+  it("passes saved source rule blocks and manual precedence to both preview exporters", () => {
+    const ruleSnapshot = { groups: [], rules: ["MATCH,DIRECT"] };
+    computeGeneratedYamlResult(createState({
+      nodes: [{ name: "JP", type: "ss" }],
+      sources: [{ id: "a", type: "yaml", content: "a", source: "公益", includeRules: true, ruleSnapshot, ruleTargets: { DIRECT: { kind: "custom", id: "jp" } } }],
+      ruleSourceOrder: ["subboost", "label:公益"],
+    }));
+    expect(mocks.generateClashYaml).toHaveBeenCalledWith(expect.objectContaining({
+      sourceRules: [{ id: "a", source: "公益", snapshot: ruleSnapshot, targets: { DIRECT: { kind: "custom", id: "jp" } } }],
+      ruleSourceOrder: ["subboost", "label:公益"],
+    }));
+  });
+
+  it("does not produce a preview when an enabled source lacks a valid rule snapshot", () => {
+    const result = computeGeneratedYamlResult(createState({
+      nodes: [{ name: "JP", type: "ss" }],
+      sources: [{ id: "a", type: "yaml", content: "a", includeRules: true }],
+    }));
+    expect(result.yaml).toBe("");
+    expect(result.error).toContain("尚未导入有效规则");
+    expect(mocks.generateClashYaml).not.toHaveBeenCalled();
+  });
+
   it("passes sanitized nodes and valid proxy providers to the core generator", () => {
     const nodes = [{ name: "Node A", type: "ss", _sourceIds: ["source-1"] }];
     const result = computeGeneratedYamlResult(

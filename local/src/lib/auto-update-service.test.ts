@@ -187,6 +187,19 @@ describe("local subscription auto update service", () => {
     );
   });
 
+  it("persists source rule snapshots and order with the scheduled node update", async () => {
+    const config = { sources: [{ id: "source", type: "url", content: "https://source.example/sub", includeRules: true,
+      ruleSnapshot: { groups: [], rules: ["DOMAIN,new.example.com,DIRECT", "MATCH,DIRECT"] } }], ruleSourceOrder: ["source:source", "subboost"] };
+    mocks.prepareRefreshCacheResult.mockReturnValueOnce({ ok: true, refreshedConfig: config,
+      cacheEntry: { nodes: [{ name: "A" }], subscriptionInfo: { upload: 1 } }, nodeCount: 1 });
+    await runLocalSubscriptionAutoUpdateCron(now);
+    expect(mocks.prisma.subscription.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "sub-1", updatedAt: subscription.updatedAt }, data: expect.objectContaining({
+        encryptedConfig: { encrypted: config }, encryptedNodes: { encrypted: [{ name: "A" }] },
+      }),
+    }));
+  });
+
   it("records all-source failures and disables auto update when requested", async () => {
     mocks.prepareRefreshCacheResult.mockReturnValueOnce({ ok: false, reason: "no_nodes" });
     mocks.resolveAutomaticRefreshCompletionDecision.mockReturnValueOnce({

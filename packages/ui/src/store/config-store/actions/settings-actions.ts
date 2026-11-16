@@ -4,6 +4,7 @@ import type { GetState, SetAndGenerateConfig, SetState } from "../store-types";
 
 type SettingsActions = Pick<
   ConfigActions,
+  | "setRuleSourceOrder"
   | "setDnsYaml"
   | "setMixedPort"
   | "setAllowLan"
@@ -23,6 +24,9 @@ export function createSettingsActions(
   setAndGenerateConfig: SetAndGenerateConfig
 ): SettingsActions {
   return {
+    setRuleSourceOrder: (ruleSourceOrder) => {
+      setAndGenerateConfig(() => ({ ruleSourceOrder }));
+    },
     setDnsYaml: (yaml: string) => {
       setAndGenerateConfig(() => ({ dnsYaml: yaml }));
     },
