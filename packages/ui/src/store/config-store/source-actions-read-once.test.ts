@@ -47,6 +47,32 @@ describe("read-once source imports", () => {
     expect(store.getState().nodes).toContainEqual(expect.objectContaining({ password: "new-secret", _sourceIds: ["normal"] }));
     expect(store.getState().listenerPorts).toEqual({ JP: 1234 });
   });
+  it("commits the one-time response when an unrelated manual import cancels its batch", async () => {
+    let resolveOnce!: (value: { content: string; headers: Record<string, string>; parseResult: ReturnType<typeof parseResult> }) => void;
+    const normal = source({ id: "normal", type: "url", content: "https://normal.invalid/sub" });
+    mocks.fetchUrlContentInBrowser.mockImplementation((url) => url === once.content ? new Promise((resolve) => { resolveOnce = resolve; }) : Promise.resolve({ content: "body", headers: {}, parseResult: parseResult([node("Normal")]) }));
+    const store = createHarness({ sources: [once, normal] });
+    const batch = store.actions.parseMultipleSources(store.getState().sources);
+    await store.actions.parseSingleSource("normal");
+    resolveOnce({ content: "body", headers: {}, parseResult: parseResult([node("Frozen")]) });
+    await batch;
+    expect(store.getState().nodes).toContainEqual(expect.objectContaining({ name: "Frozen", _sourceIds: ["once"] }));
+    await store.actions.parseSingleSource("once");
+    expect(mocks.fetchUrlContentInBrowser.mock.calls.filter(([url]) => url === once.content)).toHaveLength(1);
+  });
+  it("keeps the read-once result when another batch source changes URL", async () => {
+    let resolveNormal!: (value: { content: string; headers: Record<string, string>; parseResult: ReturnType<typeof parseResult> }) => void;
+    const normal = source({ id: "normal", type: "url", content: "https://normal.invalid/sub" });
+    mocks.fetchUrlContentInBrowser.mockImplementation((url) => url === once.content ? Promise.resolve({ content: "body", headers: {}, parseResult: parseResult([node("Frozen")]) }) : new Promise((resolve) => { resolveNormal = resolve; }));
+    const store = createHarness({ sources: [once, normal] });
+    const batch = store.actions.parseMultipleSources(store.getState().sources);
+    while (!resolveNormal) await Promise.resolve();
+    store.actions.setSources(store.getState().sources.map((item: typeof normal) => item.id === "normal" ? { ...item, content: "https://changed.invalid/sub" } : item));
+    resolveNormal({ content: "body", headers: {}, parseResult: parseResult([node("Normal")]) });
+    await batch;
+    expect(store.getState().nodes).toContainEqual(expect.objectContaining({ name: "Frozen", _sourceIds: ["once"] }));
+    expect(store.getState().sources[0].parsed).toBe(true);
+  });
   it("uses an existing successful snapshot without requesting it again", async () => {
     const existing = { ...once, parsed: true, lastParsedContent: once.content, subscriptionUserInfo: { total: 100 } };
     const store = createHarness({ sources: [existing], nodes: [node("JP", { _sourceIds: ["once"] })] });

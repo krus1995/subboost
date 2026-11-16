@@ -39,7 +39,7 @@ import {
 } from "./definitions";
 import type { GetState, SetAndGenerateConfig, SetState, StoreState } from "./store-types";
 import { isReadOnceSourceConsumed } from "./read-once-source";
-import { SourceImportOperationGuard, type SingleSourceImportOperation } from "./source-import-operation";
+import { buildSourceImportFingerprint, SourceImportOperationGuard, type SingleSourceImportOperation } from "./source-import-operation";
 
 type SourceActions = Pick<
   ConfigActions,
@@ -124,6 +124,8 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
   };
   const importOperations = new SourceImportOperationGuard(() => get().draftRevision ?? 0);
   const discardStaleSingle = (operation: SingleSourceImportOperation): boolean => {
+    const current = get().sources.find((source) => source.id === operation.sourceId);
+    if (current?.readOnce && operation.draftRevision === (get().draftRevision ?? 0) && buildSourceImportFingerprint(current) === operation.fingerprint) return false;
     if (importOperations.isSingleCurrent(get().sources, operation)) return false;
     if (importOperations.ownsSingle(operation)) {
       set((state) => ({
@@ -134,7 +136,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
     return true;
   };
 
-  return {
+  const actions: SourceActions = {
     // 设置订阅源
     setSources: (sources: SubscriptionSource[]) => {
       const prev = get().sources;
@@ -510,6 +512,8 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
     // 解析多个订阅源
     parseMultipleSources: async (sources: SubscriptionSource[]) => {
+      const readOnceSources = sources.filter((source) => source.type === "url" && source.readOnce);
+      if (readOnceSources.length > 0) await Promise.all(readOnceSources.map((source) => actions.parseSingleSource(source.id)));
       const operation = importOperations.startBatch(sources);
       set((state) => ({
         isLoading: true,
@@ -536,7 +540,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
 
       for (const source of sources) {
         if (!source.content.trim()) continue;
-        if (readOnceConsumed(source) && !pendingReadOnce.has(readOnceKey(source))) continue;
+        if (source.type === "url" && source.readOnce) continue;
 
         try {
           let contentToParse = source.content;
@@ -817,4 +821,5 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
       importOperations.finishBatch(operation);
     },
   };
+  return actions;
 }
