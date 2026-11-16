@@ -96,6 +96,7 @@ describe("config store definitions", () => {
       fetchUrlContentInBrowser(" https://example.com/sub ", {
         userinfoUrl: "https://example.com/userinfo",
         userinfoUserAgent: " Clash.Meta ",
+        includeRules: true,
       })
     ).resolves.toEqual({
       content: "remote content",
@@ -111,6 +112,7 @@ describe("config store definitions", () => {
     });
     expect(mocks.importSource).toHaveBeenCalledWith({
       url: "https://example.com/sub",
+      includeRules: true,
       userinfoUrl: "https://example.com/userinfo",
       userinfoUserAgent: "Clash.Meta",
     });

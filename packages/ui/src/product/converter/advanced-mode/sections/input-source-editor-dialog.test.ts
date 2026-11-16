@@ -137,6 +137,7 @@ describe("InputSourceEditorDialog", () => {
     mocks.inputs[5].onChange({ target: { value: "https://next.example/userinfo" } });
     mocks.inputs[6].onChange({ target: { value: "Meta" } });
     mocks.switches[0].onCheckedChange(true);
+    mocks.switches[1].onCheckedChange(true);
 
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { tag: "B" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { source: "公益" });
@@ -145,6 +146,7 @@ describe("InputSourceEditorDialog", () => {
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { userinfoUrl: "https://next.example/userinfo" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { userinfoUserAgent: "Meta" });
     expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { useProxyProviders: true });
+    expect(handlers.onUpdateMeta).toHaveBeenCalledWith("source-url", { includeRules: true, useProxyProviders: false });
   });
 
   it("edits yaml and node text sources with a textarea", () => {

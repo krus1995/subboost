@@ -108,6 +108,7 @@ describe("useSubscriptionLink", () => {
       proxyGroupOrder: ["select", "auto"],
       nodeNameFilter: { enabled: false, excludeRegexes: [] },
       groupListeners: [{ id: "gl-1", target: { kind: "module", id: "auto" }, port: 7891 }],
+      ruleSourceOrder: ["subboost", "label:公益"],
     };
     originalWindow = globalThis.window;
     originalNavigator = globalThis.navigator;
@@ -231,11 +232,11 @@ describe("useSubscriptionLink", () => {
 
   it("saves a normalized subscription payload and tracks success", async () => {
     const adapter = makeAdapter();
-    let hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 " }] });
+    let hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 ", includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } } }] });
     hook.setSubscriptionName(" My Sub ");
     hook.setAutoUpdateEnabled(true);
     hook.setAutoUpdateHours(24);
-    hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 " }] });
+    hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 ", includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } } }] });
 
     await hook.handleCreateSubscription();
     hook = useRenderedHook({ subscriptionAdapter: adapter });
@@ -255,11 +256,15 @@ describe("useSubscriptionLink", () => {
               expect.objectContaining({
                 content: "https://airport.example/sub",
                 source: "公益",
+                includeRules: true,
+                ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] },
+                ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } },
                 userinfoUrl: "https://airport.example/userinfo",
                 userinfoUserAgent: "Clash.Meta",
                 subscriptionUserInfo: { upload: 2_048, download: 1_024, total: 4_096 },
               }),
             ],
+            ruleSourceOrder: ["subboost", "label:公益"],
             proxyGroupAdvanced: { auto: { includeRegex: "Fast" } },
             proxyGroupAdvancedModeEnabled: true,
             listenerPorts: { "Node A": 41000 },

@@ -83,6 +83,7 @@ export function normalizePersistedConfigState(
       ? { enabledProxyGroups: state.enabledProxyGroups.filter((item): item is string => typeof item === "string") }
       : {}),
     hiddenProxyGroups: normalizeStringArray(state.hiddenProxyGroups),
+    ruleSourceOrder: normalizeStringArray(state.ruleSourceOrder),
     ...(typeof state.dnsYaml === "string" ? { dnsYaml: state.dnsYaml } : {}),
     ...(typeof state.mixedPort === "number" ? { mixedPort: state.mixedPort } : {}),
     ...(typeof state.allowLan === "boolean" ? { allowLan: state.allowLan } : {}),
@@ -103,6 +104,7 @@ export function normalizePersistedConfigState(
 export function partializeConfigState(state: ConfigState): Partial<ConfigState> {
   return {
     template: state.template,
+    ruleSourceOrder: state.ruleSourceOrder,
     enabledProxyGroups: state.enabledProxyGroups,
     hiddenProxyGroups: state.hiddenProxyGroups,
     dnsYaml: state.dnsYaml,
