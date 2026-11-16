@@ -8,6 +8,7 @@ import { LoonConversionError, failLoonConversion as fail, loonLabel } from './lo
 import { loonAtom as atom, inlineLoonRule, inlineLoonList } from './loon-rules';
 import { generateProxyGroups, isSubscriptionInfoNodeName, PROXY_GROUP_MODULES } from './proxy-groups';
 import { buildGeneratedRuleEntries, buildModuleNameMap, EXPERIMENTAL_CN_RULE } from './rules';
+import { compileSourceRules } from './source-rules';
 import { renderLoonNode } from './loon-node';
 
 const RULE_DEFINITIONS = Object.fromEntries([...PROXY_GROUP_MODULES.flatMap((module) => module.rules), EXPERIMENTAL_CN_RULE].map((rule) => [rule.id, rule]));
@@ -110,6 +111,7 @@ function renderGroups(groups: ProxyGroup[], nodeNames: Set<string>, config: User
   const available = new Set(['DIRECT', 'REJECT', ...nodeNames, ...groups.map((group) => group.name)]);
   return groups.map((group) => {
     const label = `代理组 ${loonLabel(group.name)}`;
+    atom(group.name, `${label}的名称特殊字符`);
     if (!['select', 'url-test', 'fallback', 'load-balance'].includes(group.type)) fail(`${label}的类型 ${loonLabel(group.type)}`);
     if (group.type === 'load-balance' && group.strategy !== 'round-robin') fail(`${label}的 strategy 负载均衡策略`);
     const members = group.proxies ?? [];
@@ -170,11 +172,12 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
   return { groups, nodeNames, literalTargetNames: targetOptions.literalTargetNames };
 }
 
-async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, literalTargetNames: readonly string[], displayNames: ReadonlyMap<string, string>, loadRuleList: (path: string) => Promise<string>): Promise<string[]> {
+async function renderRules(options: GenerateOptions, config: UserConfig, fallbackPolicyTarget: string, literalTargetNames: readonly string[], displayNames: ReadonlyMap<string, string>, loadRuleList: (path: string) => Promise<string>, compiledRules?: string[]): Promise<string[]> {
   const entries = buildGeneratedRuleEntries({ enabledModules: config.enabledGroups, customRules: config.customRules, customProxyGroups: options.customProxyGroups, builtinRuleEdits: options.builtinRuleEdits, proxyGroupNameOverrides: options.proxyGroupNameOverrides, experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet, cnIpNoResolve: config.cnIpNoResolve, ruleOrder: config.ruleOrder, fallbackPolicyTarget, literalTargetNames });
   const available = new Set(['DIRECT', 'REJECT', ...literalTargetNames]);
   const lines: string[] = [];
-  for (const entry of entries) {
+  const effectiveEntries = compiledRules ? compiledRules.map((text) => { const parts = text.split(','); return { text, target: parts[0] === 'MATCH' ? parts[1] : parts[2], noResolve: parts.at(-1) === 'no-resolve' }; }) : entries;
+  for (const entry of effectiveEntries) {
     if (!available.has(entry.target)) fail('规则引用的缺失节点或代理组');
     const [type, value] = entry.text.split(',');
     const target = displayNames.get(entry.target) ?? entry.target;
@@ -184,6 +187,7 @@ async function renderRules(options: GenerateOptions, config: UserConfig, fallbac
     const text = await loadRuleList(definition.path.replace(/\.mrs$/, '.list'));
     for (const line of inlineLoonList(text, definition.behavior, target, entry.noResolve)) lines.push(line);
   }
+  if (effectiveEntries.some((entry) => /^PROCESS-(NAME|PATH),/.test(entry.text))) lines.unshift('# iOS and tvOS ignore process rules. PROCESS-PATH uses Loon PROCESS-NAME syntax.');
   return lines;
 }
 
@@ -312,7 +316,7 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
   try {
     const original = prepareGroups(options, config, originalNodes);
     const nodeNames = new Set(nodes.map((node) => node.name));
-    const groups = conversion.mode === 'compatible' && skipped.length ? pruneCompatibleGroups(original.groups, original.nodeNames, nodeNames, report) : original.groups;
+    let groups = conversion.mode === 'compatible' && skipped.length ? pruneCompatibleGroups(original.groups, original.nodeNames, nodeNames, report) : original.groups;
     const literalTargetNames = [...nodeNames, ...groups.map((group) => group.name)];
     if (conversion.mode === 'compatible' && skipped.length) {
       const targetOptions = { moduleNames: buildModuleNameMap(options.proxyGroupNameOverrides), customProxyGroups: options.customProxyGroups, literalTargetNames: original.literalTargetNames };
@@ -326,15 +330,22 @@ export async function generateLoonConfig(options: GenerateOptions, loadRuleList:
         if (edit.enabled !== false && edit.target && config.enabledGroups.includes(moduleId) && PROXY_GROUP_MODULES.some((module) => module.id === moduleId && module.rules.some((rule) => rule.id === ruleId))) checkRetainedTarget(edit.target);
       }
     }
-    const displayNames = buildDisplayNames(nodes, groups);
-    const nodeLines = renderNodes(nodes, displayNames);
-    const groupLines = renderGroups(groups, nodeNames, config, displayNames);
     let fallbackTarget = groups[0]?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? 'DIRECT';
     if (conversion.mode === 'compatible' && skipped.length && original.groups[0] && proxyDefaultResolver(original.groups, original.nodeNames)(original.groups[0].name)) {
       const defaultsToProxy = proxyDefaultResolver(groups, nodeNames);
       if (!defaultsToProxy(fallbackTarget)) fallbackTarget = groups.find((group) => defaultsToProxy(group.name))?.name ?? nodes.find((node) => !isSubscriptionInfoNodeName(node.name))?.name ?? fail('兼容导出无法保留 FINAL 的默认代理路径');
     }
-    const ruleLines = await renderRules(options, config, fallbackTarget, literalTargetNames, displayNames, loadRuleList);
+    let compiledRules: string[] | undefined;
+    if (options.sourceRules?.length) {
+      const rules = buildGeneratedRuleEntries({ enabledModules: config.enabledGroups, customRules: config.customRules, customProxyGroups: options.customProxyGroups, builtinRuleEdits: options.builtinRuleEdits, proxyGroupNameOverrides: options.proxyGroupNameOverrides, experimentalCnUseCnRuleSet: config.experimentalCnUseCnRuleSet, cnIpNoResolve: config.cnIpNoResolve, ruleOrder: config.ruleOrder, fallbackPolicyTarget: fallbackTarget, literalTargetNames }).filter((entry) => entry.enabled).map((entry) => entry.text);
+      const compiled = compileSourceRules({ sourceRules: options.sourceRules, ruleSourceOrder: options.ruleSourceOrder, nodes, originalNodes, groups, rules, moduleNames: buildModuleNameMap(options.proxyGroupNameOverrides), customProxyGroups: options.customProxyGroups, client: 'loon' });
+      groups = compiled.groups;
+      compiledRules = compiled.rules;
+    }
+    const displayNames = buildDisplayNames(nodes, groups);
+    const nodeLines = renderNodes(nodes, displayNames);
+    const groupLines = renderGroups(groups, nodeNames, config, displayNames);
+    const ruleLines = await renderRules(options, config, fallbackTarget, [...nodeNames, ...groups.map((group) => group.name)], displayNames, loadRuleList, compiledRules);
     return ['# SubBoost Loon', ...report, '[General]', 'ip-mode = dual', 'dns-server = system', 'test-timeout = 5', '', '[Proxy]', ...nodeLines, '', '[Proxy Group]', ...groupLines, '', '[Rule]', ...ruleLines, ''].join('\n');
   } catch (error) {
     if (error instanceof LoonConversionError && skipped.length) throw new LoonConversionError(`${error.message}\n${report.join('\n')}`);

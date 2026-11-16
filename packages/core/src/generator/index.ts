@@ -40,7 +40,13 @@ import { getValidDialerRelayGroupNames } from "../subscription/dialer-relay-grou
 import { chooseFallbackPolicyTarget, withBuiltinPolicyTargets } from "./policy-targets";
 import { resolveGroupListenerEntries, type GroupListenerTargetResolution } from "./group-listeners";
 
+import type { SourceRuleInput } from '../subscription/source-rules';
+import { compileSourceRules } from './source-rules';
+import { buildModuleNameMap } from './rules';
+
 export interface GenerateOptions {
+  sourceRules?: SourceRuleInput[];
+  ruleSourceOrder?: string[];
   sourceLabelsById?: Record<string, string>;
   nodes: ParsedNode[];
   proxyProviders?: Record<string, unknown>;
@@ -595,6 +601,11 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
     }),
   };
 
+  if (options.sourceRules?.length) {
+    const compiled = compileSourceRules({ sourceRules: options.sourceRules, ruleSourceOrder: options.ruleSourceOrder, nodes: outputNodes, originalNodes: ensureUniqueProxyNames(nodes), groups: proxyGroups, rules: clashConfig.rules as string[], moduleNames: buildModuleNameMap(proxyGroupNameOverrides), customProxyGroups, client: 'clash' });
+    clashConfig['proxy-groups'] = compiled.groups;
+    clashConfig.rules = compiled.rules;
+  }
   return (config.sharedHealthChecks === true ? shareHealthChecks(clashConfig) : clashConfig) as unknown as ClashConfig;
 }
 

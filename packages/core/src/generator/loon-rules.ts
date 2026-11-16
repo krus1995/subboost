@@ -1,6 +1,6 @@
 import { failLoonConversion as fail } from './loon-error';
 
-const SUPPORTED_RULE_TYPES = new Set(['DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'IP-CIDR', 'IP-CIDR6']);
+const SUPPORTED_RULE_TYPES = new Set(['DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'IP-CIDR', 'IP-CIDR6', 'GEOIP', 'PROCESS-NAME', 'PROCESS-PATH']);
 
 export function loonAtom(value: string, errorItem = '名称或参数中的特殊字符'): string {
   if (!value.trim() || value.startsWith('//') || /[,;#=\r\n\[\]"\\]/.test(value)) fail(errorItem);
@@ -22,13 +22,18 @@ export function inlineLoonRule(type: string, value: string, target: string, noRe
   loonAtom(value, `规则 ${/^[A-Z0-9-]+$/.test(type) ? type : '未知类型'} 的值含空值或特殊字符`);
   if (!SUPPORTED_RULE_TYPES.has(type)) fail(`规则类型 ${/^[A-Z0-9-]+$/.test(type) ? type : '未知类型'}`);
   const ip = type === 'IP-CIDR' || type === 'IP-CIDR6';
-  if (noResolve && !ip) fail(`规则 ${type} 的 no-resolve`);
-  if (ip) {
+  if (noResolve && !ip && type !== 'GEOIP') fail(`规则 ${type} 的 no-resolve`);
+  if (type === 'GEOIP') {
+    if (!/^[A-Za-z]{2}$/.test(value)) fail('GEOIP 规则的国家代码');
+  } else if (type === 'PROCESS-NAME' || type === 'PROCESS-PATH') {
+    if (/[*?]/.test(value) || (type === 'PROCESS-NAME' && value.startsWith('/')) || (type === 'PROCESS-PATH' && (!value.startsWith('/') || value.endsWith('/')))) fail('进程规则无法保留精确匹配语义');
+    return `PROCESS-NAME,${value},${target}`;
+  } else if (ip) {
     const [address, prefix, extra] = value.split('/');
     const ipv6 = address.includes(':');
     if (extra !== undefined || !/^(0|[1-9]\d*)$/.test(prefix ?? '') || Number(prefix) > (ipv6 ? 128 : 32) || !validIpAddress(address)) fail(`规则 ${type} 的 IP 网段`);
     type = ipv6 ? 'IP-CIDR6' : 'IP-CIDR';
-  } else if (!/^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.?$/.test(value)) fail(`规则 ${type} 的域名语法`);
+  } else if (type === 'DOMAIN-KEYWORD' ? !/^[a-zA-Z0-9_.-]+$/.test(value) : !/^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.?$/.test(value)) fail(`规则 ${type} 的域名语法`);
   return `${type},${value},${target}${noResolve ? ',no-resolve' : ''}`;
 }
 
