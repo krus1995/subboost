@@ -513,8 +513,13 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
     // 解析多个订阅源
     parseMultipleSources: async (sources: SubscriptionSource[]) => {
       const readOnceSources = sources.filter((source) => source.type === "url" && source.readOnce);
-      if (readOnceSources.length > 0) await Promise.all(readOnceSources.map((source) => actions.parseSingleSource(source.id)));
+      const readOnceOperations = readOnceSources.map((source) => actions.parseSingleSource(source.id));
       const operation = importOperations.startBatch(sources);
+      if (readOnceOperations.length > 0) await Promise.all(readOnceOperations);
+      if (!importOperations.isBatchCurrent(get().sources, operation)) {
+        importOperations.finishBatch(operation);
+        return;
+      }
       set((state) => ({
         isLoading: true,
         parseErrors: [],
