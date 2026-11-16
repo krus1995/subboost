@@ -151,6 +151,7 @@ export function createSourceActions(set: SetState, get: GetState, setAndGenerate
             || source.readOnce !== previous?.readOnce
             || source.includeRules !== previous?.includeRules
             || source.ruleTargets !== previous?.ruleTargets
+            || source.ruleCategories !== previous?.ruleCategories
             || (source.includeRules && (prev[index]?.id !== source.id || source.ruleSnapshot !== previous?.ruleSnapshot));
         });
         if (routingChanged) setAndGenerateConfig(() => ({ sources }));

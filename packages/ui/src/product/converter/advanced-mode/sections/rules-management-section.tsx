@@ -14,6 +14,8 @@ import {
 } from "@subboost/core/generator/rules";
 import { useConfigStore } from "@subboost/ui/store/config-store";
 import { SectionHeader } from "../section-header";
+import { sourceRuleConditionKey } from "@subboost/core/generator/source-rule-categories";
+import { SourceRulesEditor } from "../../source-rules-editor";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -42,6 +44,7 @@ export function RulesManagementSection({
   onToggle: () => void;
 }) {
   const {
+    sources = [],
     enabledProxyGroups,
     customRules,
     customProxyGroups,
@@ -54,6 +57,8 @@ export function RulesManagementSection({
     setRuleOrder,
   } = useConfigStore();
   const [orderDrafts, setOrderDrafts] = React.useState<Record<string, string>>({});
+  const sourceConditions = new Set(sources.filter((source) => source.includeRules && !source.useProxyProviders).flatMap((source) => source.ruleSnapshot?.rules ?? []).map(sourceRuleConditionKey));
+  const hasImportedRules = sourceConditions.size > 0;
   const allRulesMode = ruleOrder.length === 0 || hasFullRuleOrderKeys(ruleOrder);
 
   const entries = React.useMemo(
@@ -179,6 +184,8 @@ export function RulesManagementSection({
 
       {isExpanded && (
         <div className="mt-2 pl-6 space-y-2">
+          <SourceRulesEditor />
+          {hasImportedRules && <p className="text-xs text-fg-60">下表显示 SubBoost 设置顺序。导入规则在前，同条件的下表规则与原兜底不再导出。规则集保留引用，部分条件可能由导入规则优先匹配。</p>}
           <div className="rounded-lg border border-ink/10 bg-ink/5 px-3 py-2">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <div className="min-w-0 flex-[1_1_13rem] text-[11px] leading-5 text-fg-60">
@@ -200,6 +207,7 @@ export function RulesManagementSection({
 
           <div className="max-h-[460px] overflow-y-auto overflow-x-hidden rounded-lg border border-ink/10 bg-shade/10 pr-1 custom-scrollbar">
             {entries.map((entry, index) => {
+              const overridden = sourceConditions.has(sourceRuleConditionKey(entry.text));
               const movableIndex = movableKeys.indexOf(entry.key);
               const canEditOrder = entry.key !== "special:match" && (allRulesMode || entry.editable);
               const canMoveUp = canEditOrder && movableIndex > 0;
@@ -231,7 +239,7 @@ export function RulesManagementSection({
                             </Badge>
                           )}
                           <Badge variant="outline" className="max-w-full shrink-0 whitespace-nowrap border-indigo-500/30 bg-indigo-500/10 text-indigo-200">
-                            {displayTarget}
+                            {overridden ? "已被导入规则覆盖，不导出" : displayTarget}
                           </Badge>
                           {entry.noResolve && (
                             <Badge variant="outline" className="shrink-0 border-amber-500/30 bg-amber-500/10 text-amber-200">
@@ -290,7 +298,7 @@ export function RulesManagementSection({
                           }
                         }}
                         inputMode="numeric"
-                        title="最终规则行号（1=最前）"
+                        title={hasImportedRules ? "SubBoost 设置顺序，导入规则在前，被覆盖的规则不导出" : "最终规则行号（1=最前）"}
                         disabled={!canEditOrder}
                         className="h-8 w-16 shrink-0 rounded-lg border-ink/10 bg-ink/10 px-1 text-center text-xs disabled:cursor-not-allowed disabled:opacity-50"
                       />

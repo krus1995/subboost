@@ -1,5 +1,5 @@
 import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/url-input";
-import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, type SourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
+import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeSourceRuleCategories, type SourceRuleSnapshot } from "@subboost/core/subscription/source-rules";
 import type { ProxyGroupRuleTarget } from "@subboost/core/types/config";
 import {
   hasSubscriptionUserInfo,
@@ -19,6 +19,7 @@ export type SavedSource = {
   includeRules?: boolean;
   ruleSnapshot?: SourceRuleSnapshot;
   ruleTargets?: Record<string, ProxyGroupRuleTarget>;
+  ruleCategories?: Record<string, import("@subboost/core/types/config").ProxyGroupTargetRef>;
   useProxyProviders?: boolean;
   userinfoUrl?: string;
   userinfoUserAgent?: string;
@@ -89,6 +90,7 @@ export function normalizeSavedSourcesForPersistence(
     const source = toTrimmedString(record.source);
     const ruleSnapshot = normalizeSourceRuleSnapshot(record.ruleSnapshot);
     const ruleTargets = normalizeSourceRuleTargets(record.ruleTargets);
+    const ruleCategories = normalizeSourceRuleCategories(record.ruleCategories);
     const userinfoUserAgent = toTrimmedString(record.userinfoUserAgent);
     const subscriptionUserInfo = normalizeSavedSourceUserInfo(record.subscriptionUserInfo);
     const tag = toTrimmedString(record.tag);
@@ -107,6 +109,7 @@ export function normalizeSavedSourcesForPersistence(
       ...(record.includeRules === true ? { includeRules: true } : {}),
       ...(ruleSnapshot ? { ruleSnapshot } : {}),
       ...(ruleTargets ? { ruleTargets } : {}),
+      ...(ruleCategories ? { ruleCategories } : {}),
       ...(type === "url" && record.readOnce !== true && record.useProxyProviders === true ? { useProxyProviders: true } : {}),
       ...(type === "url" && userinfoUrl ? { userinfoUrl: normalizeUrlContent(userinfoUrl) } : {}),
       ...(type === "url" && userinfoUserAgent ? { userinfoUserAgent } : {}),

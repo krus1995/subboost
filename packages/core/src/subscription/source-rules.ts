@@ -1,7 +1,7 @@
 import { loadSubscriptionYaml } from "../parser/yaml-scalars";
 import { parseClashYaml } from "../parser/clash-yaml";
 import { normalizeProxyGroupTargetRef } from "../proxy-group-targets";
-import { isLoadBalanceStrategy, type ProxyGroup, type ProxyGroupRuleTarget } from "../types/config";
+import { isLoadBalanceStrategy, type ProxyGroup, type ProxyGroupRuleTarget, type ProxyGroupTargetRef } from "../types/config";
 
 export type SourceRuleSnapshot = { groups: ProxyGroup[]; rules: string[] };
 export type SourceRuleInput = {
@@ -9,6 +9,7 @@ export type SourceRuleInput = {
   source?: string;
   snapshot: SourceRuleSnapshot;
   targets?: Record<string, ProxyGroupRuleTarget>;
+  categories?: Record<string, ProxyGroupTargetRef>;
 };
 export type ParsedSourceRule = { type: string; value: string; target: string; noResolve: boolean };
 export class SourceRuleInputError extends Error {
@@ -161,6 +162,15 @@ export function normalizeSourceRuleTargets(value: unknown): Record<string, Proxy
   return targets.length ? Object.fromEntries(targets) : undefined;
 }
 
+export function normalizeSourceRuleCategories(value: unknown): Record<string, ProxyGroupTargetRef> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).flatMap(([name, category]) => {
+    const normalized = normalizeProxyGroupTargetRef(category);
+    return name.trim() && normalized ? [[name.trim(), normalized] as const] : [];
+  });
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 export function buildSourceRuleInputs(sources: unknown): SourceRuleInput[] {
   if (!Array.isArray(sources)) return [];
   return sources.flatMap((value, index) => {
@@ -171,7 +181,8 @@ export function buildSourceRuleInputs(sources: unknown): SourceRuleInput[] {
     if (value.useProxyProviders === true) throw new SourceRuleInputError(`来源 #${index + 1} 需先关闭客户端直连并导入节点快照`);
     const source = text(value.source);
     const targets = normalizeSourceRuleTargets(value.ruleTargets);
-    return [{ id, ...(source ? { source } : {}), snapshot, ...(targets ? { targets } : {}) }];
+    const categories = normalizeSourceRuleCategories(value.ruleCategories);
+    return [{ id, ...(source ? { source } : {}), snapshot, ...(targets ? { targets } : {}), ...(categories ? { categories } : {}) }];
   });
 }
 

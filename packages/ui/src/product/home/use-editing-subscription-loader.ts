@@ -1,6 +1,6 @@
 "use client";
 
-import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
+import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeSourceRuleCategories, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
 
 import * as React from "react";
 import type { SubscriptionSource } from "@subboost/ui/store/config-store";
@@ -198,6 +198,7 @@ export function useEditingSubscriptionLoader({
                 includeRules: "includeRules" in item && item.includeRules === true,
                 ruleSnapshot: normalizeSourceRuleSnapshot("ruleSnapshot" in item ? item.ruleSnapshot : undefined),
                 ruleTargets: normalizeSourceRuleTargets("ruleTargets" in item ? item.ruleTargets : undefined),
+                ruleCategories: normalizeSourceRuleCategories("ruleCategories" in item ? item.ruleCategories : undefined),
                 source: typeof sourceLabel === "string" ? sourceLabel.trim() || undefined : undefined,
                 tag: typeof tag === "string" && tag.trim() ? tag.trim() : undefined,
                 nameTemplate: typeof nameTemplate === "string" && nameTemplate.trim() ? nameTemplate.trim() : undefined,
@@ -227,6 +228,7 @@ export function useEditingSubscriptionLoader({
               includeRules?: boolean;
               ruleSnapshot?: SubscriptionSource["ruleSnapshot"];
               ruleTargets?: SubscriptionSource["ruleTargets"];
+              ruleCategories?: SubscriptionSource["ruleCategories"];
               nameTemplate?: string;
               subscriptionUserInfo?: SubscriptionUserInfo;
               useProxyProviders?: boolean;
@@ -293,7 +295,7 @@ export function useEditingSubscriptionLoader({
               ...(s.source ? { source: s.source } : {}),
               ...(s.readOnce ? { readOnce: true } : {}),
               ...(s.readOnceAttemptedUrls ? { readOnceAttemptedUrls: s.readOnceAttemptedUrls } : {}),
-              ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
+              ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets, ruleCategories: s.ruleCategories } : {}),
               content: s.type === "url" ? (tryNormalizeSubscriptionUrlInput(s.content) ?? s.content.trim()) : s.content,
               ...(lastParsedContent ? { lastParsedContent } : {}),
               ...(typeof s.tag === "string" && s.tag.trim() ? { tag: s.tag.trim() } : {}),

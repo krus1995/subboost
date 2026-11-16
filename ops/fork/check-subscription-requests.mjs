@@ -80,7 +80,8 @@ async function checkSourceRouting() {
       memberSource: "filtered-nodes", advanced: { sourceLabels: [source], regions: ["jp"] } });
     sources.push({ id, source, type: "url", content: sourceUrl(path), lastParsedContent: sourceUrl(path),
       includeRules: true, ruleSnapshot: { groups: profile["proxy-groups"], rules: profile.rules },
-      ruleTargets: { Media: { kind: "custom", id: groupId } } });
+      ruleTargets: { Media: { kind: "custom", id: groupId } },
+      ruleCategories: { Media: { kind: "module", id: "youtube" } } });
     nodes.push(...result.parseResult.nodes.map(item => ({ ...item, _sourceIds: [id], _originName: item.name })));
   }
   const config = { sources, enabledGroups: [], customProxyGroups: customGroups,
@@ -90,7 +91,9 @@ async function checkSourceRouting() {
   } });
   sampleIds.push(subscription.id);
   const item = "/api/subscriptions/" + subscription.id;
-  async function assertProfiles(first, second, publicNode) {
+  const reopenedRules = (await api(item)).subscription;
+  assert.deepEqual(reopenedRules.config.sources.map(source => source.ruleCategories), sources.map(source => source.ruleCategories));
+  async function assertProfiles(first, _second, publicNode) {
     const results = await Promise.all(["config.yaml", "loon.conf"].map(async file => {
       const response = await fetch(appUrl + "/api/subscriptions/" + subscription.token + "/" + file);
       assert.equal(response.status, 200, "read " + file);
@@ -98,7 +101,7 @@ async function checkSourceRouting() {
     }));
     const clash = load(results[0]);
     const loon = results[1].split(/\r?\n/);
-    const rules = ["DOMAIN,video.example," + first, "DOMAIN,video.example," + second];
+    const rules = ["DOMAIN,video.example," + first];
     assert.deepEqual(clash.rules.filter(rule => rule.startsWith("DOMAIN,video.example,")), rules);
     assert.deepEqual(loon.filter(rule => rule.startsWith("DOMAIN,video.example,")), rules);
     assert.deepEqual(clash.rules.filter(rule => rule.startsWith("MATCH,")), ["MATCH," + first]);
@@ -171,17 +174,13 @@ async function checkReadOnceSources() {
     assert.ok(!body.includes(sourceUrl(frozenPath)), "read-once URL must not appear in a provider");
     if (file === "config.yaml") {
       const clash = load(body);
-      const groups = clash["proxy-groups"];
-      assert.equal(new Set(groups.map(group => group.name)).size, groups.length);
-      for (const name of ["来源 1 Media", "来源 2 Media"]) {
-        assert.deepEqual(groups.find(group => group.name === name)?.proxies, ["JP Frozen", "HK Frozen"]);
-      }
-      assert.deepEqual(clash.rules.filter(rule => rule.startsWith("DOMAIN,video.example,")), ["DOMAIN,video.example,来源 1 Media", "DOMAIN,video.example,来源 2 Media"]);
+      assert.deepEqual(clash["proxy-groups"] ?? [], [], "no configured or synthetic proxy groups");
+      assert.deepEqual(clash.rules, ["DOMAIN,video.example,JP Frozen", "MATCH,JP Frozen"]);
     } else {
-      for (const name of ["来源 1 Media", "来源 2 Media"]) {
-        assert.ok(body.includes(name + " = select, JP Frozen, HK Frozen"));
-      }
-      assert.deepEqual(body.split(/\r?\n/).filter(rule => rule.startsWith("DOMAIN,video.example,")), ["DOMAIN,video.example,来源 1 Media", "DOMAIN,video.example,来源 2 Media"]);
+      const groupSection = body.split("[Proxy Group]")[1].split("[Rule]")[0].trim();
+      assert.equal(groupSection, "", "no configured or synthetic Loon groups");
+      const rules = body.split("[Rule]\n")[1].trim().split(/\r?\n/).filter(line => line && !line.startsWith("#"));
+      assert.deepEqual(rules, ["DOMAIN,video.example,JP Frozen", "FINAL,JP Frozen"]);
     }
   }
   const afterCron = (await api(item)).subscription;

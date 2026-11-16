@@ -241,11 +241,11 @@ describe("useSubscriptionLink", () => {
 
   it("saves a normalized subscription payload and tracks success", async () => {
     const adapter = makeAdapter();
-    let hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 ", includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } } }] });
+    let hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 ", includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } }, ruleCategories: { DIRECT: { kind: "module", id: "cn" } } }] });
     hook.setSubscriptionName(" My Sub ");
     hook.setAutoUpdateEnabled(true);
     hook.setAutoUpdateHours(24);
-    hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 ", includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } } }] });
+    hook = useRenderedHook({ subscriptionAdapter: adapter, storeSources: [{ ...makeOptions().storeSources[0], source: " 公益 ", includeRules: true, ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] }, ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } }, ruleCategories: { DIRECT: { kind: "module", id: "cn" } } }] });
 
     await hook.handleCreateSubscription();
     hook = useRenderedHook({ subscriptionAdapter: adapter });
@@ -267,7 +267,7 @@ describe("useSubscriptionLink", () => {
                 source: "公益",
                 includeRules: true,
                 ruleSnapshot: { groups: [], rules: ["MATCH,DIRECT"] },
-                ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } },
+                ruleTargets: { DIRECT: { kind: "custom", id: "group-jp" } }, ruleCategories: { DIRECT: { kind: "module", id: "cn" } },
                 userinfoUrl: "https://airport.example/userinfo",
                 userinfoUserAgent: "Clash.Meta",
                 subscriptionUserInfo: { upload: 2_048, download: 1_024, total: 4_096 },

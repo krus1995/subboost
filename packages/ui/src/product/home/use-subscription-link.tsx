@@ -343,7 +343,7 @@ export function useSubscriptionLink({
                   ...(s.source?.trim() ? { source: s.source.trim() } : {}),
                   ...(s.readOnce ? { readOnce: true } : {}),
                   ...(s.readOnceAttemptedUrls ? { readOnceAttemptedUrls: s.readOnceAttemptedUrls } : {}),
-                  ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
+                  ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets, ruleCategories: s.ruleCategories } : {}),
                   content:
                     s.type === "url"
                       ? (tryNormalizeSubscriptionUrlInput(s.content) ?? s.content.trim())

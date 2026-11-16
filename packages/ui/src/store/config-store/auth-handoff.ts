@@ -1,4 +1,4 @@
-import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
+import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeSourceRuleCategories, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
 import type { ConfigState, SourceType, SubscriptionSource } from "./definitions";
 import { initialState } from "./definitions";
 import { safeParseJsonObject } from "@subboost/core/json";
@@ -65,7 +65,7 @@ function sourceArray(value: unknown): SubscriptionSource[] | undefined {
       type: item.type,
       ...(item.readOnce === true ? { readOnce: true } : {}),
       ...(Array.isArray(item.readOnceAttemptedUrls) ? { readOnceAttemptedUrls: item.readOnceAttemptedUrls.filter((url): url is string => typeof url === "string") } : {}),
-      ...(item.includeRules === true ? { includeRules: true, ruleSnapshot: normalizeSourceRuleSnapshot(item.ruleSnapshot), ruleTargets: normalizeSourceRuleTargets(item.ruleTargets) } : {}),
+      ...(item.includeRules === true ? { includeRules: true, ruleSnapshot: normalizeSourceRuleSnapshot(item.ruleSnapshot), ruleTargets: normalizeSourceRuleTargets(item.ruleTargets), ruleCategories: normalizeSourceRuleCategories(item.ruleCategories) } : {}),
       ...(typeof item.source === "string" && item.source.trim() ? { source: item.source.trim() } : {}),
       content: item.content,
       ...(typeof item.name === "string" ? { name: item.name } : {}),

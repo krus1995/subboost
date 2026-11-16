@@ -43,8 +43,9 @@ describe("prepareRefreshCacheResult", () => {
     if (!result.ok) return;
     expect(result.refreshedConfig.sources).toEqual([source]);
     expect(result.refreshedConfig.ruleSourceOrder).toEqual(["source:source", "subboost"]);
-    expect(result.generatedYaml).toContain("DOMAIN,new.example.com,来源 1 Original");
-    expect(result.generatedYaml).toContain('proxies: ["User name"]');
+    expect(result.generatedYaml).toContain("DOMAIN,new.example.com,🚀 节点选择");
+    expect(result.generatedYaml).toContain('proxies: [DIRECT, REJECT, "User name"]');
+    expect(result.generatedYaml).not.toContain('来源 1 Original');
     expect(result.cacheEntry.nodes[0]).toMatchObject({ name: "User name", _originName: "node-a", _sourceIds: ["source"] });
   });
 
