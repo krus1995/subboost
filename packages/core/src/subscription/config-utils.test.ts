@@ -30,7 +30,7 @@ describe("subscription config utils", () => {
       ],
     };
     expect(buildGenerateOptionsFromConfig(config, { nodes: [node()] }).sourceLabelsById).toEqual({
-      main: "airport", "public-a": "public", "public-b": "public",
+      main: "airport", "public-a": "public", "public-b": "public", old: "",
     });
     expect(buildGenerateOptionsFromConfig({}, { nodes: [node()] }).sourceLabelsById).toEqual({});
   });
