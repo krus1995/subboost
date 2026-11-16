@@ -41,6 +41,7 @@ import { chooseFallbackPolicyTarget, withBuiltinPolicyTargets } from "./policy-t
 import { resolveGroupListenerEntries, type GroupListenerTargetResolution } from "./group-listeners";
 
 export interface GenerateOptions {
+  sourceLabelsById?: Record<string, string>;
   nodes: ParsedNode[];
   proxyProviders?: Record<string, unknown>;
   template?: TemplateType;
@@ -352,6 +353,7 @@ export function generateClashConfig(options: GenerateOptions): ClashConfig {
   // 生成选项
   const generateOpts = {
     nodes: outputNodes,
+    sourceLabelsById: options.sourceLabelsById,
     proxyProviderNames,
     enabledModules: config.enabledGroups,
     ruleProviderBaseUrl: config.ruleProviderBaseUrl,

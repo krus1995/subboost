@@ -1,3 +1,4 @@
+import { getProxyProviderName } from '../subscription/proxy-providers';
 /**
  * 分流代理组生成器
  * 合并代理组和分流规则为统一的"分流代理组"概念
@@ -15,7 +16,7 @@ import type {
   ProxyGroupGroupType,
   RuleProvider,
 } from "@subboost/core/types/config";
-import { resolveProxyGroupMembers } from "@subboost/core/proxy-group-advanced";
+import { resolveProxyGroupMembers, resolveSelectedSourceLabels } from "@subboost/core/proxy-group-advanced";
 import { isSubscriptionInfoNodeName } from "@subboost/core/subscription/info-node-name";
 import { isDisabledCustomProxyGroupTarget } from "@subboost/core/proxy-group-targets";
 
@@ -52,6 +53,7 @@ export const CATEGORY_INFO: Record<string, { name: string; order: number }> = {
 
 export interface ProxyGroupGenerateOptions {
   nodes: ParsedNode[];
+  sourceLabelsById?: Record<string, string>;
   proxyProviderNames?: string[];
   enabledModules: string[];
   ruleProviderBaseUrl: string;
@@ -206,6 +208,7 @@ export function generateProxyGroups(options: ProxyGroupGenerateOptions): ProxyGr
     resolveProxyGroupMembers({
       defaultProxyNames,
       availableProxyNames: availableMemberProxyNames,
+      sourceLabelsById: options.sourceLabelsById,
       nodes,
       moduleNames,
       customProxyGroups: activeCustomProxyGroups,
@@ -465,7 +468,28 @@ export function generateProxyGroups(options: ProxyGroupGenerateOptions): ProxyGr
     }
   }
 
-  return groups;
+  const advancedByName = new Map<string, ProxyGroupAdvancedConfig | undefined>([
+    ...PROXY_GROUP_MODULES.map((module): [string, ProxyGroupAdvancedConfig | undefined] => [moduleNames[module.id], proxyGroupAdvanced[module.id]]),
+    ...activeCustomProxyGroups.map((group): [string, ProxyGroupAdvancedConfig | undefined] => [group.name, group.advanced]),
+  ]);
+  const providerSourceIds = new Map<string, string[]>();
+  for (const id of Object.keys(options.sourceLabelsById ?? {})) {
+    const providerName = getProxyProviderName(id);
+    providerSourceIds.set(providerName, [...(providerSourceIds.get(providerName) ?? []), id]);
+  }
+  return groups.map((group) => {
+    const advanced = advancedByName.get(group.name);
+    const selected = resolveSelectedSourceLabels(advanced, options.sourceLabelsById);
+    if (!selected.length || !group.use?.length) return group;
+    const use = group.use.filter((name) => {
+      const ids = providerSourceIds.get(name);
+      if (ids?.length !== 1) return false;
+      const [id] = ids;
+      return selected.includes(options.sourceLabelsById?.[id]?.trim() ?? '') && (!advanced?.sourceIds?.length || advanced.sourceIds.includes(id));
+    });
+    const { use: _use, ...withoutUse } = group;
+    return use.length ? { ...withoutUse, use } : withoutUse;
+  });
 }
 
 /**

@@ -9,6 +9,10 @@ import { tryNormalizeSubscriptionUrlInput } from "@subboost/core/subscription/ur
  * - provider key 需是安全字符串（避免 YAML key 解析问题）
  */
 
+export function getProxyProviderName(sourceId: string): string {
+  return `url_${sourceId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
 export function buildProxyProvidersFromConfig(
   config: Record<string, unknown>,
   opts: { testUrl: string; testInterval: number }
@@ -41,8 +45,8 @@ export function buildProxyProvidersFromConfig(
 
     const rawId = typeof item.id === "string" ? item.id.trim() : "";
     const id = rawId || String(++fallbackIndex);
-    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const name = `url_${safeId}`;
+
+    const name = getProxyProviderName(id);
     if (Object.prototype.hasOwnProperty.call(out, name)) continue;
 
     out[name] = {
@@ -60,4 +64,3 @@ export function buildProxyProvidersFromConfig(
 
   return Object.keys(out).length > 0 ? out : undefined;
 }
-

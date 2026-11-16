@@ -128,7 +128,7 @@ function prepareGroups(options: GenerateOptions, config: UserConfig, nodes: Pars
   const customGroups = (options.customProxyGroups ?? []).filter((group) => group.enabled !== false);
   for (const [id, advanced] of Object.entries(options.proxyGroupAdvanced ?? {}).filter(([id]) => config.enabledGroups.includes(id))) checkAdvanced(advanced, nodeNames, id);
   for (const group of customGroups) checkAdvanced(group.advanced, nodeNames, group.name);
-  const groups = generateProxyGroups({ nodes, enabledModules: config.enabledGroups, ruleProviderBaseUrl: config.ruleProviderBaseUrl, testUrl: config.testUrl, testInterval: config.testInterval, customProxyGroups: options.customProxyGroups, proxyGroupAdvanced: options.proxyGroupAdvanced, proxyGroupNameOverrides: options.proxyGroupNameOverrides });
+  const groups = generateProxyGroups({ nodes, sourceLabelsById: options.sourceLabelsById, enabledModules: config.enabledGroups, ruleProviderBaseUrl: config.ruleProviderBaseUrl, testUrl: config.testUrl, testInterval: config.testInterval, customProxyGroups: options.customProxyGroups, proxyGroupAdvanced: options.proxyGroupAdvanced, proxyGroupNameOverrides: options.proxyGroupNameOverrides });
   const available = new Set(['DIRECT', 'REJECT', ...nodeNames]);
   for (const group of groups) {
     atom(group.name, `代理组 ${loonLabel(group.name)} 的名称特殊字符`);
