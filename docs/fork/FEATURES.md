@@ -62,3 +62,11 @@ Loon 导出会将节点名里影响配置解析的标点换成全角字符。例
 手动刷新、定时刷新和客户端读取配置均使用保存的节点、规则及流量快照。普通来源继续更新，共享重名节点仍保留阅后即焚来源的旧连接。此设置关闭客户端 proxy-provider 直连，避免客户端再次请求原始地址。字段保存在现有加密来源配置中，无数据库迁移。
 
 与上游共享的区域包括来源编辑器、导入状态、保存与恢复、节点刷新及两端的 provider 导出。回归命令为 `npm run test:unit -- source-actions-read-once refresh-node-snapshot saved-sources proxy-providers auth-handoff sources-section input-section editing-subscription-loader`。`bash ops/fork/check.sh image` 通过模拟 HTTP 计数核对首次导入后不再访问正文和流量地址、混合来源手动及定时刷新，以及 Clash 和 Loon 的快照导出。
+
+## 从本地文件导入订阅
+
+在快捷或高级模式中，点「添加订阅/节点源」，选择「本地上传 / YAML」。也可以把已有来源切换为 YAML。选择电脑上的 Clash 配置、节点链接文本或 Base64 订阅文件，然后点「导入此源」。在高级编辑弹窗选文件后，点「完成」即可导入。需要文件内的策略组和规则时，在高级编辑中打开「使用此来源的规则」。
+
+浏览器读取所选文件。保存时，正文、节点和已启用的规则快照随订阅存入现有加密配置。手动和定时刷新保留上传的快照，同一订阅里的普通 URL 仍可更新。重新选择文件即可替换本地来源。
+
+与上游共享的代码包括来源编辑器、订阅保存与恢复、节点合并和刷新。运行 `npm run test:unit -- local-source-file source-actions-read-once saved-sources refresh-node-snapshot` 检查文件读取和快照。运行 `bash ops/fork/check.sh image` 核对保存后的订阅与刷新结果。
