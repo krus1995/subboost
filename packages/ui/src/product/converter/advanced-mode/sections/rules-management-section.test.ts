@@ -432,6 +432,27 @@ describe("RulesManagementSection", () => {
     expect(collectText(header.props.badge)).toContain("可调 2 / 全部 3");
   });
 
+  it("marks overridden inline rules and final as inactive while retaining a different no-resolve condition", () => {
+    const tree = renderSection({ sources: [
+      { includeRules: true, ruleSnapshot: { rules: ["DOMAIN-SUFFIX,example.com,REJECT", "GEOIP,CN,REJECT", "MATCH,REJECT"] } },
+      { includeRules: true },
+    ] });
+    const coveredBadges = collectElements(tree, (element) => element.props.children === "已被导入规则覆盖，不导出");
+    expect(coveredBadges).toHaveLength(2);
+    expect(collectText(tree)).toContain("下表显示 SubBoost 设置顺序");
+    expect(collectText(tree)).toContain("DIRECT");
+    expect(collectElements(tree, (element) => element.props.title === "SubBoost 设置顺序，导入规则在前，被覆盖的规则不导出")).toHaveLength(3);
+  });
+
+  it("does not apply disabled or provider-only source rules to the SubBoost table", () => {
+    const tree = renderSection({ sources: [
+      { includeRules: false, ruleSnapshot: { rules: ["DOMAIN-SUFFIX,example.com,REJECT"] } },
+      { includeRules: true, useProxyProviders: true, ruleSnapshot: { rules: ["MATCH,REJECT"] } },
+    ] });
+    expect(collectText(tree)).not.toContain("已被导入规则覆盖，不导出");
+    expect(collectText(tree)).not.toContain("下表显示 SubBoost 设置顺序");
+  });
+
   it("keeps collapsed sections lightweight", () => {
     mocks.store = {
       enabledProxyGroups: [],

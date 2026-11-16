@@ -55,7 +55,7 @@ export function SourceRulesEditor() {
           {rows.map(({ source: input, original, count: ruleCount, effectiveCount: activeCount, examples }) => {
             const source = sources.find((item) => item.id === input.id)!;
             const label = source.tag || source.source || input.id;
-            const binding = source.ruleTargets?.[original];
+            const binding = source.ruleTargets && Object.hasOwn(source.ruleTargets, original) ? source.ruleTargets[original] : undefined;
             const value = typeof binding === 'string' ? binding : binding ? getProxyGroupTargetKey(binding) : '';
             let effective = '';
             try { const result = resolveSourceCategoryTarget({ input, original, moduleNames, customProxyGroups, availableTargets, fallbackTarget, nodeTargets: buildSourceNodeTargets(input.id, state.nodes, usableNodes) }); effective = activeCount === 0 ? '已被更高优先级来源覆盖，不导出此规则' : (result.unavailable ? '分类未启用，当前出口 ' : '当前出口 ') + result.target; }

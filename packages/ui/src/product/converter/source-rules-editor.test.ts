@@ -108,6 +108,27 @@ describe("SourceRulesEditor", () => {
     expect(html).toContain("DOMAIN,example2.org");
   });
 
+  it("preserves a removed category for correction and labels disabled custom categories", () => {
+    mocks.state.sources = [{ ...sourceA, ruleCategories: { Original: { kind: "custom", id: "deleted" } } }];
+    mocks.state.customProxyGroups = [{ id: "disabled", name: "Disabled category", enabled: false, emoji: "", groupType: "select" }];
+    const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(html).toContain("分类已删除，请重选");
+    expect(html).toContain("Disabled category · 未启用");
+    expect(html).toContain("当前出口 DIRECT");
+    mocks.state.sources = [{ ...sourceA, ruleSnapshot: { ...snapshot, groups: [{ name: "Original", type: "select", proxies: ["JP"] }] }, ruleCategories: { Original: { kind: "custom", id: "disabled" } } }];
+    const disabledHtml = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(disabledHtml).toContain("Disabled category · 导入 2 条");
+    expect(disabledHtml).toContain("分类未启用，当前出口");
+  });
+
+  it("does not treat inherited property names as saved outlet bindings", () => {
+    mocks.state.sources = [{ ...sourceA, ruleSnapshot: { groups: [{ name: "constructor", type: "select", proxies: ["JP"] }], rules: ["DOMAIN,constructor.example,constructor", "MATCH,DIRECT"] }, ruleCategories: { Other: { kind: "module", id: "google" } }, ruleTargets: { Other: "DIRECT" } }];
+    const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));
+    expect(html).not.toContain("undefined:undefined");
+    expect(html).not.toContain("原绑定已不可用，请重选");
+    expect(html).toContain("constructor");
+  });
+
   it("reports a rule snapshot that still relies on client-side provider nodes", () => {
     mocks.state.sources = [{ ...sourceA, useProxyProviders: true }];
     const html = renderToStaticMarkup(React.createElement(SourceRulesEditor));

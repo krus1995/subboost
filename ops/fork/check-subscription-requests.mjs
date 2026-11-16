@@ -174,13 +174,13 @@ async function checkReadOnceSources() {
     assert.ok(!body.includes(sourceUrl(frozenPath)), "read-once URL must not appear in a provider");
     if (file === "config.yaml") {
       const clash = load(body);
-      const groups = clash["proxy-groups"];
-      assert.equal(new Set(groups.map(group => group.name)).size, groups.length);
-      assert.ok(!groups.some(group => group.name.startsWith("来源 ")));
-      assert.deepEqual(clash.rules.filter(rule => rule.startsWith("DOMAIN,video.example,")), ["DOMAIN,video.example,JP Frozen"]);
+      assert.deepEqual(clash["proxy-groups"] ?? [], [], "no configured or synthetic proxy groups");
+      assert.deepEqual(clash.rules, ["DOMAIN,video.example,JP Frozen", "MATCH,JP Frozen"]);
     } else {
-      assert.ok(!body.includes("来源 1 Media ="));
-      assert.deepEqual(body.split(/\r?\n/).filter(rule => rule.startsWith("DOMAIN,video.example,")), ["DOMAIN,video.example,JP Frozen"]);
+      const groupSection = body.split("[Proxy Group]\n")[1].split("\n\n[Rule]")[0].trim();
+      assert.equal(groupSection, "", "no configured or synthetic Loon groups");
+      const rules = body.split("[Rule]\n")[1].trim().split(/\r?\n/).filter(line => line && !line.startsWith("#"));
+      assert.deepEqual(rules, ["DOMAIN,video.example,JP Frozen", "FINAL,JP Frozen"]);
     }
   }
   const afterCron = (await api(item)).subscription;
