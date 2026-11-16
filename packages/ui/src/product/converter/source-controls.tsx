@@ -148,7 +148,7 @@ export function AddSourceMenu({
             >
               <Icon className="h-4 w-4 text-indigo-400" aria-hidden="true" />
               <span>
-                <span className="block text-xs font-medium text-fg">{info.label}</span>
+                <span className="block text-xs font-medium text-fg">{type === "yaml" ? "本地上传 / YAML" : info.label}</span>
                 {!compact ? <span className="block text-[10px] text-fg-40">{info.description}</span> : null}
               </span>
             </DropdownMenuItem>

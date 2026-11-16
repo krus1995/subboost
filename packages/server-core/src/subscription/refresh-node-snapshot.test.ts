@@ -43,6 +43,32 @@ rules:
   - MATCH,${target}
 `;
 
+  it("retains persisted uploaded YAML snapshots while a shared URL source changes", async () => {
+    const originalRules = parseSourceRuleSnapshot(ruleYaml());
+    const fetchUrlNodes = vi.fn().mockResolvedValue({ ok: true, nodes: [{ ...node, password: "new-password" }] });
+    const fetchUrlUserInfo = vi.fn();
+    const result = await refreshNodeSnapshot({
+      config: { sources: [
+        { id: "uploaded", type: "yaml", content: ruleYaml("not-reparsed.example"), readOnce: true, includeRules: true, ruleSnapshot: originalRules, subscriptionUserInfo: { total: 100 } },
+        { id: "normal", type: "url", content: "https://normal.invalid/sub" },
+      ] },
+      urls: [], storedNodes: [{ ...node, name: "My renamed node", _originName: node.name, _sourceIds: ["uploaded", "normal"] }],
+      fetchUrlNodes, fetchUrlUserInfo,
+    });
+    expect(fetchUrlNodes).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: "normal" }));
+    expect(fetchUrlUserInfo).not.toHaveBeenCalled();
+    expect(result.savedSources[0]).toMatchObject({ readOnce: true, ruleSnapshot: originalRules, subscriptionUserInfo: { total: 100 } });
+    expect(result.nodes).toContainEqual(expect.objectContaining({ name: "My renamed node", server: "example.com", password: "secret", _sourceIds: ["uploaded"] }));
+    expect(result.nodes).toContainEqual(expect.objectContaining({ password: "new-password", _sourceIds: ["normal"] }));
+    expect(result.refreshableSourceCount).toBe(1);
+  });
+  it("does not attempt an uploaded-only subscription", async () => {
+    const fetchUrlNodes = vi.fn();
+    const result = await refreshNodeSnapshot({ config: { sources: [{ id: "uploaded", type: "yaml", content: "unchanged file", readOnce: true }] }, urls: [], storedNodes: [{ ...node, _sourceIds: ["uploaded"] }], fetchUrlNodes });
+    expect(fetchUrlNodes).not.toHaveBeenCalled();
+    expect(result.refreshableSourceCount).toBe(0);
+    expect(result.nodes).toEqual([expect.objectContaining({ ...node, _sourceIds: ["uploaded"] })]);
+  });
   it("refreshes a local YAML source's rules and nodes without requesting its former URL", async () => {
     const content = ruleYaml("new.example.com").replace("DOMAIN,example.com", "DOMAIN,updated.example.com");
     const fetchUrlNodes = vi.fn();

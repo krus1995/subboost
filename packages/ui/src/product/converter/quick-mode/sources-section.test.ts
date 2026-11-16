@@ -198,6 +198,7 @@ vi.mock("./constants", () => ({
       placeholder: "https://example.com/sub",
       icon: () => null,
     },
+    yaml: { label: "YAML 配置", placeholder: "proxies:", icon: () => null },
     text: {
       label: "Text",
       description: "Text source",
@@ -283,6 +284,20 @@ describe("quick mode SourcesSection", () => {
     mocks.userStore = { user: { isAdmin: false, quota: { maxImportSourcesPerType: 2 } } };
   });
 
+  it("shows the shared upload control for YAML and drops old URL-only settings on conversion", () => {
+    mocks.store.sources = [{ ...urlSource, readOnceAttemptedUrls: [urlSource.content], includeRules: true }];
+    renderSection();
+    mocks.captures.sourceTypeChoices[0].onChange("yaml");
+    expect(mocks.store.setSources).toHaveBeenCalledWith([expect.objectContaining({ type: "yaml", tag: "HK", includeRules: true, readOnceAttemptedUrls: undefined, userinfoUrl: undefined })]);
+    mocks.store.sources = [{ ...urlSource, type: "yaml", readOnce: true }];
+    const { html } = renderSection({ 1: "s1" });
+    expect(html).toContain("本地上传");
+    expect(mocks.captures.inputs.some((props: any) => props.type === "file")).toBe(true);
+    expect(mocks.captures.editor.onLoadFile).toBeTypeOf("function");
+    mocks.captures.editor.onUpdateMeta("s1", { includeRules: true });
+    expect(mocks.markSourceAsPendingImport).toHaveBeenCalledWith(expect.objectContaining({ includeRules: true }));
+    expect(mocks.store.setSources.mock.calls.at(-1)[0][0].readOnceAttemptedUrls).toBeUndefined();
+  });
   it("renders source status, errors, add controls, and the expanded editor", () => {
     renderSection({ 0: true, 1: "s1" });
 

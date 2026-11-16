@@ -223,6 +223,12 @@ describe("subscription auto-update state helpers", () => {
             content: "https://example.com/sub",
           },
           {
+            id: "uploaded",
+            type: "yaml",
+            content: "proxies: []",
+            readOnce: true,
+          },
+          {
             id: "provider",
             type: "url",
             content: "https://provider.example.com/sub",

@@ -11,12 +11,14 @@ import { Input } from "@subboost/ui/components/ui/input";
 import { Switch } from "@subboost/ui/components/ui/switch";
 import { Textarea } from "@subboost/ui/components/ui/textarea";
 import type { SubscriptionSource } from "@subboost/ui/store/config-store";
+import { LocalSourceFileInput, type LoadSourceFile } from "./local-source-file-input";
 import { sourceTypeInfo } from "./source-type-info";
 
 export type SourceEditorDialogProps = {
   source: SubscriptionSource | null;
   previewName: string;
   onClose: () => void;
+  onLoadFile: LoadSourceFile;
   onUpdateContent: (id: string, content: string) => void;
   onUpdateMeta: (id: string, patch: Partial<SubscriptionSource>) => void;
 };
@@ -25,6 +27,7 @@ export function SourceEditorDialog({
   source,
   previewName,
   onClose,
+  onLoadFile,
   onUpdateContent,
   onUpdateMeta,
 }: SourceEditorDialogProps) {
@@ -71,11 +74,12 @@ export function SourceEditorDialog({
               <div className="flex items-center justify-between gap-3 text-xs"><span>使用此来源的规则</span>
                 <Switch disabled={Boolean(consumedReadOnce && !source.ruleSnapshot)} aria-label="使用此来源的规则" checked={source.includeRules === true} onCheckedChange={(includeRules) => onUpdateMeta(source.id, { includeRules, ...(includeRules ? { useProxyProviders: false } : {}) })} />
               </div>
-              <p className="text-[11px] text-fg-40">导入同一份完整 Clash 响应中的节点、策略组和规则。仅有节点的订阅无法作为规则来源；开启后关闭客户端直连模式。已读取的阅后即焚来源没有规则快照时，需先关闭阅后即焚再导入规则。</p>
+              <p className="text-[11px] text-fg-40">导入同一份完整 Clash 配置中的节点、策略组和规则。仅有节点的订阅无法作为规则来源；开启后关闭客户端直连模式。已读取的阅后即焚来源没有规则快照时，需先关闭阅后即焚再导入规则。</p>
             </div>}
 
             <div className="space-y-1">
               <p className="text-xs text-fg-60">{sourceTypeInfo[source.type].label}</p>
+              {source.type === "yaml" && <LocalSourceFileInput sourceId={source.id} onLoadFile={onLoadFile} />}
               {source.type === "url" ? (
                 <div className="space-y-3">
                   <div className="space-y-1">

@@ -341,7 +341,7 @@ export function useSubscriptionLink({
                   id: s.id,
                   type: s.type,
                   ...(s.source?.trim() ? { source: s.source.trim() } : {}),
-                  ...(s.type === "url" && s.readOnce ? { readOnce: true } : {}),
+                  ...(s.readOnce ? { readOnce: true } : {}),
                   ...(s.readOnceAttemptedUrls ? { readOnceAttemptedUrls: s.readOnceAttemptedUrls } : {}),
                   ...(s.includeRules ? { includeRules: true, ruleSnapshot: s.ruleSnapshot, ruleTargets: s.ruleTargets } : {}),
                   content:

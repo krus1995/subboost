@@ -102,7 +102,7 @@ export function normalizeSavedSourcesForPersistence(
       type,
       content: type === "url" ? normalizeUrlContent(content) : content,
       ...(source ? { source } : {}),
-      ...(type === "url" && record.readOnce === true ? { readOnce: true } : {}),
+      ...(record.readOnce === true ? { readOnce: true } : {}),
       ...(type === "url" && Array.isArray(record.readOnceAttemptedUrls) ? { readOnceAttemptedUrls: [...new Set(record.readOnceAttemptedUrls.filter((url): url is string => typeof url === "string" && Boolean(url.trim())).map(normalizeUrlContent))] } : {}),
       ...(record.includeRules === true ? { includeRules: true } : {}),
       ...(ruleSnapshot ? { ruleSnapshot } : {}),

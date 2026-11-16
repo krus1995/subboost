@@ -1,5 +1,6 @@
 "use client";
 
+import { LocalSourceFileInput } from "@subboost/ui/product/converter/local-source-file-input";
 import { isReadOnceSourceConsumed } from "@subboost/ui/store/config-store/read-once-source";
 
 import { AlertCircle, Check, Loader2, Maximize2, Server, X, ChevronUp, ChevronDown } from "lucide-react";
@@ -24,6 +25,7 @@ export function InputSection({
   onToggle: () => void;
 }) {
   const {
+    loadSourceFile,
     addSource,
     closeExpandedSourceEditor,
     error: globalError,
@@ -151,6 +153,7 @@ export function InputSection({
                     )}
                   </div>
                 </div>
+                {source.type === "yaml" && <LocalSourceFileInput sourceId={source.id} onLoadFile={loadSourceFile} />}
                 {source.type === "url" ? (
                   <Input
                     value={source.content}
@@ -183,6 +186,7 @@ export function InputSection({
         source={expandedSource}
         previewName={expandedSourcePreviewName}
         onClose={closeExpandedSourceEditor}
+        onLoadFile={loadSourceFile}
         onUpdateContent={updateSource}
         onUpdateMeta={updateSourceMeta}
       />

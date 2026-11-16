@@ -207,7 +207,7 @@ export async function refreshNodeSnapshot(
     ? [...savedSources].sort((a, b) => Number(Boolean(b.includeRules)) - Number(Boolean(a.includeRules)))
     : savedSources;
   for (const source of orderedSources) {
-    if (source.type === "url" && source.readOnce) continue;
+    if (source.readOnce) continue;
     if (source.type === "url" && source.useProxyProviders) {
       if (source.includeRules) {
         refreshableSourceCount += 1;

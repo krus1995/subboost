@@ -193,7 +193,7 @@ export function useEditingSubscriptionLoader({
                           : lastParsedContent.trim()
                       )
                     : undefined,
-                readOnce: t === "url" && "readOnce" in item && item.readOnce === true,
+                readOnce: "readOnce" in item && item.readOnce === true,
                 readOnceAttemptedUrls: "readOnceAttemptedUrls" in item && Array.isArray(item.readOnceAttemptedUrls) ? item.readOnceAttemptedUrls.filter((url: unknown): url is string => typeof url === "string") : undefined,
                 includeRules: "includeRules" in item && item.includeRules === true,
                 ruleSnapshot: normalizeSourceRuleSnapshot("ruleSnapshot" in item ? item.ruleSnapshot : undefined),

@@ -571,7 +571,7 @@ describe("useEditingSubscriptionLoader", () => {
                   userinfoUrl: "",
                   userinfoUserAgent: "",
                 },
-                { type: "yaml", content: "proxies: []" },
+                { type: "yaml", content: "proxies: []", readOnce: true },
                 { type: "nodes", content: "ss://node" },
                 { id: "bad", type: "url", content: "" },
                 { type: "bad", content: "ignored" },
@@ -602,6 +602,7 @@ describe("useEditingSubscriptionLoader", () => {
       }),
       expect.objectContaining({
         id: "sub-src-1700000000000-2",
+        readOnce: true,
         type: "yaml",
         content: "proxies: []",
       }),

@@ -8,7 +8,7 @@ describe("normalizeSavedSourcesForPersistence", () => {
       { id: "local", type: "yaml", content: "proxies: []", readOnce: true, readOnceAttemptedUrls: ["https://once.invalid/sub"] },
     ]);
     expect(sources[0]).toEqual({ id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true, readOnceAttemptedUrls: ["https://once.invalid/sub"] });
-    expect(sources[1]).not.toHaveProperty("readOnce");
+    expect(sources[1]).toHaveProperty("readOnce", true);
     expect(sources[1]).not.toHaveProperty("readOnceAttemptedUrls");
     expect(normalizeSavedSourcesForPersistence(JSON.parse(JSON.stringify(sources)))).toEqual(sources);
   });

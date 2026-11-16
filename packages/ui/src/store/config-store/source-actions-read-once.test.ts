@@ -4,6 +4,36 @@ const mocks = getSourceActionMocks();
 const once = source({ id: "once", type: "url", content: "https://once.invalid/sub", readOnce: true, userinfoUrl: "https://usage.invalid/sub", userinfoUserAgent: "other-client" });
 beforeEach(resetSourceActionMocks);
 describe("read-once source imports", () => {
+  it("preserves an uploaded file snapshot with trailing newlines in a batch", async () => {
+    const uploaded = source({ id: "uploaded", type: "yaml", content: "file content\n", lastParsedContent: "file content", readOnce: true, parsed: true });
+    const normal = source({ id: "normal", type: "url", content: "https://normal.invalid/sub" });
+    mocks.fetchUrlContentInBrowser.mockResolvedValue({ content: "body", headers: {}, parseResult: parseResult([node("JP", { password: "new-secret" })]) });
+    const original = node("My renamed node", { _originName: "JP", _sourceIds: ["uploaded", "normal"] });
+    const store = createHarness({ sources: [uploaded, normal], nodes: [original] });
+    await store.actions.parseMultipleSources(store.getState().sources);
+    expect(mocks.parseSubscription).not.toHaveBeenCalled();
+    expect(store.getState().nodes).toContainEqual(expect.objectContaining({ name: "My renamed node", password: "secret", _sourceIds: ["uploaded"] }));
+    expect(store.getState().nodes).toContainEqual(expect.objectContaining({ password: "new-secret", _sourceIds: ["normal"] }));
+  });
+  it("allows intentional local file replacement and enabling its rules without a network request", async () => {
+    const content = `proxies:
+  - {name: JP, type: ss, server: jp.example, port: 443, cipher: aes-128-gcm, password: secret}
+proxy-groups:
+  - {name: Media, type: select, proxies: [JP]}
+rules:
+  - MATCH,Media
+`;
+    const uploaded = source({ id: "uploaded", content, readOnce: true, parsed: false, includeRules: true });
+    mocks.parseSubscription.mockReturnValue(parseResult([node("JP")]));
+    const store = createHarness({ sources: [uploaded] });
+    await store.actions.parseMultipleSources(store.getState().sources);
+    expect(store.getState().sources[0]).toMatchObject({ parsed: true, readOnce: true, ruleSnapshot: { rules: ["MATCH,Media"] } });
+    store.actions.setSources([{ ...store.getState().sources[0], content: content.replace("jp.example", "new.example"), parsed: false }]);
+    await store.actions.parseSingleSource("uploaded");
+    expect(mocks.parseSubscription).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchUrlContentInBrowser).not.toHaveBeenCalled();
+    expect(store.getState().sources[0].readOnceAttemptedUrls).toBeUndefined();
+  });
   it("requests the body once without a supplemental URL or identity and retains it in a batch", async () => {
     mocks.fetchUrlContentInBrowser.mockResolvedValue({ content: "body", headers: { "subscription-userinfo": "upload=1; total=100000" }, parseResult: parseResult([node("JP")]) });
     const store = createHarness({ sources: [once] });

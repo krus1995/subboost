@@ -93,6 +93,7 @@ function renderDialog(props: Partial<React.ComponentProps<typeof InputSourceEdit
     source: urlSource as any,
     previewName: "A-Node",
     onClose: vi.fn(),
+    onLoadFile: vi.fn().mockResolvedValue("loaded"),
     onUpdateContent: vi.fn(),
     onUpdateMeta: vi.fn(),
     ...props,
