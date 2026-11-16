@@ -374,6 +374,7 @@ describe("advanced mode InputSection", () => {
       content: "https://example.com/sub",
       tag: "HK",
       nameTemplate: "[{tag}] {name}",
+      includeRules: false,
       useProxyProviders: false,
       userinfoUrl: "https://example.com/userinfo",
       userinfoUserAgent: "clash",
@@ -396,6 +397,7 @@ describe("advanced mode InputSection", () => {
     expect((stateMock.setters[2] as any).lastValue).toEqual({
       id: "s3",
       content: "https://missing-meta.example/sub",
+      includeRules: false,
       tag: "",
       nameTemplate: "",
       useProxyProviders: false,
