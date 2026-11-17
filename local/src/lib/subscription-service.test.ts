@@ -4,6 +4,9 @@ import {
   buildSubscriptionCacheExpiry,
   buildSubscriptionFetchCallbacks,
   createSubscription,
+  getCompactSubscription,
+  subscriptionEditRevision,
+  SubscriptionEditConflictError,
   deleteSubscription,
   formatSubscription,
   formatSubscriptionDetail,
@@ -217,6 +220,39 @@ describe("local subscription service", () => {
     mocks.fetchSourceUserInfoHeadersDirect.mockResolvedValue({ "subscription-userinfo": "upload=1; total=2048" });
   });
 
+  it("reads compact details without repeating source content and ignores access timestamps in revisions", async () => {
+    const current = row({ encryptedConfig: JSON.stringify({ sources: [{ id: "yaml", type: "yaml", content: "yaml\n", lastParsedContent: "yaml" }] }) });
+    mocks.prisma.subscription.findFirst.mockResolvedValueOnce(current);
+    const compact = await getCompactSubscription("owner-1", "sub-1");
+    expect(compact?.subscription.config).toMatchObject({ sources: [{ content: "yaml\n", lastParsedContentIsContent: "trim" }] });
+    expect(compact?.editTransport.revision).toBe(subscriptionEditRevision(current));
+    expect(subscriptionEditRevision({ ...current, updatedAt: new Date(), lastAccessedAt: new Date() })).toBe(subscriptionEditRevision(current));
+    expect(subscriptionEditRevision({ ...current, ownerId: "another-owner" })).not.toBe(subscriptionEditRevision(current));
+    mocks.prisma.subscription.findFirst.mockResolvedValueOnce(null);
+    await expect(getCompactSubscription("another-owner", "sub-1")).resolves.toBeNull();
+  });
+
+  it("saves a compact rename without touching encrypted columns or generating YAML", async () => {
+    const current = row();
+    mocks.prisma.subscription.findFirst.mockResolvedValueOnce(current);
+    const result = await updateSubscription("owner-1", "sub-1", {
+      editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: { kind: "merge", fields: { name: { kind: "replace", value: "Rename" } }, remove: [] } },
+    });
+    expect(mocks.prisma.subscription.update).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: current.id, ownerId: "owner-1", encryptedConfig: current.encryptedConfig, encryptedNodes: current.encryptedNodes }),
+      data: { name: "Rename" }, include: { autoUpdateState: true },
+    });
+    expect(mocks.buildGenerateOptionsFromConfig).not.toHaveBeenCalled();
+    expect(result).toHaveProperty("editRevision");
+  });
+
+  it("rejects stale compact revisions before writing and races at the atomic update", async () => {
+    const current = row();
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: "stale", patch: {} } })).rejects.toBeInstanceOf(SubscriptionEditConflictError);
+    expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
+    mocks.prisma.subscription.update.mockRejectedValueOnce({ code: "P2025" });
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: { kind: "merge", fields: {}, remove: [] } } })).rejects.toBeInstanceOf(SubscriptionEditConflictError);
+  });
   it("formats subscription summaries and details from encrypted fields", () => {
     const summary = formatSubscription(row());
     expect(summary).toMatchObject({

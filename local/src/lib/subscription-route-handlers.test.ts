@@ -34,6 +34,8 @@ vi.mock("@local/lib/http", () => ({
   readJsonBody: mocks.readJsonBody,
 }));
 vi.mock("@local/lib/subscription-service", () => ({
+  SubscriptionEditConflictError: class extends Error {},
+  getCompactSubscription: vi.fn(),
   createSubscription: mocks.createSubscription,
   deleteSubscription: mocks.deleteSubscription,
   getSubscription: mocks.getSubscription,
