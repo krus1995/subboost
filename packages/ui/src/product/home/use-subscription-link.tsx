@@ -37,18 +37,15 @@ import {
   type ProductMode,
 } from "@subboost/ui/product/interactions";
 
-type EditingSubscription = {
-  id: string;
-  token: string;
-  name: string;
-  autoUpdateInterval: number | null;
-  smartNodeMatchingEnabled: boolean;
-};
+type EditingSubscription = import("./editing-subscription-types").EditingSubscription;
 
 export type HomeSubscriptionSaveInput = {
   isEditing: boolean;
   subscriptionId: string | null;
   payload: Record<string, unknown>;
+  baselinePayload?: Record<string, unknown>;
+  editRevision?: string;
+  editSourceIds?: string;
 };
 
 export type HomeSubscriptionAdapter = {
@@ -260,46 +257,7 @@ export function useSubscriptionLink({
   }, [fetchUser, initializeSubscriptionDialog, interactions, subscriptionAdapter]);
 
   // 创建订阅链接
-  const handleCreateSubscription = React.useCallback(async () => {
-    if (!subscriptionName.trim() || !generatedYaml) {
-      trackSubscriptionMutation(!generatedYaml ? "noInput" : "validationError");
-      return;
-    }
-
-    const hoursValue = Number(autoUpdateHours);
-    if (autoUpdateEnabled) {
-      if (!Number.isFinite(hoursValue) || hoursValue <= 0) {
-        trackSubscriptionMutation("validationError");
-        toast({ title: "自动更新间隔必须是有效小时数", variant: "warning" });
-        return;
-      }
-      if (autoUpdatePolicy.requireIntegerHours && !Number.isInteger(hoursValue)) {
-        trackSubscriptionMutation("validationError");
-        toast({ title: "自动更新间隔必须是整数小时", variant: "warning" });
-        return;
-      }
-      if (hoursValue < autoUpdatePolicy.minHours) {
-        trackSubscriptionMutation("validationError");
-        toast({
-          title: `自动更新最小间隔为 ${getAutoUpdateIntervalPolicyMinLabel(autoUpdatePolicy)}`,
-          variant: "warning",
-        });
-        return;
-      }
-    }
-
-    const nextAutoUpdateInterval = autoUpdateEnabled ? autoUpdateIntervalHoursToSeconds(hoursValue) : null;
-    if (!subscriptionAdapter?.saveSubscription) {
-      trackSubscriptionMutation("runtimeError");
-      toast({ title: "当前应用未配置订阅保存接口", variant: "destructive" });
-      return;
-    }
-
-    setIsCreatingSubscription(true);
-    const draftRevision = useConfigStore.getState().draftRevision;
-    const isCurrentDraft = () => useConfigStore.getState().draftRevision === draftRevision;
-
-    try {
+  const buildSavePayload = React.useCallback((settings: { name: string; autoUpdateInterval: number | null; smartNodeMatchingEnabled: boolean }): Record<string, unknown> => {
       const nodeNameFilter: NodeNameFilterConfig = useConfigStore.getState().nodeNameFilter;
       const subscriptionInfo: SubscriptionUserInfo = {};
       const sourceSubscriptionInfoById = new Map<string, SubscriptionUserInfo>();
@@ -312,10 +270,10 @@ export function useSubscriptionLink({
       }
       const hasSubscriptionInfo = hasSubscriptionUserInfo(subscriptionInfo);
 
-      const payload = {
-          name: subscriptionName,
+      return {
+          name: settings.name,
           templateId: appliedTemplateId,
-          autoUpdateInterval: nextAutoUpdateInterval,
+          autoUpdateInterval: settings.autoUpdateInterval,
           urls: storeSources
             .filter((s) => s.type === "url")
             .map((s) => s.content)
@@ -328,7 +286,7 @@ export function useSubscriptionLink({
           config: {
             template,
             appliedTemplateId,
-            smartNodeMatchingEnabled,
+            smartNodeMatchingEnabled: settings.smartNodeMatchingEnabled,
             nodeNameFilter,
             // 用于“我的订阅 → 编辑”恢复输入源（保留 YAML/节点链接/多个 URL 的顺序）
             sources: storeSources
@@ -411,10 +369,64 @@ export function useSubscriptionLink({
           },
         };
 
+
+  }, [appliedTemplateId, template, storeSources, nodes, deletedNodeNames, deletedNodes, enabledProxyGroups, hiddenProxyGroups, customRules, ruleOrder, customProxyGroups, customRuleSets, builtinRuleEdits, moduleRuleEditWarningAccepted, dialerProxyGroups, proxyGroupNameOverrides, listenerPorts, dnsYaml, ruleProviderBaseUrl, testUrl, testInterval, sharedHealthChecks, cnIpNoResolve, experimentalCnUseCnRuleSet]);
+  const saveBaseline = React.useRef<{ id: string; loadId?: string; payload: Record<string, unknown> } | null>(null);
+  React.useEffect(() => {
+    if (!editingSubscription) saveBaseline.current = null;
+    else if (saveBaseline.current?.id !== editingSubscription.id || saveBaseline.current?.loadId !== editingSubscription.editLoadId) {
+      saveBaseline.current = { id: editingSubscription.id, loadId: editingSubscription.editLoadId, payload: buildSavePayload(editingSubscription) };
+    }
+  }, [editingSubscription, buildSavePayload]);
+  const handleCreateSubscription = React.useCallback(async () => {
+    if (!subscriptionName.trim() || !generatedYaml) {
+      trackSubscriptionMutation(!generatedYaml ? "noInput" : "validationError");
+      return;
+    }
+
+    const hoursValue = Number(autoUpdateHours);
+    if (autoUpdateEnabled) {
+      if (!Number.isFinite(hoursValue) || hoursValue <= 0) {
+        trackSubscriptionMutation("validationError");
+        toast({ title: "自动更新间隔必须是有效小时数", variant: "warning" });
+        return;
+      }
+      if (autoUpdatePolicy.requireIntegerHours && !Number.isInteger(hoursValue)) {
+        trackSubscriptionMutation("validationError");
+        toast({ title: "自动更新间隔必须是整数小时", variant: "warning" });
+        return;
+      }
+      if (hoursValue < autoUpdatePolicy.minHours) {
+        trackSubscriptionMutation("validationError");
+        toast({
+          title: `自动更新最小间隔为 ${getAutoUpdateIntervalPolicyMinLabel(autoUpdatePolicy)}`,
+          variant: "warning",
+        });
+        return;
+      }
+    }
+
+    const nextAutoUpdateInterval = autoUpdateEnabled ? autoUpdateIntervalHoursToSeconds(hoursValue) : null;
+    if (!subscriptionAdapter?.saveSubscription) {
+      trackSubscriptionMutation("runtimeError");
+      toast({ title: "当前应用未配置订阅保存接口", variant: "destructive" });
+      return;
+    }
+
+    setIsCreatingSubscription(true);
+    const draftRevision = useConfigStore.getState().draftRevision;
+    const isCurrentDraft = () => useConfigStore.getState().draftRevision === draftRevision;
+
+    try {
+      const payload = buildSavePayload({ name: subscriptionName, autoUpdateInterval: nextAutoUpdateInterval, smartNodeMatchingEnabled });
+
       const response = await subscriptionAdapter.saveSubscription({
         isEditing: isEditingExistingSubscription,
         subscriptionId: editingSubscription?.id ?? null,
         payload,
+        baselinePayload: saveBaseline.current?.payload,
+        editRevision: editingSubscription?.editRevision,
+        editSourceIds: editingSubscription?.editSourceIds,
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -439,6 +451,7 @@ export function useSubscriptionLink({
       }
 
       if (response.ok) {
+        if (editingSubscription) saveBaseline.current = { id: editingSubscription.id, loadId: editingSubscription.editLoadId, payload };
         const token = data?.subscription?.token || editingSubscription?.token;
         const url =
           typeof data?.subscription?.subscriptionUrl === "string"
@@ -448,6 +461,7 @@ export function useSubscriptionLink({
         if (isEditingExistingSubscription && editingSubscription && token) {
           setEditingSubscription({
             ...editingSubscription,
+            ...(typeof data?.editTransport?.revision === "string" ? { editRevision: data.editTransport.revision, editSourceIds: typeof data.editTransport.sourceIds === "string" ? data.editTransport.sourceIds : editingSubscription.editSourceIds } : {}),
             name: subscriptionName,
             token,
             autoUpdateInterval: nextAutoUpdateInterval,
@@ -468,42 +482,19 @@ export function useSubscriptionLink({
       setIsCreatingSubscription(false);
     }
   }, [
-    appliedTemplateId,
+    buildSavePayload,
     autoUpdatePolicy,
     autoUpdateEnabled,
     autoUpdateHours,
     clearUser,
-    cnIpNoResolve,
-    experimentalCnUseCnRuleSet,
-    customProxyGroups,
-    customRuleSets,
-    builtinRuleEdits,
-    customRules,
-    ruleOrder,
-    deletedNodeNames,
-    deletedNodes,
-    dialerProxyGroups,
-    dnsYaml,
     editingSubscription,
-    enabledProxyGroups,
-    hiddenProxyGroups,
     generatedYaml,
     isEditingExistingSubscription,
-    listenerPorts,
     goToLogin,
-    moduleRuleEditWarningAccepted,
-    nodes,
-    proxyGroupNameOverrides,
-    ruleProviderBaseUrl,
     setEditingSubscription,
     smartNodeMatchingEnabled,
-    storeSources,
     subscriptionName,
     subscriptionAdapter,
-    template,
-    testInterval,
-    sharedHealthChecks,
-    testUrl,
     trackSubscriptionMutation,
   ]);
 

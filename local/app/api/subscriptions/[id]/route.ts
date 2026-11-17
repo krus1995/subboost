@@ -8,9 +8,9 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(_request: Request, { params }: RouteContext) {
+export async function GET(request: Request, { params }: RouteContext) {
   const { id } = await params;
-  return getSubscriptionResponse(id);
+  return getSubscriptionResponse(id, new URL(request.url).searchParams.get("editTransport") === "compact-v1");
 }
 
 export async function PUT(request: Request, { params }: RouteContext) {

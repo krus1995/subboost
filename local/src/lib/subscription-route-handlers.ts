@@ -1,3 +1,4 @@
+import { COMPACT_EDIT_VERSION, isObject } from "@subboost/core/subscription/compact-edit";
 import { withCurrentAdmin } from "@local/lib/api-auth";
 import { apiError, json, jsonBodyError, LOCAL_JSON_BODY_LIMITS, readJsonBody } from "@local/lib/http";
 import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
@@ -6,6 +7,8 @@ import {
   createSubscription,
   deleteSubscription,
   getSubscription,
+  getCompactSubscription,
+  SubscriptionEditConflictError,
   listSubscriptions,
   refreshSubscription,
   updateSubscription,
@@ -26,15 +29,19 @@ export async function createSubscriptionResponse(request: Request) {
 
     try {
       const subscription = await createSubscription(admin.id, parsedBody.value);
-      return json({ subscription }, 201);
+      return json({ subscription, ...("editRevision" in subscription ? { editTransport: { version: COMPACT_EDIT_VERSION, revision: subscription.editRevision, sourceIds: subscription.editSourceIds } } : {}) }, 201);
     } catch (error) {
       return apiError(error instanceof Error ? error.message : "Unable to create subscription.", "BAD_REQUEST", 400);
     }
   });
 }
 
-export async function getSubscriptionResponse(id: string) {
+export async function getSubscriptionResponse(id: string, compact = false) {
   return withCurrentAdmin(async (admin) => {
+    if (compact) {
+      const result = await getCompactSubscription(admin.id, id);
+      return result ? json(result) : apiError("Subscription not found.", "NOT_FOUND", 404);
+    }
     const subscription = await getSubscription(admin.id, id);
     if (!subscription) return apiError("Subscription not found.", "NOT_FOUND", 404);
     return json({ subscription });
@@ -53,8 +60,9 @@ export async function updateSubscriptionResponse(request: Request, id: string) {
     try {
       const subscription = await updateSubscription(admin.id, id, body);
       if (!subscription) return apiError("Subscription not found.", "NOT_FOUND", 404);
-      return json({ subscription });
+      return json({ subscription, ...(isObject(body) && isObject(body.editTransport) && "editRevision" in subscription ? { editTransport: { version: COMPACT_EDIT_VERSION, revision: subscription.editRevision, sourceIds: subscription.editSourceIds } } : {}) });
     } catch (error) {
+      if (error instanceof SubscriptionEditConflictError) return apiError(error.message, "CONFLICT", 409);
       return apiError(error instanceof Error ? error.message : "Unable to update subscription.", "BAD_REQUEST", 400);
     }
   });

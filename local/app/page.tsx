@@ -1,9 +1,13 @@
 "use client";
 
+import { compactSubscriptionClient } from "@local/lib/subscription-edit-client";
+
 import { HomeSurface, type HomeSurfaceAdapter } from "@subboost/ui/product/home/home-surface";
 import { readSourceImportResponse } from "@subboost/ui/product/client-response";
 import { createRulesProductApi } from "@subboost/ui/product/api-adapter";
 import { LOCAL_AUTO_UPDATE_POLICY } from "@local/lib/auto-update-policy";
+
+const compactSubscriptions = compactSubscriptionClient;
 
 const localHomeAdapter: HomeSurfaceAdapter = {
   loginHref: "/login",
@@ -31,21 +35,11 @@ const localHomeAdapter: HomeSurfaceAdapter = {
     },
     rules: createRulesProductApi(),
   },
-  loadSubscription: (id) => fetch(`/api/subscriptions/${encodeURIComponent(id)}`, { cache: "no-store" }),
+  loadSubscription: compactSubscriptions.loadSubscription,
   subscription: {
     loginHref: "/login",
     autoUpdateIntervalPolicy: LOCAL_AUTO_UPDATE_POLICY,
-    saveSubscription: ({ isEditing, subscriptionId, payload }) => {
-      const endpoint =
-        isEditing && subscriptionId
-          ? `/api/subscriptions/${encodeURIComponent(subscriptionId)}`
-          : "/api/subscriptions";
-      return fetch(endpoint, {
-        method: isEditing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    },
+    saveSubscription: compactSubscriptions.saveSubscription,
   },
 };
 
