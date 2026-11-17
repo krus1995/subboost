@@ -53,6 +53,8 @@ vi.mock("react", () => ({
   useCallback: mocks.useCallback,
   useMemo: mocks.useMemo,
   useState: mocks.useState,
+  useRef: (initial: unknown) => mocks.useState(() => ({ current: initial }))[0],
+  useEffect: (effect: () => void) => effect(),
 }));
 
 vi.mock("@subboost/ui/components/ui/toaster", () => ({

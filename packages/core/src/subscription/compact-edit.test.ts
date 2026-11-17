@@ -65,3 +65,35 @@ it("omits optional undefined fields that do not exist in JSON", () => {
   expect(createEditPatch(before, after)).toBeUndefined();
   expect(createEditPatch(JSON.parse(JSON.stringify(before)), after)).toBeUndefined();
 });
+
+it("clears normalized legacy config fields without retaining raw aliases", () => {
+  const raw = { config: { proxyGroupAdvanced: { " ai ": { includeRegex: "AI" } }, unknownExtension: { preserved: true } } };
+  const baseline = { config: { proxyGroupAdvanced: { ai: { includeRegex: "AI" } } } };
+  const cleared = { config: { proxyGroupAdvanced: {} } };
+  const patch = createEditPatch(baseline, cleared);
+  expect(patch).toMatchObject({ fields: { config: { fields: { proxyGroupAdvanced: { kind: "replace", value: {} } } } } });
+  const saved = applyEditPatch(raw, patch);
+  expect(saved).toEqual({ config: { proxyGroupAdvanced: {}, unknownExtension: { preserved: true } } });
+  expect(applyEditPatch(saved, createEditPatch(cleared, { config: { proxyGroupAdvanced: { ai: { excludeRegex: "exclude" } } } }))).toEqual({ config: { proxyGroupAdvanced: { ai: { excludeRegex: "exclude" } }, unknownExtension: { preserved: true } } });
+  expect(createEditPatch(cleared, { config: { proxyGroupAdvanced: {} } })).toBeUndefined();
+});
+
+it("replaces normalized source target maps while preserving its untouched snapshot", () => {
+  const rawSource = { ...source("one"), ruleTargets: { " Old ": { kind: "action", action: "DIRECT" } }, extension: "keep" };
+  const raw = { config: { sources: [rawSource], unknownExtension: true } };
+  const baseline = { config: { sources: [{ ...source("one"), ruleTargets: { Old: { kind: "action", action: "DIRECT" } } }] } };
+  const after = { config: { sources: [{ ...source("one"), ruleTargets: {} }] } };
+  const patch = createEditPatch(baseline, after);
+  expect(JSON.stringify(patch)).not.toMatch(/ruleSnapshot|yaml-one/);
+  expect(applyEditPatch(raw, patch)).toEqual({ config: { sources: [{ ...rawSource, ruleTargets: {} }], unknownExtension: true } });
+});
+
+it("uploads only the changed snapshot list", () => {
+  const beforeSource = { ...source("one"), ruleSnapshot: { groups: [{ name: "group", type: "select", proxies: ["DIRECT"] }], rules: ["MATCH,DIRECT"] } };
+  const before = { config: { sources: [beforeSource] } };
+  const after = { config: { sources: [{ ...beforeSource, ruleSnapshot: { ...beforeSource.ruleSnapshot, rules: ["MATCH,REJECT"] } }] } };
+  const patch = createEditPatch(before, after);
+  expect(JSON.stringify(patch)).toContain("MATCH,REJECT");
+  expect(JSON.stringify(patch)).not.toMatch(/groups|yaml-one/);
+  expect(applyEditPatch(before, patch)).toEqual(after);
+});

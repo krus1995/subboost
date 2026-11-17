@@ -36,8 +36,9 @@ export async function createSubscriptionResponse(request: Request) {
   });
 }
 
-export async function getSubscriptionResponse(id: string, compact = false) {
+export async function getSubscriptionResponse(id: string, compact: boolean | string = false) {
   return withCurrentAdmin(async (admin) => {
+    if (typeof compact === "string" && compact !== COMPACT_EDIT_VERSION) return apiError("Unsupported subscription edit transport.", "BAD_REQUEST", 400);
     if (compact) {
       const result = await getCompactSubscription(admin.id, id);
       return result ? json(result) : apiError("Subscription not found.", "NOT_FOUND", 404);

@@ -82,6 +82,11 @@ describe("local subscription route handlers", () => {
     mocks.jsonBodyError.mockImplementation(() => ({ message: "Invalid JSON body.", code: "BAD_REQUEST", status: 400 }));
   });
 
+  it("rejects an unsupported read transport", async () => {
+    await expect(getSubscriptionResponse("sub-1", "compact-v2")).resolves.toEqual({ message: "Unsupported subscription edit transport.", code: "BAD_REQUEST", status: 400 });
+    expect(mocks.getSubscription).not.toHaveBeenCalled();
+  });
+
   it("extracts subscription ids from query strings", () => {
     expect(getSubscriptionIdFromQuery(new Request("http://localhost/api/subscriptions?id=%20sub-1%20"))).toBe("sub-1");
     expect(getSubscriptionIdFromQuery(new Request("http://localhost/api/subscriptions"))).toBe("");

@@ -60,13 +60,13 @@ describe("local home page adapter", () => {
     expect((fetch as any).mock.calls.at(-1)[0]).toContain("excluded=auto%3Arule");
 
     await localAdapter.loadSubscription("space id");
-    expect((fetch as any).mock.calls.at(-1)[0]).toBe("/api/subscriptions/space%20id");
+    expect((fetch as any).mock.calls.at(-1)[0]).toBe("/api/subscriptions/space%20id?editTransport=compact-v1");
 
     await localAdapter.subscription.saveSubscription({ isEditing: false, subscriptionId: null, payload: { name: "new" } });
     expect((fetch as any).mock.calls.at(-1)[0]).toBe("/api/subscriptions");
     expect((fetch as any).mock.calls.at(-1)[1]).toEqual(expect.objectContaining({ method: "POST" }));
 
-    await localAdapter.subscription.saveSubscription({ isEditing: true, subscriptionId: "sub/1", payload: { name: "edit" } });
+    await localAdapter.subscription.saveSubscription({ isEditing: true, subscriptionId: "sub/1", baselinePayload: { name: "old" }, editRevision: "first-revision", payload: { name: "edit" } });
     expect((fetch as any).mock.calls.at(-1)[0]).toBe("/api/subscriptions/sub%2F1");
     expect((fetch as any).mock.calls.at(-1)[1]).toEqual(expect.objectContaining({ method: "PUT" }));
   });

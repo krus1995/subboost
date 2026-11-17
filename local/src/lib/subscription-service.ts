@@ -236,6 +236,7 @@ export async function createSubscription(ownerId: string, body: unknown): Promis
   if (!isRecord(body)) {
     throw new Error("Invalid request body.");
   }
+  if ("editTransport" in body && (!isRecord(body.editTransport) || body.editTransport.version !== COMPACT_EDIT_VERSION)) throw new Error("Unsupported subscription edit transport.");
   const compactCreate = isRecord(body.editTransport) && body.editTransport.version === COMPACT_EDIT_VERSION;
   if (compactCreate) {
     if (!isRecord(body.editTransport) || !isRecord(body.editTransport.payload)) throw new Error("Invalid compact subscription payload.");
@@ -273,6 +274,7 @@ export async function createSubscription(ownerId: string, body: unknown): Promis
 
 export async function updateSubscription(ownerId: string, id: string, body: unknown): Promise<SubscriptionSummary | null> {
   if (!isRecord(body)) throw new Error("Invalid request body.");
+  if ("editTransport" in body && (!isRecord(body.editTransport) || body.editTransport.version !== COMPACT_EDIT_VERSION)) throw new Error("Unsupported subscription edit transport.");
   const current = await prisma.subscription.findFirst({ where: { id, ownerId }, include: { autoUpdateState: true } });
   if (!current) return null;
 

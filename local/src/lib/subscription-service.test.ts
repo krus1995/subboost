@@ -1,3 +1,4 @@
+import { createEditPatch } from "@subboost/core/subscription/compact-edit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { load } from "js-yaml";
 import {
@@ -252,6 +253,33 @@ describe("local subscription service", () => {
     expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
     mocks.prisma.subscription.update.mockRejectedValueOnce({ code: "P2025" });
     await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: { kind: "merge", fields: {}, remove: [] } } })).rejects.toBeInstanceOf(SubscriptionEditConflictError);
+  });
+  it("clears a normalized legacy setting and keeps the cleared value across another save", async () => {
+    const config = { proxyGroupAdvanced: { " ai ": { includeRegex: "AI" } }, unknownExtension: { preserve: "value" } };
+    let current = row({ encryptedConfig: JSON.stringify(config) });
+    mocks.prisma.subscription.findFirst.mockImplementation(async () => current);
+    mocks.prisma.subscription.update.mockImplementation(async ({ data }) => {
+      current = { ...current, ...data };
+      return current;
+    });
+    const baseline = { config: { proxyGroupAdvanced: { ai: { includeRegex: "AI" } } } };
+    const cleared = { config: { proxyGroupAdvanced: {} } };
+    await updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: createEditPatch(baseline, cleared) } });
+    const reopened = await getSubscription("owner-1", "sub-1");
+    expect(reopened?.config).toMatchObject({ proxyGroupAdvanced: {}, unknownExtension: { preserve: "value" } });
+    expect(reopened?.config.proxyGroupAdvanced).toEqual({});
+    await updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: createEditPatch({ name: "Saved" }, { name: "Rename" }) } });
+    const reopenedAgain = await getSubscription("owner-1", "sub-1");
+    expect(reopenedAgain?.config.proxyGroupAdvanced).toEqual({});
+    expect(reopenedAgain?.config.unknownExtension).toEqual({ preserve: "value" });
+  });
+
+  it.each([null, {}, { version: "compact-v2" }])("rejects unknown edit transports before any read or write (%j)", async (editTransport) => {
+    await expect(createSubscription("owner-1", { editTransport, name: "Create", nodes: [node()] })).rejects.toThrow("Unsupported subscription edit transport.");
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport, name: "Rename" })).rejects.toThrow("Unsupported subscription edit transport.");
+    expect(mocks.prisma.subscription.findFirst).not.toHaveBeenCalled();
+    expect(mocks.prisma.subscription.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
   });
   it("formats subscription summaries and details from encrypted fields", () => {
     const summary = formatSubscription(row());

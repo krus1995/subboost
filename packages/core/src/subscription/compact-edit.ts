@@ -19,15 +19,24 @@ function sourceMap(value: unknown): Map<string, Record<string, unknown>> | null 
   return entries;
 }
 
-export function createEditPatch(before: unknown, after: unknown, sourceList = false): EditPatch | undefined {
+type PatchScope = "root" | "config" | "sources" | "source" | "snapshot" | "value";
+
+function childPatchScope(scope: PatchScope, key: string): PatchScope {
+  if (scope === "root" && key === "config") return "config";
+  if (scope === "config" && key === "sources") return "sources";
+  if (scope === "source" && key === "ruleSnapshot") return "snapshot";
+  return "value";
+}
+
+export function createEditPatch(before: unknown, after: unknown, scope: PatchScope = "root"): EditPatch | undefined {
   if (Object.is(before, after)) return undefined;
-  if (sourceList) {
+  if (scope === "sources") {
     const oldSources = sourceMap(before);
     const newSources = sourceMap(after);
     if (oldSources && newSources) {
       const fields: Record<string, EditPatch> = Object.create(null);
       for (const [id, source] of newSources) {
-        const patch = createEditPatch(oldSources.get(id), source);
+        const patch = createEditPatch(oldSources.get(id), source, "source");
         if (patch) fields[id] = patch;
       }
       const order = [...newSources.keys()];
@@ -37,11 +46,12 @@ export function createEditPatch(before: unknown, after: unknown, sourceList = fa
       return undefined;
     }
   }
-  if (isObject(before) && isObject(after)) {
+  if (scope !== "value" && isObject(before) && isObject(after)) {
     const fields: Record<string, EditPatch> = Object.create(null);
     for (const [key, value] of Object.entries(after)) {
       if (value === undefined) continue;
-      const patch = createEditPatch(Object.hasOwn(before, key) ? before[key] : undefined, value, key === "sources");
+      const previous = Object.hasOwn(before, key) ? before[key] : undefined;
+      const patch = createEditPatch(previous, value, childPatchScope(scope, key));
       if (patch) fields[key] = patch;
     }
     const remove = Object.keys(before).filter(key => before[key] !== undefined && (!Object.hasOwn(after, key) || after[key] === undefined));

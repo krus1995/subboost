@@ -10,7 +10,7 @@ type RouteContext = {
 
 export async function GET(request: Request, { params }: RouteContext) {
   const { id } = await params;
-  return getSubscriptionResponse(id, new URL(request.url).searchParams.get("editTransport") === "compact-v1");
+  return getSubscriptionResponse(id, new URL(request.url).searchParams.get("editTransport") ?? false);
 }
 
 export async function PUT(request: Request, { params }: RouteContext) {
