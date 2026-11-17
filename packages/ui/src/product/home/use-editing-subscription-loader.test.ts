@@ -152,6 +152,16 @@ describe("useEditingSubscriptionLoader", () => {
     });
   });
 
+  it("expands compact YAML once and carries its revision into a new load identity", async () => {
+    const options = makeOptions({ loadSubscription: vi.fn(async () => response(200, {
+      editTransport: { version: "compact-v1", revision: "revision-one" },
+      subscription: { id: "sub-1", token: "token", name: "Compact", urls: [], nodes: [], config: { sources: [{ id: "yaml", type: "yaml", content: "yaml\n", lastParsedContentIsContent: "trim" }] } },
+    })) });
+    useEditingSubscriptionLoader(options);
+    await flushAsync();
+    expect(options.setStoreSources).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: "yaml", content: "yaml\n", lastParsedContent: "yaml" })]));
+    expect(options.setEditingSubscription).toHaveBeenCalledWith(expect.objectContaining({ editRevision: "revision-one", editSourceIds: '["yaml"]', editLoadId: expect.any(String) }));
+  });
   it.each([null, "sub-1"])("waits for authentication and skips absent edit IDs (%s)", async (id) => {
     const options = makeOptions({ editSubscriptionId: id, authChecked: false });
 

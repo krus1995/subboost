@@ -1,9 +1,13 @@
+import { createEditPatch } from "@subboost/core/subscription/compact-edit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { load } from "js-yaml";
 import {
   buildSubscriptionCacheExpiry,
   buildSubscriptionFetchCallbacks,
   createSubscription,
+  getCompactSubscription,
+  subscriptionEditRevision,
+  SubscriptionEditConflictError,
   deleteSubscription,
   formatSubscription,
   formatSubscriptionDetail,
@@ -217,6 +221,104 @@ describe("local subscription service", () => {
     mocks.fetchSourceUserInfoHeadersDirect.mockResolvedValue({ "subscription-userinfo": "upload=1; total=2048" });
   });
 
+  it("reads compact details without repeating source content and ignores access timestamps in revisions", async () => {
+    const current = row({ encryptedConfig: JSON.stringify({ sources: [{ id: "yaml", type: "yaml", content: "yaml\n", lastParsedContent: "yaml" }] }) });
+    mocks.prisma.subscription.findFirst.mockResolvedValueOnce(current);
+    const compact = await getCompactSubscription("owner-1", "sub-1");
+    expect(compact?.subscription.config).toMatchObject({ sources: [{ content: "yaml\n", lastParsedContentIsContent: "trim" }] });
+    expect(compact?.editTransport.revision).toBe(subscriptionEditRevision(current));
+    expect(subscriptionEditRevision({ ...current, updatedAt: new Date(), lastAccessedAt: new Date() })).toBe(subscriptionEditRevision(current));
+    expect(subscriptionEditRevision({ ...current, ownerId: "another-owner" })).not.toBe(subscriptionEditRevision(current));
+    mocks.prisma.subscription.findFirst.mockResolvedValueOnce(null);
+    await expect(getCompactSubscription("another-owner", "sub-1")).resolves.toBeNull();
+  });
+
+  it("saves a compact rename without touching encrypted columns or generating YAML", async () => {
+    const current = row();
+    mocks.prisma.subscription.findFirst.mockResolvedValueOnce(current);
+    const result = await updateSubscription("owner-1", "sub-1", {
+      editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: { kind: "merge", fields: { name: { kind: "replace", value: "Rename" } }, remove: [] } },
+    });
+    expect(mocks.prisma.subscription.update).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: current.id, ownerId: "owner-1", encryptedConfig: current.encryptedConfig, encryptedNodes: current.encryptedNodes }),
+      data: { name: "Rename" }, include: { autoUpdateState: true },
+    });
+    expect(mocks.buildGenerateOptionsFromConfig).not.toHaveBeenCalled();
+    expect(result).toHaveProperty("editRevision");
+  });
+
+  it("rejects stale compact revisions before writing and races at the atomic update", async () => {
+    const current = row();
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: "stale", patch: {} } })).rejects.toBeInstanceOf(SubscriptionEditConflictError);
+    expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
+    mocks.prisma.subscription.update.mockRejectedValueOnce({ code: "P2025" });
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: { kind: "merge", fields: {}, remove: [] } } })).rejects.toBeInstanceOf(SubscriptionEditConflictError);
+  });
+  it("clears a normalized legacy setting and keeps the cleared value across another save", async () => {
+    const config = { proxyGroupAdvanced: { " ai ": { includeRegex: "AI" } }, unknownExtension: { preserve: "value" } };
+    let current = row({ encryptedConfig: JSON.stringify(config) });
+    mocks.prisma.subscription.findFirst.mockImplementation(async () => current);
+    mocks.prisma.subscription.update.mockImplementation(async ({ data }) => {
+      current = { ...current, ...data };
+      return current;
+    });
+    const baseline = { config: { proxyGroupAdvanced: { ai: { includeRegex: "AI" } } } };
+    const cleared = { config: { proxyGroupAdvanced: {} } };
+    await updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: createEditPatch(baseline, cleared) } });
+    const reopened = await getSubscription("owner-1", "sub-1");
+    expect(reopened?.config).toMatchObject({ proxyGroupAdvanced: {}, unknownExtension: { preserve: "value" } });
+    expect(reopened?.config.proxyGroupAdvanced).toEqual({});
+    await updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(current), patch: createEditPatch({ name: "Saved" }, { name: "Rename" }) } });
+    const reopenedAgain = await getSubscription("owner-1", "sub-1");
+    expect(reopenedAgain?.config.proxyGroupAdvanced).toEqual({});
+    expect(reopenedAgain?.config.unknownExtension).toEqual({ preserve: "value" });
+  });
+
+  it.each([null, {}, { version: "compact-v2" }])("rejects unknown edit transports before any read or write (%j)", async (editTransport) => {
+    await expect(createSubscription("owner-1", { editTransport, name: "Create", nodes: [node()] })).rejects.toThrow("Unsupported subscription edit transport.");
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport, name: "Rename" })).rejects.toThrow("Unsupported subscription edit transport.");
+    expect(mocks.prisma.subscription.findFirst).not.toHaveBeenCalled();
+    expect(mocks.prisma.subscription.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
+  });
+  it("creates a compact local source, expands the single body and returns edit metadata", async () => {
+    const result = await createSubscription("owner-1", { editTransport: { version: "compact-v1", payload: {
+      name: "Compact", nodes: [node()], config: { sources: [{ id: "yaml", type: "yaml", content: "proxies: []", lastParsedContentIsContent: true }] },
+    } } });
+    expect(mocks.prisma.subscription.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ encryptedConfig: expect.stringContaining('"lastParsedContent":"proxies: []"') }) }));
+    expect(result).toMatchObject({ editRevision: expect.any(String), editSourceIds: '["yaml"]' });
+  });
+
+  it.each([undefined, null, []])("rejects a compact create without an object payload (%j)", async payload => {
+    await expect(createSubscription("owner-1", { editTransport: { version: "compact-v1", payload } })).rejects.toThrow("Invalid compact subscription payload.");
+    expect(mocks.prisma.subscription.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ kind: "replace", value: [] }, "Invalid compact subscription patch."],
+    [{ kind: "merge", fields: { ownerId: { kind: "replace", value: "another-owner" } }, remove: [] }, "Invalid subscription edit field."],
+  ])("refuses compact edits that replace the object or introduce a noneditable field", async (patch, message) => {
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(row()), patch } })).rejects.toThrow(String(message));
+    expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
+  });
+
+  it("clears subscription traffic info with a compact edit", async () => {
+    await updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(row()), patch: { kind: "merge", fields: { subscriptionInfo: { kind: "replace", value: null } }, remove: [] } } });
+    expect(mocks.prisma.subscription.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ encryptedSubscriptionInfo: "{}" }) }));
+  });
+
+  it.each([null, { code: "UNEXPECTED_DATABASE_FAILURE" }])("preserves unrelated compact save failures (%j)", async failure => {
+    mocks.prisma.subscription.update.mockRejectedValueOnce(failure);
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(row()), patch: { kind: "merge", fields: {}, remove: [] } } })).rejects.toBe(failure);
+  });
+
+  it("validates a URL-only compact create and compiles imported rules when present", async () => {
+    await createSubscription("owner-1", { editTransport: { version: "compact-v1", payload: { name: "URL only", urls: ["https://example.test/sub"] } } });
+    expect(mocks.buildGenerateOptionsFromConfig).not.toHaveBeenCalled();
+    mocks.buildGenerateOptionsFromConfig.mockReturnValueOnce({ nodes: [node()], sourceRules: [{}] });
+    await createSubscription("owner-1", { editTransport: { version: "compact-v1", payload: { name: "Rules", nodes: [node()] } } });
+    expect(mocks.generateClashYaml).toHaveBeenCalledOnce();
+  });
   it("formats subscription summaries and details from encrypted fields", () => {
     const summary = formatSubscription(row());
     expect(summary).toMatchObject({

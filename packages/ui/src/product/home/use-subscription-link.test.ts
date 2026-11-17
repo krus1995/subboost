@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("react", () => ({
   useCallback: mocks.useCallback,
+  useEffect: (effect: () => void) => effect(),
+  useRef: (value: unknown) => mocks.useState({ current: value })[0],
   useMemo: mocks.useMemo,
   useState: mocks.useState,
 }));
@@ -290,6 +292,57 @@ describe("useSubscriptionLink", () => {
     );
   });
 
+  it("keeps the restored save baseline and advances it after a successful save", async () => {
+    const setEditingSubscription = vi.fn();
+    const editingSubscription = { id: "sub", token: "token", name: "Original", autoUpdateInterval: null, smartNodeMatchingEnabled: true, editRevision: "revision-one", editSourceIds: "[null]", editLoadId: "load-one" };
+    const adapter = makeAdapter({ saveSubscription: vi.fn(async () => response(200, { subscription: { token: "token", subscriptionUrl: "https://example.test/sub" }, editTransport: { revision: "revision-two", sourceIds: "[null]" } })) });
+    const options = { editingSubscription, subscriptionAdapter: adapter, setEditingSubscription };
+    let hook = useRenderedHook(options);
+    hook.setSubscriptionName("Rename");
+    hook = useRenderedHook(options);
+    await hook.handleCreateSubscription();
+    expect(adapter.saveSubscription).toHaveBeenCalledWith(expect.objectContaining({ baselinePayload: expect.objectContaining({ name: "Original" }), payload: expect.objectContaining({ name: "Rename" }), editRevision: "revision-one" }));
+    const nextEditing = setEditingSubscription.mock.calls[0][0];
+    expect(nextEditing).toMatchObject({ editRevision: "revision-two", editSourceIds: "[null]", editLoadId: "load-one" });
+    hook = useRenderedHook({ ...options, editingSubscription: nextEditing });
+    hook.setSubscriptionName("Again");
+    hook = useRenderedHook({ ...options, editingSubscription: nextEditing });
+    await hook.handleCreateSubscription();
+    expect(adapter.saveSubscription).toHaveBeenLastCalledWith(expect.objectContaining({ baselinePayload: expect.objectContaining({ name: "Rename" }), payload: expect.objectContaining({ name: "Again" }), editRevision: "revision-two" }));
+  });
+
+  it("rebuilds the baseline when the same subscription is freshly loaded", async () => {
+    const adapter = makeAdapter();
+    const editing = { id: "sub", token: "token", name: "Old retained draft", autoUpdateInterval: null, smartNodeMatchingEnabled: true, editLoadId: "old-load" };
+    useRenderedHook({ editingSubscription: editing, subscriptionAdapter: adapter });
+    const loaded = { ...editing, name: "Freshly loaded", editLoadId: "fresh-load" };
+    let hook = useRenderedHook({ editingSubscription: loaded, subscriptionAdapter: adapter });
+    hook.setSubscriptionName("Rename fresh");
+    hook = useRenderedHook({ editingSubscription: loaded, subscriptionAdapter: adapter });
+    await hook.handleCreateSubscription();
+    expect(adapter.saveSubscription).toHaveBeenCalledWith(expect.objectContaining({ baselinePayload: expect.objectContaining({ name: "Freshly loaded" }) }));
+  });
+  it("retains authoritative source identities when a save returns only a new revision", async () => {
+    const setEditingSubscription = vi.fn();
+    const editingSubscription = { id: "sub", token: "token", name: "Saved", autoUpdateInterval: null, smartNodeMatchingEnabled: true, editRevision: "old", editSourceIds: "[null]", editLoadId: "load" };
+    const adapter = makeAdapter({ saveSubscription: vi.fn(async () => response(200, { subscription: { token: "token" }, editTransport: { revision: "new" } })) });
+    let hook = useRenderedHook({ editingSubscription, subscriptionAdapter: adapter, setEditingSubscription });
+    hook.setSubscriptionName("Rename");
+    hook = useRenderedHook({ editingSubscription, subscriptionAdapter: adapter, setEditingSubscription });
+    await hook.handleCreateSubscription();
+    expect(setEditingSubscription).toHaveBeenCalledWith(expect.objectContaining({ editRevision: "new", editSourceIds: "[null]" }));
+  });
+
+  it("preserves attempted one-time URLs and the invalid original input for a failed save", async () => {
+    const adapter = makeAdapter({ saveSubscription: vi.fn(async () => response(400, { error: "Invalid URL" })) });
+    const storeSources = [{ id: "url", type: "url", content: "not a subscription URL", readOnce: true, readOnceAttemptedUrls: ["not a subscription URL"] }];
+    let hook = useRenderedHook({ storeSources, subscriptionAdapter: adapter });
+    hook.setSubscriptionName("Invalid source draft");
+    hook = useRenderedHook({ storeSources, subscriptionAdapter: adapter });
+    await hook.handleCreateSubscription();
+    expect(adapter.saveSubscription).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ config: expect.objectContaining({ sources: [expect.objectContaining({ content: "not a subscription URL", lastParsedContent: "not a subscription URL", readOnceAttemptedUrls: ["not a subscription URL"] })] }) }) }));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid URL" }));
+  });
   it.each(["success", "unauthorized", "rejected"])("ignores a late %s save after the draft is reset", async (kind) => {
     const clearUser = vi.fn();
     const adapter = makeAdapter({ saveSubscription: vi.fn(async () => {

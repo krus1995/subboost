@@ -126,6 +126,60 @@ async function checkSourceRouting() {
   for (const path of profiles.keys()) expectRequests(path, ["GET", "GET"]);
   console.log("source routing HTTP acceptance passed: saved labels and region, ordered rules and bindings, atomic refresh");
 }
+async function checkCompactEditing() {
+  const yaml = dump(fixtureProfile("File", 4300)).trim();
+  const snapshot = { groups: fixtureProfile("File", 4300)["proxy-groups"], rules: ["DOMAIN,video.example,Media", "MATCH,Media"] };
+  const source = { id: "file", type: "yaml", content: yaml, lastParsedContent: yaml, readOnce: true, includeRules: true, ruleSnapshot: snapshot };
+  const { subscription } = await api("/api/subscriptions", { method: "POST", status: 201, body: {
+    name: "Compact editor", nodes: fixtureProfile("File", 4300).proxies.map(n => ({ ...n, _sourceIds: [source.id] })),
+    config: { enabledGroups: [], sources: [source] },
+  } });
+  sampleIds.push(subscription.id);
+  const item = "/api/subscriptions/" + subscription.id;
+  const optIn = item + "?editTransport=compact-v1";
+  const before = (await api(item)).subscription;
+  const compact = await api(optIn);
+  const packedSource = compact.subscription.config.sources[0];
+  assert.equal(packedSource.content, yaml);
+  assert.equal(packedSource.lastParsedContent, undefined);
+  assert.equal(packedSource.lastParsedContentIsContent, true);
+  assert.deepEqual(packedSource.ruleSnapshot, before.config.sources[0].ruleSnapshot);
+  const format = "compact-v1";
+  assert.equal(compact.editTransport.version, format);
+
+  const exportUrl = appUrl + "/api/subscriptions/" + subscription.token + "/config.yaml";
+  const original = await fetch(exportUrl);
+  assert.equal(original.status, 200);
+  const expectedProfile = await original.text();
+  const replace = value => ({ kind: "replace", value });
+  const merge = fields => ({ kind: "merge", fields, remove: [] });
+  const save = (revision, patch, status = 200) => api(optIn, { method: "PUT", status,
+    body: { editTransport: { version: format, revision, patch } },
+  });
+  const renamed = await save(compact.editTransport.revision, merge({ name: replace("Edited name") }));
+  assert.notEqual(renamed.editTransport.revision, compact.editTransport.revision);
+  await save(compact.editTransport.revision, merge({ name: replace("Stale save") }), 409);
+  const tag = value => merge({ config: merge({ sources: { kind: "sources", order: ["file"],
+    fields: { file: merge({ tag: replace(value) }) },
+  } }) });
+  const tagged = await save(renamed.editTransport.revision, tag("local file"));
+  const reopened = (await api(item)).subscription;
+  assert.equal(reopened.name, "Edited name");
+  assert.deepEqual(reopened.nodes, before.nodes);
+  assert.deepEqual(reopened.config.sources, [{ ...before.config.sources[0], tag: "local file" }]);
+  const exported = await fetch(exportUrl);
+  assert.equal(exported.status, 200);
+  assert.equal(await exported.text(), expectedProfile);
+  const race = await Promise.all(["First edit", "Second edit"].map(name => fetch(appUrl + optIn, {
+    method: "PUT", headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ editTransport: { version: format, revision: tagged.editTransport.revision, patch: merge({ name: replace(name) }) } }),
+  })));
+  assert.deepEqual(race.map(result => result.status).sort(), [200, 409]);
+  const winner = await race.find(result => result.ok).json();
+  assert.equal((await api(item)).subscription.name, winner.subscription.name);
+  console.log("compact editing HTTP acceptance passed: legacy read, single YAML copy, delta saves, public reads and concurrent edits");
+}
+
 async function checkReadOnceSources() {
   const frozenPath = "/read-once";
   const normalPath = "/read-once-normal";
@@ -249,6 +303,7 @@ try {
   console.log("subscription HTTP counts passed for manual import, refresh, upstream errors and scheduled refresh");
   await checkSourceRouting();
   await checkReadOnceSources();
+  await checkCompactEditing();
 } finally {
   for (const id of sampleIds) await api("/api/subscriptions/" + id, { method: "DELETE" });
   if (originalSettings) await api("/api/settings/source-import", { method: "PATCH", body: originalSettings });

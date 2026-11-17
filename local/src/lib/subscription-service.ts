@@ -1,4 +1,5 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { applyEditPatch, compactEditPayload, expandEditPayload, editSourceIds, COMPACT_EDIT_VERSION } from "@subboost/core/subscription/compact-edit";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { generateClashYaml } from "@subboost/core/generator";
 import { generateLoonConfig } from "@subboost/core/generator/loon";
 import { loadLoonRuleList } from "./loon-rule-list";
@@ -78,6 +79,8 @@ export type SubscriptionSummary = {
   lastUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  editRevision?: string;
+  editSourceIds?: string;
   autoUpdateState: {
     externalFailureCount: number;
     lastFailedAt: string | null;
@@ -174,8 +177,7 @@ export function readSubscriptionSecrets(row: SubscriptionRow) {
   };
 }
 
-export function formatSubscription(row: SubscriptionRow): SubscriptionSummary {
-  const secrets = readSubscriptionSecrets(row);
+export function formatSubscription(row: SubscriptionRow, secrets = readSubscriptionSecrets(row)): SubscriptionSummary {
   const subscriptionUrl = buildLocalSubscriptionUrl(row.token);
   return serializeSubscriptionSummaryData(row, secrets, {
     subscriptionUrl,
@@ -206,13 +208,41 @@ export async function listSubscriptions(ownerId: string): Promise<SubscriptionSu
     include: { autoUpdateState: true },
     orderBy: { updatedAt: "desc" },
   });
-  return rows.map(formatSubscription);
+  return rows.map(row => formatSubscription(row));
+}
+
+export class SubscriptionEditConflictError extends Error {
+  constructor() { super("订阅已在其他页面或后台更新，请保留当前草稿并重新打开后保存。"); }
+}
+
+export function subscriptionEditRevision(row: SubscriptionRow): string {
+  return createHash("sha256").update(JSON.stringify([
+    row.id, row.ownerId, row.name, row.autoUpdateInterval,
+    row.encryptedUrls, row.encryptedNodes, row.encryptedConfig, row.encryptedSubscriptionInfo,
+  ])).digest("hex");
+}
+
+export async function getCompactSubscription(ownerId: string, id: string) {
+  const row = await prisma.subscription.findFirst({ where: { id, ownerId }, include: { autoUpdateState: true } });
+  if (!row) return null;
+  const detail = formatSubscriptionDetail(row);
+  return {
+    subscription: compactEditPayload(detail),
+    editTransport: { version: COMPACT_EDIT_VERSION, revision: subscriptionEditRevision(row), sourceIds: editSourceIds(detail) },
+  };
 }
 
 export async function createSubscription(ownerId: string, body: unknown): Promise<SubscriptionSummary> {
   if (!isRecord(body)) {
     throw new Error("Invalid request body.");
   }
+  if ("editTransport" in body && (!isRecord(body.editTransport) || body.editTransport.version !== COMPACT_EDIT_VERSION)) throw new Error("Unsupported subscription edit transport.");
+  const compactCreate = isRecord(body.editTransport) && body.editTransport.version === COMPACT_EDIT_VERSION;
+  if (compactCreate) {
+    if (!isRecord(body.editTransport) || !isRecord(body.editTransport.payload)) throw new Error("Invalid compact subscription payload.");
+    body = expandEditPayload(body.editTransport.payload);
+  }
+  if (!isRecord(body)) throw new Error("Invalid request body.");
   const name = normalizeSubscriptionName(body.name);
   if (!name) throw new Error("Subscription name is required.");
 
@@ -238,15 +268,33 @@ export async function createSubscription(ownerId: string, body: unknown): Promis
     },
     include: { autoUpdateState: true },
   });
-  return formatSubscription(row);
+  const summary = formatSubscription(row, { urls, nodes, config, subscriptionInfo });
+  return compactCreate ? { ...summary, editRevision: subscriptionEditRevision(row), editSourceIds: editSourceIds({ config }) } : summary;
 }
 
 export async function updateSubscription(ownerId: string, id: string, body: unknown): Promise<SubscriptionSummary | null> {
   if (!isRecord(body)) throw new Error("Invalid request body.");
+  if ("editTransport" in body && (!isRecord(body.editTransport) || body.editTransport.version !== COMPACT_EDIT_VERSION)) throw new Error("Unsupported subscription edit transport.");
   const current = await prisma.subscription.findFirst({ where: { id, ownerId }, include: { autoUpdateState: true } });
   if (!current) return null;
 
   const currentSecrets = readSubscriptionSecrets(current);
+  const compactEdit = isRecord(body.editTransport) && body.editTransport.version === COMPACT_EDIT_VERSION;
+  if (compactEdit) {
+    const transport = body.editTransport;
+    if (!isRecord(transport) || transport.revision !== subscriptionEditRevision(current)) throw new SubscriptionEditConflictError();
+    const editable: Record<string, unknown> = {
+      name: current.name, autoUpdateInterval: current.autoUpdateInterval, ...currentSecrets,
+    };
+    const compactCurrent = compactEditPayload(editable);
+    const patched = applyEditPatch(compactCurrent, transport.patch);
+    if (!isRecord(patched)) throw new Error("Invalid compact subscription patch.");
+    const allowedFields = new Set(["name", "autoUpdateInterval", "urls", "nodes", "config", "subscriptionInfo", "templateId"]);
+    if (Object.keys(patched).some(key => !allowedFields.has(key))) throw new Error("Invalid subscription edit field.");
+    const changes = Object.fromEntries(Object.entries(patched).filter(([key, value]) => value !== compactCurrent[key]));
+    body = expandEditPayload(changes);
+  }
+  if (!isRecord(body)) throw new Error("Invalid request body.");
   const name = normalizeSubscriptionName(body.name) || current.name;
   const data: Record<string, unknown> = { name };
   const hasUrls = "urls" in body;
@@ -293,12 +341,25 @@ export async function updateSubscription(ownerId: string, id: string, body: unkn
       });
     }
     return tx.subscription.update({
-      where: { id: current.id },
+      where: compactEdit ? {
+        id: current.id, ownerId,
+        name: current.name, autoUpdateInterval: current.autoUpdateInterval,
+        encryptedUrls: current.encryptedUrls, encryptedNodes: current.encryptedNodes,
+        encryptedConfig: current.encryptedConfig, encryptedSubscriptionInfo: current.encryptedSubscriptionInfo,
+      } : { id: current.id },
       data,
       include: { autoUpdateState: true },
     });
+  }).catch((error: unknown) => {
+    if (compactEdit && isRecord(error) && error.code === "P2025") throw new SubscriptionEditConflictError();
+    throw error;
   });
-  return formatSubscription(row);
+  const summary = formatSubscription(row, {
+    urls: hasUrls ? normalizeSubscriptionUrlList(body.urls) : currentSecrets.urls,
+    nodes: nextNodes, config: nextConfig,
+    subscriptionInfo: "subscriptionInfo" in body ? normalizeSubscriptionInfoForPersistence(body.subscriptionInfo) ?? {} : currentSecrets.subscriptionInfo,
+  });
+  return compactEdit ? { ...summary, editRevision: subscriptionEditRevision(row), editSourceIds: editSourceIds({ config: nextConfig }) } : summary;
 }
 
 export async function getSubscription(ownerId: string, id: string): Promise<SubscriptionDetail | null> {

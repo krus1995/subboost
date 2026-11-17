@@ -147,7 +147,7 @@ describe("local app pages and adapters", () => {
       { key: "cn" },
     ]);
     await adapter.loadSubscription("sub 1");
-    await adapter.subscription.saveSubscription({ isEditing: true, subscriptionId: "sub 1", payload: { name: "Sub" } });
+    await adapter.subscription.saveSubscription({ isEditing: true, subscriptionId: "sub 1", payload: { name: "Sub" }, baselinePayload: { name: "Old" }, editRevision: "revision" });
     await adapter.subscription.saveSubscription({ isEditing: false, payload: { name: "New" } });
 
     expect(adapter.subscription.autoUpdateIntervalPolicy).toEqual({
@@ -157,7 +157,7 @@ describe("local app pages and adapters", () => {
       requireIntegerHours: false,
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/source-import", expect.objectContaining({ method: "POST" }));
-    expect(fetchMock).toHaveBeenCalledWith("/api/subscriptions/sub%201", { cache: "no-store" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/subscriptions/sub%201?editTransport=compact-v1", { cache: "no-store" });
     expect(fetchMock).toHaveBeenCalledWith("/api/subscriptions/sub%201", expect.objectContaining({ method: "PUT" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/subscriptions", expect.objectContaining({ method: "POST" }));
   });

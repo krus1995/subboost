@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceRuleInputError } from "@subboost/core/subscription/source-rules";
+import { getCompactSubscription, SubscriptionEditConflictError } from "./subscription-service";
 import { SourceRuleCompilationError } from "@subboost/core/generator/source-rules";
 import {
   createSubscriptionResponse,
@@ -34,6 +35,8 @@ vi.mock("@local/lib/http", () => ({
   readJsonBody: mocks.readJsonBody,
 }));
 vi.mock("@local/lib/subscription-service", () => ({
+  SubscriptionEditConflictError: class extends Error {},
+  getCompactSubscription: vi.fn(),
   createSubscription: mocks.createSubscription,
   deleteSubscription: mocks.deleteSubscription,
   getSubscription: mocks.getSubscription,
@@ -78,6 +81,11 @@ describe("local subscription route handlers", () => {
     mocks.json.mockImplementation((body: unknown, status = 200) => ({ body, status }));
     mocks.apiError.mockImplementation((message: string, code: string, status: number) => ({ message, code, status }));
     mocks.jsonBodyError.mockImplementation(() => ({ message: "Invalid JSON body.", code: "BAD_REQUEST", status: 400 }));
+  });
+
+  it("rejects an unsupported read transport", async () => {
+    await expect(getSubscriptionResponse("sub-1", "compact-v2")).resolves.toEqual({ message: "Unsupported subscription edit transport.", code: "BAD_REQUEST", status: 400 });
+    expect(mocks.getSubscription).not.toHaveBeenCalled();
   });
 
   it("extracts subscription ids from query strings", () => {
@@ -164,6 +172,34 @@ describe("local subscription route handlers", () => {
       code: "BAD_REQUEST",
       status: 400,
     });
+  });
+
+  it("opens compact details for the owner and reports a missing subscription", async () => {
+    const details = { subscription: { id: "sub-1", config: { sources: [] } }, editTransport: { version: "compact-v1", revision: "r1", sourceIds: "[]" } };
+    vi.mocked(getCompactSubscription).mockResolvedValueOnce(details).mockResolvedValueOnce(null);
+    await expect(getSubscriptionResponse("sub-1", "compact-v1")).resolves.toEqual({ body: details, status: 200 });
+    expect(getCompactSubscription).toHaveBeenCalledWith("admin-1", "sub-1");
+    await expect(getSubscriptionResponse("other", "compact-v1")).resolves.toMatchObject({ code: "NOT_FOUND", status: 404 });
+  });
+
+  it("returns a revision after compact creates and updates, and reports a stale save", async () => {
+    const transport = { version: "compact-v1", revision: "r2", sourceIds: '["file"]' };
+    const saved = { id: "sub-1", editRevision: transport.revision, editSourceIds: transport.sourceIds };
+    const result = { subscription: saved, editTransport: transport };
+    const body = { ok: true, value: { editTransport: { version: "compact-v1" } } };
+    mocks.readJsonBody.mockResolvedValueOnce(body).mockResolvedValueOnce(body).mockResolvedValueOnce(body);
+    mocks.createSubscription.mockResolvedValueOnce(saved);
+    await expect(createSubscriptionResponse(request)).resolves.toEqual({ body: result, status: 201 });
+    mocks.updateSubscription.mockResolvedValueOnce(saved);
+    await expect(updateSubscriptionResponse(request, "sub-1")).resolves.toEqual({ body: result, status: 200 });
+    mocks.updateSubscription.mockRejectedValueOnce(new SubscriptionEditConflictError());
+    await expect(updateSubscriptionResponse(request, "sub-1")).resolves.toMatchObject({ code: "CONFLICT", status: 409 });
+  });
+
+  it("stops an unreadable update before calling the subscription service", async () => {
+    mocks.readJsonBody.mockResolvedValueOnce({ ok: false, reason: "invalid_json" });
+    await expect(updateSubscriptionResponse(request, "sub-1")).resolves.toMatchObject({ code: "BAD_REQUEST", status: 400 });
+    expect(mocks.updateSubscription).not.toHaveBeenCalled();
   });
 
   it("deletes and refreshes subscriptions", async () => {

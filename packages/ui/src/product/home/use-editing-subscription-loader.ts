@@ -1,5 +1,7 @@
 "use client";
 
+import { COMPACT_EDIT_VERSION, expandEditPayload, isObject, editSourceIds } from "@subboost/core/subscription/compact-edit";
+
 import { normalizeSourceRuleSnapshot, normalizeSourceRuleTargets, normalizeSourceRuleCategories, normalizeRuleSourceOrder } from "@subboost/core/subscription/source-rules";
 
 import * as React from "react";
@@ -87,7 +89,9 @@ export function useEditingSubscriptionLoader({
           throw new Error(err);
         }
 
-        const sub = (data as { subscription?: any })?.subscription;
+        const transport = isObject(data) && isObject(data.editTransport) && data.editTransport.version === COMPACT_EDIT_VERSION ? data.editTransport : null;
+        const rawSubscription = (data as { subscription?: any })?.subscription;
+        const sub = transport && isObject(rawSubscription) ? expandEditPayload(rawSubscription) : rawSubscription;
         if (!sub?.id || !sub?.token) {
           throw new Error("订阅数据不完整");
         }
@@ -588,6 +592,7 @@ export function useEditingSubscriptionLoader({
               : null;
           setEditingSubscription({
             id: sub.id,
+            ...(transport && typeof transport.revision === "string" ? { editRevision: transport.revision, editLoadId: crypto.randomUUID(), editSourceIds: editSourceIds(rawSubscription) } : {}),
             token: sub.token,
             name: sub.name || "未命名订阅",
             autoUpdateInterval,
