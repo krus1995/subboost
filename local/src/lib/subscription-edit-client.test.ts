@@ -46,6 +46,17 @@ describe("compact subscription HTTP client", () => {
     expect(String(fetchMock.mock.calls[0]?.[1]?.body).match(/large YAML/g)).toHaveLength(1);
   });
 
+  it("sends an empty change when saving an unchanged subscription", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await compactSubscriptionClient.saveSubscription({
+      isEditing: true, subscriptionId: "sub", baselinePayload: payload(), payload: payload(),
+      editRevision: "revision", editSourceIds: editSourceIds(payload()),
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.editTransport.patch).toEqual({ kind: "merge", fields: {}, remove: [] });
+  });
+
   it("sends a new local YAML body once and refuses edits without a load baseline", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json({}));
     vi.stubGlobal("fetch", fetchMock);

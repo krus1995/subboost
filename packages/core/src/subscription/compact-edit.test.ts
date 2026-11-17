@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEditPatch, compactEditPayload, createEditPatch, expandEditPayload } from "./compact-edit";
+import { applyEditPatch, compactEditPayload, createEditPatch, expandEditPayload, editSourceIds } from "./compact-edit";
 
 const source = (id: string) => ({ id, type: "yaml", content: `yaml-${id}\n`, lastParsedContent: `yaml-${id}`, ruleSnapshot: { groups: [], rules: [`DOMAIN,${id}.test,DIRECT`] } });
 
@@ -96,4 +96,50 @@ it("uploads only the changed snapshot list", () => {
   expect(JSON.stringify(patch)).toContain("MATCH,REJECT");
   expect(JSON.stringify(patch)).not.toMatch(/groups|yaml-one/);
   expect(applyEditPatch(before, patch)).toEqual(after);
+});
+
+it.each([null, {}, [null], [{ id: 1 }], [{ id: "" }], [source("one"), source("one")]])("replaces a legacy source list whose identities cannot support incremental edits (%j)", sources => {
+  const before = { config: { sources } };
+  const after = { config: { sources: [source("new")] } };
+  const patch = createEditPatch(before, after);
+  expect(patch).toMatchObject({ fields: { config: { fields: { sources: { kind: "replace" } } } } });
+  expect(applyEditPatch(before, patch)).toEqual(after);
+});
+
+it.each([
+  [null, "Invalid edit patch."],
+  [{ kind: "replace" }, "Invalid edit patch fields."],
+  [{ kind: "merge", fields: null, remove: [] }, "Invalid edit patch fields."],
+  [{ kind: "merge", fields: {}, remove: {} }, "Invalid edit patch removals."],
+  [{ kind: "merge", fields: {}, remove: [1] }, "Invalid edit patch removals."],
+  [{ kind: "unknown", fields: {} }, "Invalid edit patch kind."],
+])("rejects malformed incoming patch data (%j)", (patch, message) => {
+  expect(() => applyEditPatch({}, patch)).toThrow(String(message));
+});
+
+it.each([
+  { order: null, fields: {} },
+  { order: [1], fields: {} },
+  { order: ["one"], fields: { unrelated: { kind: "replace", value: source("unrelated") } } },
+  { order: ["one"], fields: { one: { kind: "replace", value: null } } },
+  { order: ["one"], fields: { one: { kind: "replace", value: source("different") } } },
+])("rejects source edits with an invalid order or replacement identity (%j)", patch => {
+  expect(() => applyEditPatch([source("one")], { kind: "sources", ...patch })).toThrow("Invalid source edit");
+});
+
+it("rejects source-order edits without a saved source list", () => {
+  expect(() => applyEditPatch(null, { kind: "sources", order: [], fields: {} })).toThrow("Invalid source edit patch.");
+});
+
+it("creates an object from an absent value only for an explicit merge", () => {
+  expect(applyEditPatch(undefined, { kind: "merge", fields: { name: { kind: "replace", value: "new" } }, remove: [] })).toEqual({ name: "new" });
+});
+
+it("keeps malformed legacy source rows unchanged and refuses a broken content reference", () => {
+  const payload = { config: { sources: [null, { content: 1, lastParsedContent: "old" }, { content: "yaml", lastParsedContent: null }] } };
+  expect(compactEditPayload(payload)).toEqual(payload);
+  expect(expandEditPayload(payload)).toEqual(payload);
+  expect(() => expandEditPayload({ config: { sources: [{ lastParsedContentIsContent: true }] } })).toThrow("Invalid source content reference.");
+  expect(editSourceIds(payload)).toBe("[null,null,null]");
+  expect(editSourceIds({ config: { sources: null } })).toBe("[]");
 });

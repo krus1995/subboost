@@ -322,6 +322,27 @@ describe("useSubscriptionLink", () => {
     await hook.handleCreateSubscription();
     expect(adapter.saveSubscription).toHaveBeenCalledWith(expect.objectContaining({ baselinePayload: expect.objectContaining({ name: "Freshly loaded" }) }));
   });
+  it("retains authoritative source identities when a save returns only a new revision", async () => {
+    const setEditingSubscription = vi.fn();
+    const editingSubscription = { id: "sub", token: "token", name: "Saved", autoUpdateInterval: null, smartNodeMatchingEnabled: true, editRevision: "old", editSourceIds: "[null]", editLoadId: "load" };
+    const adapter = makeAdapter({ saveSubscription: vi.fn(async () => response(200, { subscription: { token: "token" }, editTransport: { revision: "new" } })) });
+    let hook = useRenderedHook({ editingSubscription, subscriptionAdapter: adapter, setEditingSubscription });
+    hook.setSubscriptionName("Rename");
+    hook = useRenderedHook({ editingSubscription, subscriptionAdapter: adapter, setEditingSubscription });
+    await hook.handleCreateSubscription();
+    expect(setEditingSubscription).toHaveBeenCalledWith(expect.objectContaining({ editRevision: "new", editSourceIds: "[null]" }));
+  });
+
+  it("preserves attempted one-time URLs and the invalid original input for a failed save", async () => {
+    const adapter = makeAdapter({ saveSubscription: vi.fn(async () => response(400, { error: "Invalid URL" })) });
+    const storeSources = [{ id: "url", type: "url", content: "not a subscription URL", readOnce: true, readOnceAttemptedUrls: ["not a subscription URL"] }];
+    let hook = useRenderedHook({ storeSources, subscriptionAdapter: adapter });
+    hook.setSubscriptionName("Invalid source draft");
+    hook = useRenderedHook({ storeSources, subscriptionAdapter: adapter });
+    await hook.handleCreateSubscription();
+    expect(adapter.saveSubscription).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ config: expect.objectContaining({ sources: [expect.objectContaining({ content: "not a subscription URL", lastParsedContent: "not a subscription URL", readOnceAttemptedUrls: ["not a subscription URL"] })] }) }) }));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid URL" }));
+  });
   it.each(["success", "unauthorized", "rejected"])("ignores a late %s save after the draft is reset", async (kind) => {
     const clearUser = vi.fn();
     const adapter = makeAdapter({ saveSubscription: vi.fn(async () => {

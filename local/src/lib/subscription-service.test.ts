@@ -281,6 +281,44 @@ describe("local subscription service", () => {
     expect(mocks.prisma.subscription.create).not.toHaveBeenCalled();
     expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
   });
+  it("creates a compact local source, expands the single body and returns edit metadata", async () => {
+    const result = await createSubscription("owner-1", { editTransport: { version: "compact-v1", payload: {
+      name: "Compact", nodes: [node()], config: { sources: [{ id: "yaml", type: "yaml", content: "proxies: []", lastParsedContentIsContent: true }] },
+    } } });
+    expect(mocks.prisma.subscription.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ encryptedConfig: expect.stringContaining('"lastParsedContent":"proxies: []"') }) }));
+    expect(result).toMatchObject({ editRevision: expect.any(String), editSourceIds: '["yaml"]' });
+  });
+
+  it.each([undefined, null, []])("rejects a compact create without an object payload (%j)", async payload => {
+    await expect(createSubscription("owner-1", { editTransport: { version: "compact-v1", payload } })).rejects.toThrow("Invalid compact subscription payload.");
+    expect(mocks.prisma.subscription.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ kind: "replace", value: [] }, "Invalid compact subscription patch."],
+    [{ kind: "merge", fields: { ownerId: { kind: "replace", value: "another-owner" } }, remove: [] }, "Invalid subscription edit field."],
+  ])("refuses compact edits that replace the object or introduce a noneditable field", async (patch, message) => {
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(row()), patch } })).rejects.toThrow(String(message));
+    expect(mocks.prisma.subscription.update).not.toHaveBeenCalled();
+  });
+
+  it("clears subscription traffic info with a compact edit", async () => {
+    await updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(row()), patch: { kind: "merge", fields: { subscriptionInfo: { kind: "replace", value: null } }, remove: [] } } });
+    expect(mocks.prisma.subscription.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ encryptedSubscriptionInfo: "{}" }) }));
+  });
+
+  it.each([null, { code: "UNEXPECTED_DATABASE_FAILURE" }])("preserves unrelated compact save failures (%j)", async failure => {
+    mocks.prisma.subscription.update.mockRejectedValueOnce(failure);
+    await expect(updateSubscription("owner-1", "sub-1", { editTransport: { version: "compact-v1", revision: subscriptionEditRevision(row()), patch: { kind: "merge", fields: {}, remove: [] } } })).rejects.toBe(failure);
+  });
+
+  it("validates a URL-only compact create and compiles imported rules when present", async () => {
+    await createSubscription("owner-1", { editTransport: { version: "compact-v1", payload: { name: "URL only", urls: ["https://example.test/sub"] } } });
+    expect(mocks.buildGenerateOptionsFromConfig).not.toHaveBeenCalled();
+    mocks.buildGenerateOptionsFromConfig.mockReturnValueOnce({ nodes: [node()], sourceRules: [{}] });
+    await createSubscription("owner-1", { editTransport: { version: "compact-v1", payload: { name: "Rules", nodes: [node()] } } });
+    expect(mocks.generateClashYaml).toHaveBeenCalledOnce();
+  });
   it("formats subscription summaries and details from encrypted fields", () => {
     const summary = formatSubscription(row());
     expect(summary).toMatchObject({
